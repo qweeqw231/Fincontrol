@@ -121,15 +121,19 @@ fincontrol:
       max-size-mb: 20
 
   # 视觉模型（minimax M3 系列，原生多模态图像 + 视频）
+  # 真实公开 API endpoint（注意是 .com 不是 .chat，.chat 给的是 SaaS 集成渠道）：
+  #   OpenAI 兼容：https://api.minimaxi.com/v1
+  #   Anthropic 兼容（推荐，但需改 VisionModelClient headers）：https://api.minimaxi.com/anthropic
+  # 当前用 OpenAI 兼容 schema。
   # API Key 加载优先级：
   #   1. 环境变量 VISION_API_KEY
   #   2. application-local.yml 中的 fincontrol.vision.api-key
   #   3. 本占位符（REPLACE_ME_VISION_API_KEY，启动时会抛 5001 强制填）
   vision:
-    base-url: https://api.minimaxi.chat/v1
+    base-url: https://api.minimaxi.com/v1
     model: MiniMax-M3-512k
     timeout-seconds: 60
-    api-key: ${VISION_API_KEY:sk-cp-bB6UnjYhydbde0bxgE4EP7iigWKDaXaZb6UX4sa_kLHwOUZgpVrF1G4GPKsg_HwYT4c0Lrsiut2eUqRi1Wo3bVBw3oqOilC0WiNLuXv-sx9cFmCKtRaLxR4}
+    api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
 
 # ============================================
 # 服务端口
