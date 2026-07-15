@@ -1,20 +1,20 @@
 package com.fincontrol;
 
+import com.fincontrol.mapper.ChatHistoryMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.TestPropertySource;
 
 /**
- * Phase 1a.1 基础设施冒烟测试。
+ * Phase 1a.1 基础设施冒烟测试（已升级兼容 1a.2 持久化 bean 链路）。
  *
- * <p>目标：验证 Spring 容器在缺少数据源的情况下也能正确装配，
- * 证明 1a.1 仅依赖基础 starter 即可启动（数据源相关的集成测试在 1a.2+ 引入）。
+ * <p>目标：验证 Spring 容器在缺少真实数据源的情况下也能正确装配。
+ * 1a.2 起新增 ChatHistoryMapper（依赖 SqlSessionFactory）和 PromptLoaderService（依赖 JdbcTemplate），
+ * 这里用 {@link MockBean} 替换，使容器可以在没有真实 MySQL 的情况下启动。
  *
- * <p>排除原因：
- * <ul>
- *   <li>本地 MySQL 默认未启动 —— 此测试不应因数据库不可用而失败</li>
- *   <li>真实集成测试在 Phase 1a.2 测试用例中用 Testcontainers 或 H2 引入</li>
- * </ul>
+ * <p>真实集成测试在 Phase 1a.2+ 引入（Testcontainers / 本地 MySQL）。
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.NONE,
@@ -31,9 +31,16 @@ import org.springframework.test.context.TestPropertySource;
 })
 class FincontrolApplicationTests {
 
+    /** 替换 MyBatis-Plus mapper，避免 SqlSessionFactory 注入失败 */
+    @MockBean
+    private ChatHistoryMapper chatHistoryMapper;
+
+    /** 替换 PromptLoaderService 依赖的 JdbcTemplate */
+    @MockBean
+    private JdbcTemplate jdbcTemplate;
+
     @Test
     void contextLoadsWithoutDatabase() {
-        // Phase 1a.1 DoD：Spring 容器能装配 = 项目可启动
-        // 真正的 /actuator/health + DataSource 集成测试在 Phase 1a.2 引入
+        // Phase 1a.1 / 1a.2 DoD：Spring 容器可装配 + 持有所有 mock 的持久化依赖占位
     }
 }
