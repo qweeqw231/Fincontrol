@@ -40,6 +40,18 @@
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
+        <!-- Actuator（Phase 1a.1：/actuator/health 用于本地启动验证，详见 acceptance-criteria 1a.x）-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- JDBC（显式声明，HikariCP 默认跟随；1a.2 验收点 1a.2 明确要求 pool size = 10）-->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
         <!-- MyBatis-Plus 3.5.9（与 Spring Boot 3.3.x 兼容）-->
         <dependency>
             <groupId>com.baomidou</groupId>

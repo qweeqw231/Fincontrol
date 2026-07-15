@@ -53,8 +53,8 @@
 
 **验收目标（DoD）**：
 - [ ] `GET /actuator/health` 返回 `UP`
-- [ ] 数据库 12 张表全部建好
-- [ ] `pom.xml` 关键依赖完整（Spring Web、MyBatis-Plus、MySQL 驱动、Swagger、Validation）
+- [ ] 数据库 7 张表全部建好（`asset_raw` / `asset_snapshot` / `fund_category_map` / `chat_history` / `user_config` / `prompt_versions` / `operation_log`）
+- [ ] `pom.xml` 关键依赖完整（Spring Web、MyBatis-Plus、MySQL 驱动、Swagger、Validation、Actuator、JDBC）
 
 **前置依赖**：Phase 0 完成（已具备）。
 

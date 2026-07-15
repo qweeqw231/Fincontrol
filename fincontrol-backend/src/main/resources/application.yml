@@ -1,71 +1,68 @@
 # ============================================
-# FinControl Backend Application Configuration
+# FinControl 后端主配置（Phase 1a.1）
 # ============================================
-# 配套文档：docs/phase-0/decisions.md
-# 用户决策：
-#   - MySQL localhost:3306, HikariCP 池大小10
-#   - X-User-Id: Interceptor + @RequestHeader 默认1
-#   - 截图存储: ./uploads/screenshots/
-#   - Swagger: 启用（springdoc-openapi）
-#   - 时区: UTC+8 (Asia/Shanghai)
-#   - BigDecimal: 2位小数 + 字符串传输
-#   - DeepSeek 模型: deepseek-v4-flash（2026-07-24 后 deepseek-chat 弃用）
+# 适用场景：所有 profile 共用此文件
+# 覆盖规则：application-{profile}.yml > application.yml
+# 本地覆盖：application-local.yml（gitignore 内，仅本机使用，含真实 DeepSeek key）
+# 详见：docs/SETUP.md §2.2 / docs/phase-1/subphase-plan.md 子阶段 1a.1
 # ============================================
-
-server:
-  port: 8080
-  servlet:
-    encoding:
-      charset: UTF-8
-      force: true
 
 spring:
   application:
     name: fincontrol-backend
+
+  profiles:
+    # 默认激活 local profile；CI/容器环境通过环境变量 SPRING_PROFILES_ACTIVE 覆盖
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  # ============================
+  # 数据源 + 连接池（HikariCP）
+  # ============================
+  # 1a.2 验收：HikariCP pool size = 10
   datasource:
-    url: jdbc:mysql://localhost:3306/fincontrol?useUnicode=true&characterEncoding=utf8mb4&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: ${DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:fincontrol}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:root}
     hikari:
-      maximum-pool-size: 10
+      pool-name: FinControlHikariCP
+      maximum-pool-size: 10                 # 1a.2 硬要求
       minimum-idle: 2
-      connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+      idle-timeout: 60000                   # 60s
+      connection-timeout: 30000             # 30s
+      max-lifetime: 1800000                 # 30min
+      leak-detection-threshold: 60000       # 1min
+    dbcp2:                                 # 显式停用 DBCP2，避免和 HikariCP 双连接池冲突
+      enabled: false
+
+  # ============================
+  # 文件上传（截图解析使用）
+  # ============================
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 20MB                   # 单文件 20MB
+      max-request-size: 25MB                # 单请求 25MB
+      file-size-threshold: 2MB              # 超过 2MB 写磁盘
+
+  # ============================
+  # Jackson 时区
+  # ============================
   jackson:
-    # BigDecimal 转字符串，避免前端精度丢失
-    big-decimal-as-string: true
-    # 时间格式与时区
-    date-format: yyyy-MM-dd HH:mm:ss
     time-zone: Asia/Shanghai
-    # Spring Boot 3.x 移除了 write-bigs-as-strings（如需 Long 转字符串，
-    # 需在实体字段上添加 @JsonFormat(shape = JsonFormat.Shape.STRING)）
-    serialization:
-      write-dates-as-timestamps: false  # 日期序列化为字符串而非时间戳
+    date-format: yyyy-MM-dd HH:mm:ss
+    default-property-inclusion: non_null
 
-# DeepSeek API 配置（决策：C - OkHttp）
-# 模型说明：
-#   - deepseek-v4-flash（当前推荐，新模型，2026-07-24 后 deepseek-chat 弃用）
-#   - deepseek-v4-pro（高规格模型）
-deepseek:
-  api-key: ${sk-d2678b8a8ef145d0ab235dced7cfe93c}
-  base-url: https://api.deepseek.com/v1
-  model: deepseek-v4-flash
-  timeout-seconds: 30
-  max-retries: 2
-
-# 文件上传配置
-upload:
-  screenshot:
-    path: ./uploads/screenshots/
-    max-size: 10MB
-    allowed-types: jpg,jpeg,png,webp
-
-# MyBatis-Plus 配置
+# ============================================
+# MyBatis-Plus（Phase 1a.1 启用）
+# ============================================
 mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.fincontrol.entity
   configuration:
     map-underscore-to-camel-case: true
+    cache-enabled: false
+    jdbc-type-for-null: NULL
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     banner: false
@@ -75,21 +72,84 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
 
+# ============================================
 # springdoc-openapi（Swagger UI）
+# ============================================
 springdoc:
   api-docs:
+    enabled: true
     path: /v3/api-docs
   swagger-ui:
+    enabled: true
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
   packages-to-scan: com.fincontrol.controller
+  default-produces-media-type: application/json
 
-# 日志配置（决策：Logback 默认）
-logging:
-  level:
-    root: INFO
-    com.fincontrol: DEBUG
-    com.baomidou.mybatisplus: WARN
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+# ============================================
+# Spring Boot Actuator（1a.1 验收：/actuator/health）
+# ============================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+  info:
+    env:
+      enabled: true
+
+# ============================================
+# 自定义业务配置（Phase 1a 逐步启用）
+# ============================================
+fincontrol:
+  # 默认 user_id（第一轮 P0 7 节要求 API 支持 user_id 参数，默认 1）
+  default-user-id: 1
+
+  # CORS 白名单（Phase 1b 前端对接时使用）
+  cors:
+    allowed-origins:
+      - http://localhost:5173               # Vite dev
+      - http://localhost:3000               # CRA dev
+
+  # 截图上传文件存储
+  upload:
+    screenshot:
+      path: ${UPLOAD_SCREENSHOT_PATH:./uploads/screenshots/}
+      max-size-mb: 20
+
+  # DeepSeek 配置默认值（真实 key 在 application-local.yml 或环境变量）
+  deepseek:
+    base-url: https://api.deepseek.com/v1
+    model: deepseek-flash
+    timeout-seconds: 30
+
+# ============================================
+# DeepSeek API Key 配置加载
+# ============================================
+# 优先级（从高到低）：
+#   1. 环境变量 DEEPSEEK_API_KEY
+#   2. application-local.yml 中的 deepseek.api-key
+#   3. application.yml 占位符（占位会触发启动失败，避免误用）
+deepseek:
+  api-key: ${DEEPSEEK_API_KEY:REPLACE_ME_DEEPSEEK_API_KEY}
+
+# ============================================
+# 服务端口
+# ============================================
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/plain,text/css,application/javascript
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: never
