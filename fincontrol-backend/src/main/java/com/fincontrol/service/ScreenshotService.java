@@ -247,11 +247,12 @@ public class ScreenshotService {
         out.setTotalAsset(decimalOrNull(json, "total_asset"));
         out.setSixCategoriesTotal(decimalOrNull(json, "six_categories_total"));
         out.setBalanceFund(decimalOrNull(json, "balance_fund"));
-        out.setAiMarkdownReport(raw);
 
-        JsonNode categories = json.path("categories");
         List<ParsedAsset.CategoryBlock> blocks = new ArrayList<>();
-        if (categories.isArray()) {
+
+        // Strategy A：api-contract.md 嵌套 categories[].funds[]
+        JsonNode categories = json.path("categories");
+        if (categories.isArray() && categories.size() > 0) {
             for (JsonNode c : categories) {
                 ParsedAsset.CategoryBlock block = new ParsedAsset.CategoryBlock();
                 block.setCategoryName(textOrNull(c, "category_name"));
@@ -272,6 +273,42 @@ public class ScreenshotService {
                 block.setTargetRatio(decimalOrNull(c, "target_ratio"));
                 block.setDeviation(decimalOrNull(c, "deviation"));
                 blocks.add(block);
+            }
+        }
+        // Strategy B：minimax M3 默认格式 — 顶层 holdings[] + category_summary{}
+        else {
+            JsonNode holdings = json.path("holdings");
+            if (holdings.isArray() && holdings.size() > 0) {
+                // 按 category 字段分组
+                Map<String, List<JsonNode>> byCategory = new LinkedHashMap<>();
+                for (JsonNode h : holdings) {
+                    String cat = textOrNull(h, "category");
+                    if (cat == null || cat.isBlank()) cat = "其他";
+                    byCategory.computeIfAbsent(cat, k -> new ArrayList<>()).add(h);
+                }
+                // 顶层统计
+                JsonNode summary = json.path("category_summary");
+                for (Map.Entry<String, List<JsonNode>> entry : byCategory.entrySet()) {
+                    ParsedAsset.CategoryBlock block = new ParsedAsset.CategoryBlock();
+                    block.setCategoryName(entry.getKey());
+                    List<ParsedAsset.FundLine> lines = new ArrayList<>();
+                    for (JsonNode h : entry.getValue()) {
+                        ParsedAsset.FundLine line = new ParsedAsset.FundLine();
+                        line.setFundName(textOrNull(h, "name"));
+                        line.setAmount(decimalOrNull(h, "amount"));
+                        line.setProfit(decimalOrNull(h, "holding_pnl"));
+                        lines.add(line);
+                    }
+                    block.setFunds(lines);
+                    // 从 category_summary 提取统计（按 key 匹配）
+                    JsonNode s = summary.path(entry.getKey());
+                    if (s.isObject()) {
+                        block.setCategoryTotal(decimalOrNull(s, "total_amount"));
+                        block.setCategoryPercentage(decimalOrNull(s, "total_ratio"));
+                        block.setDeviation(decimalOrNull(s, "total_holding_pnl"));
+                    }
+                    blocks.add(block);
+                }
             }
         }
         out.setCategories(blocks);

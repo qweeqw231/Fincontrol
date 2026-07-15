@@ -194,4 +194,49 @@ class ScreenshotServiceTest {
                     assertThat(be.getErrorCode().getCode()).isEqualTo(2001);
                 });
     }
+
+    @Test
+    void parse_minimaxJsonStyle_returnsParsedAsset() {
+        // minimax M3 默认输出格式：顶层 holdings[] + 顶层 category_summary{}
+        // 而不是 api-contract.md 设计的嵌套 categories[].funds[]
+        String raw = "{" +
+                "\"data_source\":\"alipay\"," +
+                "\"date\":\"2026-07-15\"," +
+                "\"holdings\":[" +
+                "  {\"name\":\"天弘纳斯达克100指数(QDII)A\",\"amount\":633.32,\"category\":\"权益类\",\"holding_pnl\":51.32}," +
+                "  {\"name\":\"国泰黄金ETF联接C\",\"amount\":564.86,\"category\":\"黄金类\",\"holding_pnl\":-45.25}," +
+                "  {\"name\":\"余额宝\",\"amount\":320.85,\"category\":\"余额类\",\"holding_pnl\":1.89}" +
+                "]," +
+                "\"category_summary\":{" +
+                "  \"权益类\":{\"total_amount\":633.32,\"total_ratio\":0.0803,\"total_holding_pnl\":51.32,\"count\":1}," +
+                "  \"黄金类\":{\"total_amount\":564.86,\"total_ratio\":0.0716,\"total_holding_pnl\":-45.25,\"count\":1}," +
+                "  \"余额类\":{\"total_amount\":320.85,\"total_ratio\":0.0407,\"total_holding_pnl\":1.89,\"count\":1}" +
+                "}}";
+        when(visionModelClient.callRaw(any(File.class), anyString(), anyString())).thenReturn(raw);
+        stubExtractJson(raw);
+        when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+        ScreenshotParseRequest req = new ScreenshotParseRequest();
+        req.setFileId(FILE_ID);
+        req.setUserId(1L);
+
+        ParsedAsset asset = service.parse(req);
+
+        // Strategy B 验证：3 个类别 + 3 只基金
+        assertThat(asset.getCategories()).hasSize(3);
+        assertThat(asset.getMatchedFunds()).containsExactlyInAnyOrder(
+                "天弘纳斯达克100指数(QDII)A", "国泰黄金ETF联接C", "余额宝");
+
+        // 验证权益类的 category_total 从 category_summary 提取
+        ParsedAsset.CategoryBlock equity = asset.getCategories().stream()
+                .filter(b -> "权益类".equals(b.getCategoryName())).findFirst().orElseThrow();
+        assertThat(equity.getFunds()).hasSize(1);
+        assertThat(equity.getFunds().get(0).getFundName()).isEqualTo("天弘纳斯达克100指数(QDII)A");
+        assertThat(equity.getFunds().get(0).getAmount()).isEqualTo(new java.math.BigDecimal("633.32"));
+        assertThat(equity.getCategoryTotal()).isEqualTo(new java.math.BigDecimal("633.32"));
+        assertThat(equity.getCategoryPercentage()).isEqualTo(new java.math.BigDecimal("0.0803"));
+        assertThat(equity.getDeviation()).isEqualTo(new java.math.BigDecimal("51.32"));
+
+        verify(chatHistoryMapper, times(2)).insert(any(ChatHistory.class));
+    }
 }

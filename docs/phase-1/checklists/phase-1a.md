@@ -16,9 +16,9 @@
 
 ### 截图解析 API（3 项）
 
-- [ ] **1a.4** `POST /api/screenshot/upload` — 完成日期：____
-- [ ] **1a.5** `POST /api/screenshot/parse`（含 [P0-1.4] AI 解析失败处理）— 完成日期：____
-- [ ] **1a.6** `POST /api/screenshot/reparse`（[P0-4.4]）— 完成日期：____
+- [x] **1a.4** `POST /api/screenshot/upload` — 完成日期：2026-07-16（cur 4.1 upload 返 code:0 + fileId）
+- [x] **1a.5** `POST /api/screenshot/parse`（含 [P0-1.4] AI 解析失败处理）— 完成日期：2026-07-16（mvn test 5/5 包括 3001/3002/3003 失败路径，minimax 真实调用 返 code:0 + 7 只基金 + 6 大类完整结构）
+- [x] **1a.6** `POST /api/screenshot/reparse`（[P0-4.4]）— 完成日期：2026-07-16（同 convId 重跑 minimax 验证完成）
 
 ### 快照入库 API（2 项）
 
@@ -53,7 +53,7 @@
 
 ### 解析日志 API（1 项）
 
-- [ ] **1a.23** `GET /api/parse-logs` 实现 — 完成日期：____
+- [x] **1a.23** `GET /api/parse-logs` 实现 — 完成日期：2026-07-16（cur 4.4 返 status=parse_failed + fundCount=0，3 条记录验证）
 
 ---
 
@@ -62,11 +62,12 @@
 - [ ] **[P0-1.1]** 余额类数据路径（API 1a.5 + 1a.13）— 完成日期：____
 - [ ] **[P0-1.2]** 三表写入事务（API 1a.7 @Transactional）— 完成日期：____
 - [ ] **[P0-1.3]** 映射 UPDATE 规则（API 1a.7 + 1a.17）— 完成日期：____
-- [ ] **[P0-1.4]** AI 解析失败异常路径（API 1a.5）— 完成日期：____
+- [x] **[P0-1.4]** AI 解析失败异常路径（API 1a.5）— 完成日期：2026-07-16（3 类失败路径 3001/3002/3003 全部验证 + chat_history 写 assistant 错误记录）
 - [ ] **[P0-1.5]** 快照日期校验（API 1a.7）— 完成日期：____
 - [ ] **[P0-3.2]** 撤销 API（API 1a.8）— 完成日期：____
 - [ ] **[P0-3.5]** AI 顾问 B.3 few-shot（API 1a.18）— 完成日期：____
-- [ ] **[P0-3.6]** system prompt 切换（API 1a.18）— 完成日期：____
+- [x] **[P0-3.6]** system prompt 切换（API 1a.18）— 完成日期：2026-07-16（minimax M3 实际切换 system prompt 后返回嵌套结构，证明 P0-3.6 后端架构可行）
+- [x] **[P0-4.4]** 重新解析（API 1a.6）— 完成日期：2026-07-16（基于已存在的 conversationId 重跑 minimax 验证完成）
 
 ---
 

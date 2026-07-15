@@ -25,7 +25,6 @@ public class ParsedAsset {
     private List<CategoryBlock> categories;
     private List<String> matchedFunds;
     private List<String> unmatchedFunds;
-    private String aiMarkdownReport;
 
     @Data
     @NoArgsConstructor

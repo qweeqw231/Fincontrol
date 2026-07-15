@@ -173,7 +173,7 @@ ON DUPLICATE KEY UPDATE config_value = VALUES(config_value);
 -- ============================================
 INSERT INTO prompt_versions (prompt_name, prompt_content, version, change_reason) VALUES
   ('screenshot_parser',
-   '识别[日期]（支付宝）资产明细。默认数据源为支付宝，SDK阶段再考虑多个基金软件的适配。请返回完整的六大类资产明细表格和六大类汇总表格，以及一段总结。表格使用Markdown格式。每只基金需包含基金名称、持仓金额（元）、持有收益（元）、六大类归属（含"余额类"，第一轮P0 1.1新增）。同时返回结构化JSON供后端解析。日期格式必须为 YYYY-MM-DD（第三轮P0 4.2.1新增）。',
+   '识别[日期]（支付宝）资产明细。默认数据源为支付宝，SDK阶段再考虑多个基金软件的适配。请返回完整的六大类资产明细表格和六大类汇总表格，以及一段总结。表格使用Markdown格式。每只基金需包含基金名称、持仓金额（元）、持有收益（元）、六大类归属（含"余额类"，第一轮P0 1.1新增）。同时返回结构化JSON供后端解析。日期格式必须为 YYYY-MM-DD（第三轮P0 4.2.1新增）。\n\n【重要】结构化JSON必须严格使用以下嵌套结构（后端只解析此结构）：\n{\n  "snapshot_date": "YYYY-MM-DD",\n  "total_asset": 浮点,\n  "categories": [\n    {\n      "category_name": "余额类|固收类|商品类|权益类|另类资产|保障类",\n      "category_total": 浮点,\n      "category_percentage": 浮点,\n      "funds": [\n        {"fund_name": "...", "amount": 浮点, "profit": 浮点}\n      ]\n    }\n  ],\n  "matchedFunds": ["基金1", "基金2", ...]\n}\n不要使用顶层 holdings + category_summary 结构。',
    'v1.0',
    '初始版本，已验证可用。支持六大类+余额类识别，返回Markdown表格+JSON。'),
   ('ai_assistant',

@@ -129,10 +129,11 @@ fincontrol:
   #   1. 环境变量 VISION_API_KEY
   #   2. application-local.yml 中的 fincontrol.vision.api-key
   #   3. 本占位符（REPLACE_ME_VISION_API_KEY，启动时会抛 5001 强制填）
+  # timeout-seconds: 60 -> 300（minimax M3 thinking 块 + 高分辦率图 + 多模态需要 1-3 分钟）
   vision:
     base-url: https://api.minimaxi.com/v1
     model: MiniMax-M3
-    timeout-seconds: 60
+    timeout-seconds: 300
     api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
 
 # ============================================
