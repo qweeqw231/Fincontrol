@@ -1,9 +1,9 @@
 # ============================================
-# FinControl 后端主配置（Phase 1a.1）
+# FinControl 后端主配置（Phase 1a.5+）
 # ============================================
 # 适用场景：所有 profile 共用此文件
 # 覆盖规则：application-{profile}.yml > application.yml
-# 本地覆盖：application-local.yml（gitignore 内，仅本机使用，含真实 DeepSeek key）
+# 本地覆盖：application-local.yml（gitignore 内，仅本机使用，含真实视觉模型 key）
 # 详见：docs/SETUP.md §2.2 / docs/phase-1/subphase-plan.md 子阶段 1a.1
 # ============================================
 
@@ -26,13 +26,13 @@ spring:
     password: ${DB_PASSWORD:root}
     hikari:
       pool-name: FinControlHikariCP
-      maximum-pool-size: 10                 # 1a.2 硬要求
+      maximum-pool-size: 10
       minimum-idle: 2
-      idle-timeout: 60000                   # 60s
-      connection-timeout: 30000             # 30s
-      max-lifetime: 1800000                 # 30min
-      leak-detection-threshold: 60000       # 1min
-    dbcp2:                                 # 显式停用 DBCP2，避免和 HikariCP 双连接池冲突
+      idle-timeout: 60000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+    dbcp2:
       enabled: false
 
   # ============================
@@ -41,9 +41,9 @@ spring:
   servlet:
     multipart:
       enabled: true
-      max-file-size: 20MB                   # 单文件 20MB
-      max-request-size: 25MB                # 单请求 25MB
-      file-size-threshold: 2MB              # 超过 2MB 写磁盘
+      max-file-size: 20MB
+      max-request-size: 25MB
+      file-size-threshold: 2MB
 
   # ============================
   # Jackson 时区
@@ -105,39 +105,31 @@ management:
       enabled: true
 
 # ============================================
-# 自定义业务配置（Phase 1a 逐步启用）
+# 视觉模型配置（Phase 1a.5 替代旧 DeepSeek 配置）
 # ============================================
 fincontrol:
-  # 默认 user_id（第一轮 P0 7 节要求 API 支持 user_id 参数，默认 1）
   default-user-id: 1
 
-  # CORS 白名单（Phase 1b 前端对接时使用）
   cors:
     allowed-origins:
-      - http://localhost:5173               # Vite dev
-      - http://localhost:3000               # CRA dev
+      - http://localhost:5173
+      - http://localhost:3000
 
-  # 截图上传文件存储
   upload:
     screenshot:
       path: ${UPLOAD_SCREENSHOT_PATH:./uploads/screenshots/}
       max-size-mb: 20
 
-  # DeepSeek 配置默认值（真实 key 在 application-local.yml 或环境变量）
-  deepseek:
-    base-url: https://api.deepseek.com/v1
-    model: deepseek-flash
-    timeout-seconds: 30
-
-# ============================================
-# DeepSeek API Key 配置加载
-# ============================================
-# 优先级（从高到低）：
-#   1. 环境变量 DEEPSEEK_API_KEY
-#   2. application-local.yml 中的 deepseek.api-key
-#   3. application.yml 占位符（占位会触发启动失败，避免误用）
-deepseek:
-  api-key: ${DEEPSEEK_API_KEY:REPLACE_ME_DEEPSEEK_API_KEY}
+  # 视觉模型（minimax M3 系列，原生多模态图像 + 视频）
+  # API Key 加载优先级：
+  #   1. 环境变量 VISION_API_KEY
+  #   2. application-local.yml 中的 fincontrol.vision.api-key
+  #   3. 本占位符（REPLACE_ME_VISION_API_KEY，启动时会抛 5001 强制填）
+  vision:
+    base-url: https://api.minimaxi.chat/v1
+    model: MiniMax-M3-512k
+    timeout-seconds: 60
+    api-key: ${VISION_API_KEY:sk-cp-bB6UnjYhydbde0bxgE4EP7iigWKDaXaZb6UX4sa_kLHwOUZgpVrF1G4GPKsg_HwYT4c0Lrsiut2eUqRi1Wo3bVBw3oqOilC0WiNLuXv-sx9cFmCKtRaLxR4}
 
 # ============================================
 # 服务端口

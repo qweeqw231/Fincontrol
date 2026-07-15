@@ -55,7 +55,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Object>> handleJson(Exception ex) {
         log.warn("JSON parse error {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                .body(ApiResponse.error(3001, "DeepSeek API 返回非 JSON：" + ex.getMessage()));
+                .body(ApiResponse.error(3001, "视觉模型 API 返回非 JSON：" + ex.getMessage()));
     }
 
     @ExceptionHandler(Exception.class)

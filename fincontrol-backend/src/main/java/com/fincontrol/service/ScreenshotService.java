@@ -1,6 +1,5 @@
 package com.fincontrol.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
@@ -16,14 +15,13 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * 截图 / 解析 / 重新解析 业务编排（Phase 1a.2）。
  *
  * <ul>
  *   <li>upload —— 文件存到磁盘 + 返回 fileId + URL。</li>
- *   <li>parse  —— 调用 DeepSeek → 抽 JSON → 写 chat_history（user + assistant）。失败时也写 assistant 错误记录。</li>
+ *   <li>parse  —— 调用视觉模型 → 抽 JSON → 写 chat_history（user + assistant）。失败时也写 assistant 错误记录。</li>
  *   <li>reparse —— 从历史 user 消息找回 fileId → 重新解析（[P0-4.4](#)）。</li>
  * </ul>
  *
@@ -35,16 +33,16 @@ public class ScreenshotService {
     private static final Logger log = LoggerFactory.getLogger(ScreenshotService.class);
 
     private final FileStorageService storage;
-    private final DeepSeekClient deepSeekClient;
+    private final VisionModelClient visionModelClient;
     private final PromptLoaderService promptLoader;
     private final ChatHistoryMapper chatHistoryMapper;
 
     public ScreenshotService(FileStorageService storage,
-                             DeepSeekClient deepSeekClient,
+                             VisionModelClient visionModelClient,
                              PromptLoaderService promptLoader,
                              ChatHistoryMapper chatHistoryMapper) {
         this.storage = storage;
-        this.deepSeekClient = deepSeekClient;
+        this.visionModelClient = visionModelClient;
         this.promptLoader = promptLoader;
         this.chatHistoryMapper = chatHistoryMapper;
     }
@@ -79,9 +77,8 @@ public class ScreenshotService {
      * <p>写 chat_history 的两条记录（user + assistant）；失败时仅写 assistant 错误记录。
      *
      * <p>注意：本方法未使用 {@code @Transactional}——避免 parse 失败抛 3001/3002/3003 时把
-     * 已写入的 user 消息也回滚（之前导致 reparse 查不到 user 消息误抛 2001，parse-logs 永远空）。
-     * chat_history 单条 insert 走 MyBatis-Plus 默认 auto-commit，足够稳；1a.3 三表事务时由
-     * 业务上下文统一管理。
+     * 已写入的 user 消息也回滚。chat_history 单条 insert 走 MyBatis-Plus 默认 auto-commit，
+     * 足够稳；1a.3 三表事务时由业务上下文统一管理。
      */
     public ParsedAsset parse(ScreenshotParseRequest req) {
         if (req.getFileId() == null || req.getFileId().isBlank()) {
@@ -102,14 +99,13 @@ public class ScreenshotService {
         userMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
         chatHistoryMapper.insert(userMsg);
 
-        // 2) 调 DeepSeek
+        // 2) 调视觉模型（minimax M3 系列，原生多模态）
         String systemPrompt = promptLoader.get("screenshot_parser");
         String raw;
         try {
-            raw = deepSeekClient.callRaw(imagePath.toFile(), systemPrompt,
+            raw = visionModelClient.callRaw(imagePath.toFile(), systemPrompt,
                     "请解析以下支付宝资产截图");
         } catch (BusinessException e) {
-            // 失败时 assistant 也写一行（[P0-1.4](#) 失败记录），便于 parse-logs 展示
             persistAssistantError(conversationId, req.getUserId(), e);
             throw e;
         }
@@ -117,7 +113,7 @@ public class ScreenshotService {
         // 3) 抽 JSON
         JsonNode json;
         try {
-            json = deepSeekClient.extractFirstJsonObject(raw);
+            json = visionModelClient.extractFirstJsonObject(raw);
         } catch (BusinessException e) {
             persistAssistantError(conversationId, req.getUserId(), e, raw);
             throw e;
@@ -130,9 +126,9 @@ public class ScreenshotService {
                 || asset.getCategories().isEmpty()
                 || asset.getCategories().stream().allMatch(c -> c.getFunds() == null || c.getFunds().isEmpty());
         if (zeroFunds) {
-            BusinessException e = new BusinessException(ErrorCode.DEEPSEEK_ZERO_FUNDS,
-                    "DeepSeek 返回 0 只基金（conversationId=" + conversationId + "）",
-                    new DeepSeekErrorData(conversationId, "zero_funds", raw));
+            BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
+                    "视觉模型返回 0 只基金（conversationId=" + conversationId + "）",
+                    new VisionErrorData(conversationId, "zero_funds", raw));
             persistAssistantError(conversationId, req.getUserId(), e);
             throw e;
         }
@@ -177,7 +173,7 @@ public class ScreenshotService {
         String systemPrompt = promptLoader.get("screenshot_parser");
         String raw;
         try {
-            raw = deepSeekClient.callRaw(imagePath.toFile(), systemPrompt,
+            raw = visionModelClient.callRaw(imagePath.toFile(), systemPrompt,
                     "请重新解析以下支付宝资产截图");
         } catch (BusinessException e) {
             persistAssistantError(req.getConversationId(), userMsg.getUserId(), e);
@@ -186,7 +182,7 @@ public class ScreenshotService {
 
         JsonNode json;
         try {
-            json = deepSeekClient.extractFirstJsonObject(raw);
+            json = visionModelClient.extractFirstJsonObject(raw);
         } catch (BusinessException e) {
             persistAssistantError(req.getConversationId(), userMsg.getUserId(), e, raw);
             throw e;
@@ -198,9 +194,9 @@ public class ScreenshotService {
                 || asset.getCategories().isEmpty()
                 || asset.getCategories().stream().allMatch(c -> c.getFunds() == null || c.getFunds().isEmpty());
         if (zeroFunds) {
-            BusinessException e = new BusinessException(ErrorCode.DEEPSEEK_ZERO_FUNDS,
-                    "DeepSeek 返回 0 只基金（reparse conversationId=" + req.getConversationId() + "）",
-                    new DeepSeekErrorData(req.getConversationId(), "zero_funds", raw));
+            BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
+                    "视觉模型返回 0 只基金（reparse conversationId=" + req.getConversationId() + "）",
+                    new VisionErrorData(req.getConversationId(), "zero_funds", raw));
             persistAssistantError(req.getConversationId(), userMsg.getUserId(), e);
             throw e;
         }
@@ -280,7 +276,6 @@ public class ScreenshotService {
         }
         out.setCategories(blocks);
 
-        // matched / unmatched funds：聚合自 categories[].funds
         List<String> matched = new ArrayList<>();
         for (ParsedAsset.CategoryBlock block : blocks) {
             if (block.getFunds() != null) {
@@ -292,7 +287,6 @@ public class ScreenshotService {
         out.setMatchedFunds(matched);
         out.setUnmatchedFunds(Collections.emptyList());
 
-        // 同时把 matchedFunds 直接挂在 json 上，便于 parse-logs 派生
         return out;
     }
 

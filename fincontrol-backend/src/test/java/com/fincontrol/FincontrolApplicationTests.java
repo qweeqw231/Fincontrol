@@ -27,7 +27,7 @@ import org.springframework.test.context.TestPropertySource;
 )
 @TestPropertySource(properties = {
     "spring.profiles.active=test",
-    "deepseek.api-key=test-placeholder-not-used"
+    "fincontrol.vision.api-key=placeholder-for-test-only"
 })
 class FincontrolApplicationTests {
 

@@ -19,69 +19,67 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 /**
- * DeepSeek API 客户端（OpenAI-兼容 /chat/completions）。
+ * 多模态视觉模型客户端（Phase 1a.5+）。
  *
- * <p>输入：图片文件路径 + system prompt（来自 prompt_versions.screenshot_parser v1.0）。
- * 输出：解析后的 JSON（与 [api-contract.md §2.2 响应 data](#) 兼容）。
+ * <p>替代旧版 DeepSeekClient（仅文本），由 MiniMax M3 系列原生多模态替代（图片 + 视频输入）。
+ * 实现按 OpenAI-compatible chat completions schema：基地址/模型名按 application.yml 配置，
+ * 消息体 message[{role,content:["text",{type:image_url,image_url:{url:data:image/...;base64,...}}]}]。
  *
- * <p>失败映射：[api-contract.md §11](#)：
+ * <p>失败映射：[api-contract.md §11](.. / phase-0/api-contract.md) 错误码 3001/3002 通用：
  * <ul>
- *   <li>DeepSeek 返回非 JSON  → BusinessException(3001)</li>
- *   <li>调用超时              → BusinessException(3002)</li>
- *   <li>解析后 0 只基金        → BusinessException(3003)（由 Service 层判定）</li>
+ *   <li>上游返回非 JSON → BusinessException(3001)
+ *   <li>调用超时       → BusinessException(3002)
+ *   <li>0 只基金       → BusinessException(3003)（由 Service 层判定）
  * </ul>
+ *
+ * <p>如果 minimax 实际接口 schema 与 OpenAI-compat 不同，本类在内部切换请求体拼接即可；
+ * 其它 12 个文件（Controller / DTO / Service / ErrorCode / 等）不受影响。
  */
 @Service
-public class DeepSeekClient {
+public class VisionModelClient {
 
-    private static final Logger log = LoggerFactory.getLogger(DeepSeekClient.class);
+    private static final Logger log = LoggerFactory.getLogger(VisionModelClient.class);
 
     private final OkHttpClient http;
     private final ObjectMapper objectMapper;
 
-    @Value("${deepseek.api-key}")
+    @Value("${fincontrol.vision.api-key}")
     private String apiKey;
 
-    @Value("${fincontrol.deepseek.base-url}")
-    private String baseUrl = "https://api.deepseek.com/v1";
+    @Value("${fincontrol.vision.base-url}")
+    private String baseUrl = "https://api.minimaxi.chat/v1";
 
-    @Value("${fincontrol.deepseek.model}")
-    private String model = "deepseek-flash";
+    @Value("${fincontrol.vision.model}")
+    private String model = "MiniMax-Text-01";
 
-    @Value("${fincontrol.deepseek.timeout-seconds:30}")
-    private int timeoutSeconds = 30;
+    @Value("${fincontrol.vision.timeout-seconds:60}")
+    private int timeoutSeconds = 60;
 
-    public DeepSeekClient() {
+    public VisionModelClient() {
         this(new OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(60, TimeUnit.SECONDS)
+                .writeTimeout(120, TimeUnit.SECONDS)
                 .build(),
                 new ObjectMapper());
     }
 
-    /** 单元测试可通过此构造器注入 OkHttp / ObjectMapper / 配置。 */
-    public DeepSeekClient(OkHttpClient http, ObjectMapper objectMapper) {
+    /** 单元测试可通过此构造器注入 OkHttp / ObjectMapper。 */
+    public VisionModelClient(OkHttpClient http, ObjectMapper objectMapper) {
         this.http = http;
         this.objectMapper = objectMapper;
     }
 
     /**
-     * 调用 DeepSeek 解析图片，返回 assistant 原始响应（Markdown + 嵌入 JSON）。
-     *
-     * @param imageFile    截图文件（jpg/png/webp）
-     * @param systemPrompt screenshot_parser v1.0 prompt 全文
-     * @param userMessage  user 侧描述（可空，默认 "请解析以下截图"）
-     * @return DeepSeek 模型 assistant 消息的原始文本
-     * @throws BusinessException 超时 → 3002；网络/响应异常 → 3001
+     * 调用视觉模型解析图片，返回 assistant 原始响应（Markdown + 嵌入 JSON）。
      */
     public String callRaw(File imageFile, String systemPrompt, String userMessage) {
         if (imageFile == null || !imageFile.isFile()) {
             throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "图片文件不存在");
         }
-        if (apiKey == null || apiKey.isBlank() || "REPLACE_ME_DEEPSEEK_API_KEY".equals(apiKey)) {
+        if (apiKey == null || apiKey.isBlank() || "REPLACE_ME_VISION_API_KEY".equals(apiKey)) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR,
-                    "DeepSeek API Key 未配置（请设置 DEEPSEEK_API_KEY 或 application-local.yml）");
+                    "视觉模型 API Key 未配置（请设置 fincontrol.vision.api-key 或 application-local.yml）");
         }
 
         // 1. 读图 → base64 dataURL
@@ -95,7 +93,7 @@ public class DeepSeekClient {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "读取图片失败: " + e.getMessage());
         }
 
-        // 2. 构造 OpenAI 兼容 messages + body
+        // 2. 构造 OpenAI-兼容 messages + body
         String body;
         try {
             List<Map<String, Object>> messages = new ArrayList<>();
@@ -129,42 +127,41 @@ public class DeepSeekClient {
         try (Response response = http.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String errBody = response.body() != null ? response.body().string() : "";
-                log.warn("DeepSeek 非 2xx: status={} body={}", response.code(), errBody);
-                throw new BusinessException(ErrorCode.DEEPSEEK_INVALID_JSON,
-                        "DeepSeek API HTTP " + response.code() + ": " + errBody);
+                log.warn("视觉模型非 2xx: status={} body={}", response.code(), errBody);
+                throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
+                        "视觉模型 HTTP " + response.code() + ": " + errBody);
             }
             String respBody = response.body() != null ? response.body().string() : "";
             JsonNode root = objectMapper.readTree(respBody);
             JsonNode choices = root.path("choices");
             if (!choices.isArray() || choices.size() == 0) {
-                throw new BusinessException(ErrorCode.DEEPSEEK_INVALID_JSON,
-                        "DeepSeek 响应无 choices: " + respBody);
+                throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
+                        "视觉模型响应无 choices: " + respBody);
             }
             String content = choices.get(0).path("message").path("content").asText("");
             if (content.isBlank()) {
-                throw new BusinessException(ErrorCode.DEEPSEEK_INVALID_JSON,
-                        "DeepSeek 响应 content 为空: " + respBody);
+                throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
+                        "视觉模型响应 content 为空: " + respBody);
             }
             return content;
         } catch (SocketTimeoutException ste) {
-            throw new BusinessException(ErrorCode.DEEPSEEK_TIMEOUT,
-                    "DeepSeek API 调用超时 (>" + timeoutSeconds + "s): " + ste.getMessage());
+            throw new BusinessException(ErrorCode.VISION_TIMEOUT,
+                    "视觉模型调用超时 (>" + timeoutSeconds + "s): " + ste.getMessage());
         } catch (JsonProcessingException jpe) {
-            throw new BusinessException(ErrorCode.DEEPSEEK_INVALID_JSON,
-                    "DeepSeek 上游响应解析失败: " + jpe.getMessage());
+            throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
+                    "视觉模型响应解析失败: " + jpe.getMessage());
         } catch (IOException e) {
-            throw new BusinessException(ErrorCode.DEEPSEEK_INVALID_JSON,
-                    "DeepSeek API 网络错误: " + e.getMessage());
+            throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
+                    "视觉模型网络错误: " + e.getMessage());
         }
     }
 
     /**
-     * 从 DeepSeek 原始响应中抽取首个 JSON 对象（模型同时输出 Markdown 表格 + JSON）。
-     * 1. 整段先按 JSON 解析；失败则扫描首层 { ... } 区间。
+     * 从视觉模型原始响应中抽取首个 JSON 对象（模型同时输出 Markdown 表格 + JSON）。
      */
     public JsonNode extractFirstJsonObject(String raw) {
         if (raw == null) {
-            throw new BusinessException(ErrorCode.DEEPSEEK_INVALID_JSON, "DeepSeek 响应为空");
+            throw new BusinessException(ErrorCode.VISION_INVALID_JSON, "视觉模型响应为空");
         }
         try {
             return objectMapper.readTree(raw);
@@ -190,7 +187,7 @@ public class DeepSeekClient {
             start = raw.indexOf('{', start + 1);
         }
         String truncated = raw.length() > 200 ? raw.substring(0, 200) + "..." : raw;
-        throw new BusinessException(ErrorCode.DEEPSEEK_INVALID_JSON,
-                "DeepSeek 响应无 JSON 对象: " + truncated);
+        throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
+                "视觉模型响应无 JSON 对象: " + truncated);
     }
 }

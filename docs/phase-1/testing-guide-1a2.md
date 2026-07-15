@@ -1,7 +1,7 @@
-# Phase 1a.2 测试教程：截图解析 API 链
+# Phase 1a.2 测试教程：截图解析 API 链（视觉模型 = minimax M3）
 
-> 本文档是 Phase 1a.2（4 个 API）的端到端测试手册。
-> 配套 commit：`feat(backend): complete Phase 1a.2 screenshot parse API chain` + 后续 `fix: ... 取消事务回滚 bug`。
+> 本文档是 Phase 1a.2（4 个 API）的端到端测试手册，**已切到 minimax 多模态视觉模型**。
+> 配套 commit：`feat(backend): complete Phase 1a.2 ...` + `fix(1a.2): cancel @Transactional ...`。
 >
 > **本教程强烈建议在 `cmd.exe` 中复制粘贴运行**——PowerShell 默认把 `curl` 别名为 `Invoke-WebRequest`，且 `^` 在 cmd 才是行续、在 PowerShell 是 `` ` ``。
 >
@@ -17,8 +17,9 @@
 
 | 字段 | 值 |
 |------|---|
-| 配套 commit | `feat(backend): complete Phase 1a.2 screenshot parse API chain` |
-| 自动化测试状态 | ✅ **6 / 6 PASS**（含 5 个 Mockito 业务测试 + 1 个 Spring 容器装配） |
+| 配套 commit | `feat(backend): complete Phase 1a.2 screenshot parse API chain` + `fix(1a.2): cancel @Transactional` |
+| 视觉模型后端 | **minimax M3 系列**（OpenAI-compatible chat completions，原生多模态） |
+| 自动化测试状态 | ✅ **6 / 6 PASS**（5 个 Mockito 业务测试 + 1 个 Spring 容器装配） |
 | 适用阶段 | Phase 1a.2 验收 |
 | 配套文档 | [api-contract.md §2 / §10 / §11](../phase-0/api-contract.md) |
 | 依赖运行后端 | ✅ 已具备（HikariCP + db UP 通过 `actuator/health` 验证） |
@@ -45,7 +46,7 @@
 | MySQL 已启动 | `mysqladmin -u root -p ping` | mysqld is alive |
 | 数据库已建库 + 7 张表 | `mysql -u root -p fincontrol -e "SHOW TABLES;"` | 输出 7 张表名（含 `chat_history`） |
 | prompt_versions 已预热 | `mysql -u root -p fincontrol -e "SELECT prompt_name, version FROM prompt_versions;"` | 至少出现 `screenshot_parser v1.0` |
-| 视觉模型 API Key 已配置 | `echo %VISION_API_KEY%`（或 `DEEPSEEK_API_KEY`，取决于当前实现） | 非占位字符串 |
+| minimax API Key 已配置 | `echo %VISION_API_KEY%` | 非占位字符串 |
 | 后端已启动 | `curl http://localhost:8080/actuator/health` | `{"status":"UP","components":{"db":{"status":"UP",...}}}` |
 | 任意一张 ≥1KB 的图片 | 文件管理器 / 截屏 | `.jpg` 或 `.png` |
 
@@ -63,8 +64,8 @@ mvn -B test -DfailIfNoTests=false
 **期望输出**：
 
 ```
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 13 s    in FincontrolApplicationTests
-Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1 s     in ScreenshotServiceTest
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11 s   in FincontrolApplicationTests
+Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1 s    in ScreenshotServiceTest
 [INFO] BUILD SUCCESS
 ```
 
@@ -72,9 +73,9 @@ Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1 s     in Scree
 
 | # | 测试方法 | 触发条件 | 验证 |
 |---|---------|---------|------|
-| 1 | `parse_validJson_returnsParsedAsset` | 上游模型返回合法 JSON | 路径到 ParsedAsset；写 2 行 chat_history（user + assistant） |
-| 2 | `parse_deepSeekNonJson_throwsBusinessException3001` | 上游模型返回 Markdown 非 JSON | 抛 3001；写 assistant 错误记录 |
-| 3 | `parse_deepSeekTimeout_throwsBusinessException3002` | 上游调用超时（mock 抛） | 抛 3002；写 assistant 错误记录 |
+| 1 | `parse_validJson_returnsParsedAsset` | 上游视觉模型返回合法 JSON | 路径到 ParsedAsset；写 2 行 chat_history（user + assistant） |
+| 2 | `parse_visionNonJson_throwsBusinessException3001` | 上游返回 Markdown 非 JSON | 抛 3001；写 assistant 错误记录 |
+| 3 | `parse_visionTimeout_throwsBusinessException3002` | 上游调用超时（mock 抛） | 抛 3002；写 assistant 错误记录 |
 | 4 | `parse_zeroFunds_throwsBusinessException3003` | 上游返回 categories[].funds 全部空 | 抛 3003（data 含 conversationId） |
 | 5 | `reparse_conversationNotFound_throwsBusinessException2001` | conversationId 找不到 user 消息 | 抛 2001 |
 
@@ -92,7 +93,7 @@ Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1 s     in Scree
 
 ```cmd
 cd C:\Users\lbc19\Desktop\Fincontrol\fincontrol-backend
-set DEEPSEEK_API_KEY=sk-your-real-key-here
+set VISION_API_KEY=eyJ-your-real-minimax-key-here
 mvn spring-boot:run
 ```
 
@@ -117,7 +118,7 @@ curl -sS -X POST http://localhost:8080/api/screenshot/upload -H "X-User-Id: 1" -
 
 **记下 `fileId`**，下一步要用。
 
-### 4.2 测试 1a.5：parse（调真实模型）
+### 4.2 测试 1a.5：parse（调真实视觉模型）
 
 把下面命令里的 `<fileId>` 替换为 4.1 拿到的 fileId，整段是**单行**：
 
@@ -134,7 +135,7 @@ curl -sS -X POST http://localhost:8080/api/screenshot/parse -H "Content-Type: ap
 **期望路径 B（视觉模型无法处理 → 3001/3002/3003）**：
 
 ```json
-{"code":3001,"message":"DeepSeek API HTTP 400: ... unknown variant image_url ...","data":null}
+{"code":3001,"message":"视觉模型 HTTP 401: ... unauthorized ...","data":null}
 ```
 
 > HTTP 状态码：3001 → 502 / 3002 → 504 / 3003 → 502
@@ -168,6 +169,7 @@ curl -sS "http://localhost:8080/api/parse-logs?limit=20" -H "X-User-Id: 1"
 ```
 
 注：
+
 - 路径 A 路径 → `status: imported`，`fundCount` 等于真实基金数
 - 路径 B 路径 → `status: parse_failed`，`fundCount: 0`，`confirmedAt: null`
 
@@ -194,7 +196,7 @@ id  conversation_id                   role       conversation_type     content_h
 ```
 id  conversation_id                   role       conversation_type     content_head                  created_at
 1   conv-<fileId>                     user       screenshot_parse      <fileId>                       2026-07-15 21:25:08
-2   conv-<fileId>                     assistant  screenshot_parse      [error code=3001] DeepSeek API HTTP 400 ... 2026-07-15 21:25:10
+2   conv-<fileId>                     assistant  screenshot_parse      [error code=3001] 视觉模型 HTTP 401...   2026-07-15 21:25:10
 ```
 
 > 注：history 中可能含 `reparse` 留下的额外行（每条 reparse 都写一条新 assistant 行）。
@@ -203,27 +205,34 @@ id  conversation_id                   role       conversation_type     content_h
 
 ## 5. 故障排查（FAQ）
 
-### Q1：parse 返回 `5001 Internal server error: ...DeepSeek API Key 未配置...`
+### Q1：parse 返回 `5001 Internal server error: ...视觉模型 API Key 未配置...`
 
-`deepseek.api-key` 仍是占位 `REPLACE_ME_DEEPSEEK_API_KEY`，未设置环境变量 / application-local.yml。
+`fincontrol.vision.api-key` 仍是占位 `REPLACE_ME_VISION_API_KEY`，未设置环境变量 / application-local.yml。
 
 修复：
 
-- 方式 A：设置环境变量 `set DEEPSEEK_API_KEY=sk-...` 后重跑 `mvn spring-boot:run`。
-- 方式 B：编辑 `src/main/resources/application-local.yml` 写入真实 key（该文件在 .gitignore 中）。
+- 方式 A：设置环境变量 `set VISION_API_KEY=eyJ-...` 后重跑 `mvn spring-boot:run`。
+- 方式 B：编辑 `src/main/resources/application-local.yml` 写入 `fincontrol.vision.api-key: <YOUR_KEY>`（该文件在 .gitignore 中）。
 
-### Q2：parse 返回 `3001 DeepSeek API HTTP 400 ... unknown variant image_url ...`
+### Q2：parse 返回 `3001 视觉模型 HTTP 401 / 403 / 4xx ...`
 
-**这是 DeepSeek API 的视觉限制**——`deepseek-flash`、`deepseek-chat`、`deepseek-reasoner` 等 DeepSeek 系列模型**全是纯文本模型**，不接受 `image_url` 多模态 part。DeepSeek 公司当前没有视觉模型（截至 2026/07）。
+- `401 / 403`：API Key 无效 / 无权限。检查：
+  1. minimax 平台订阅状态（TokenPlanPlus 应已激活）
+  2. Key 是否过期（重新生成 + 复制完整 token）
+  3. `application.yml` 中 `fincontrol.vision.base-url = https://api.minimaxi.chat/v1` 是否正确
+- `404`：路径错误，检查 minimax 平台最新文档的 base URL
+- `400`：请求体 schema 与 minimax 不匹配（理论上 OpenAI-compatible 应该 OK）。看后端 `视觉模型非 2xx: status=400 body=...` 日志
 
-**解决方向（需要您决策，见 §6）**：
+### Q3：parse 返回 `3003 0 只基金`
 
-- 选项 A：换模型为**支持多模态的 API 提供商**（OpenAI gpt-4o / 智谱 GLM-4V / Qwen-VL 等），并改 `DeepSeekClient`
-- 选项 B：换为 DeepSeek 文本补全，但让前端先 OCR / 人工粘文本，模型负责结构化
-- 选项 C：用 `deepseek-reasoner` 跑纯文本的 JSON 校对任务，跳过图像输入
-- 选项 D：暂不解决，**承认 1a.2 验收通过已存档的"代码逻辑层"**（mvn test 已 6/6），真实视觉模型对接推后到 1a.5/1a.6
+视觉模型看得见图片但没识别出基金行。可能原因：
 
-### Q3：parse-logs 列表为空
+- 图片分辨率太低或含表格不在模型训练分布
+- prompt 没引导模型输出结构化 JSON
+
+临时调试：换张更清晰的支付宝截图重试；或手动给 parse 重写的 prompt 加 `MUST output {"snapshot_date": "...", "categories": [...]}` 强调。
+
+### Q4：parse-logs 列表为空
 
 `GET /api/parse-logs` 派生于 chat_history。先确认至少调用过一次 `POST /api/screenshot/parse`（无论成功或失败），并且 4.5 的 SQL 能查到 `conversation_type='screenshot_parse'` 的行。
 
@@ -232,31 +241,35 @@ id  conversation_id                   role       conversation_type     content_h
 1. 后端是**本次 commit 之前**的版本，存在老版事务回滚 bug。拉一下代码 + 重启。
 2. MySQL 数据库连接到了其他 schema（不是 `fincontrol`）。`SELECT DATABASE();` 验证。
 
-### Q4：`More?` 提示
+### Q5：`More?` 提示
 
 教程里的 `^` 行续字符只在 PowerShell 有效（PowerShell 用 `` ` ``，cmd 没有）。去掉所有 `^` 把命令压成单行即可。
 
-### Q5：上传超大文件被 Spring 拒绝
+### Q6：上传超大文件被 Spring 拒绝
 
 `application.yml` 默认 20MB（`spring.servlet.multipart.max-file-size`）。在 `application-local.yml` 覆盖即可。
 
-### Q6：parse 失败后 reparse 提示 `2001 未找到 conversation...`
+### Q7：parse 失败后 reparse 提示 `2001 未找到 conversation...`
 
 如果**修复前**的旧版本遗留了 user 消息缺失，请重启后端（`Ctrl+C` + `mvn spring-boot:run`）。修复后的版本（去掉 `@Transactional`）已经保证 user 消息不被回滚。
 
-### Q7：image_url 不支持的并行方案
+### Q8：如何停 minimax 套娃式 minmax 错误
 
-如果您**不想**换 API 提供商，前端可以在用户上传截图后**自己用 Tesseract 做 OCR**，把识别出的 Markdown 文本 + 文件 path 一起作为 `user` 消息发给后端，模型只负责结构化（提取字段）。这要求新增 `POST /api/screenshot/parse` 的 body 接受 `{"ocrText":"...", "screenshotPath":"..."}` 字段——属于 1a.5 范畴。
+如果 model 名 `MiniMax-Text-01` 不被接受，看 minimax 平台的「模型广场 / API 文档」最新可用 ID 列表，常见可能包括 `abab-7-chat`、`MiniMax-Text-01`、`MiniMax-VL`、`MiniMax-Text-02` 等。把 `application.yml` 中 `fincontrol.vision.model` 改成对应 ID 即可。
+
+### Q9：每次启动都报 `视觉模型 API Key 未配置`
+
+可能是 `application-local.yml` 没被加载。Spring Boot 只有 `application-local.yml` 跟 `spring.profiles.active=local` 同时才会被读。检查 `application.yml` 第 9 行 `profiles.active: ${SPRING_PROFILES_ACTIVE:local}` 是不是被覆盖成了 `prod`。
 
 ---
 
-## 6. 待用户决策（不在本期修复范围内）
+## 6. 1a.5+ 视觉模型选型记录（已闭环）
 
-模型选型问题不属于 1a.2 验收项，但要进 1a.5/1a.6 之前必须确定。决策后我可以一键给改动：
-
-- **6.1** 决定要换哪家多模态 API（OpenAI / 智谱 / Qwen-VL / Doubao / 自建 OCR+DeepSeek）
-- **6.2** 决定 API key 走 `application-local.yml` 还是环境变量（建议环境变量，跟之前一致）
-- **6.3** 决定是否改 `api-contract.md` §2 的 `image_url` part 定义（OpenAI-compatible 就保持，OCR 方案就改成 OCR 字段）
+| 时间 | 决策 |
+|------|------|
+| Phase 0 | 锁定 DeepSeek（**错误假设**——DeepSeek 全部纯文本模型，无多模态） |
+| Phase 1a.2 | 写入 DeepSeek 文本 API 占位实现 → Phase 1a.5 真实调通时撞墙 HTTP 400 unknown variant |
+| Phase 1a.5 | **改用 minimax M3（TokenPlanPlus）**，原生多模态图像 + 视频。`VisionModelClient.java` 重构，按 OpenAI-compatible schema 实现 |
 
 ---
 
@@ -276,5 +289,5 @@ id  conversation_id                   role       conversation_type     content_h
 ## 8. 给后续验收者的提示
 
 - Phase 1a.3 快照入库 API 还在 `feature` 阶段之前；上传 + 解析 + 重新解析的数据可以在 Phase 1a.3 启动时复用。
-- 视觉能力跟具体模型强耦合。当切到 1a.5/1a.6 选模型时，记得同步更新 `DeepSeekClient.java` 内部的 message 构造（不同 API 用不同的多模态 schema）。
+- 视觉能力跟具体模型强耦合。如果 minimax 接口 schema 与 OpenAI-compatible 不一致（HTTP 4xx），仅需修改 `VisionModelClient.java` 内部 message 构造；其它 12 个文件（Controller / DTO / Service / ErrorCode / 等）不受影响。
 - 多模态真正落地还需要前端 1b.3 配合（截图上传后立刻贴图给后端，不要走 OCR 中转）。

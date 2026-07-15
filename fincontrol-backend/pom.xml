@@ -83,7 +83,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- OkHttp（Phase 1a DeepSeek API 集成使用，决策C）-->
+        <!-- OkHttp（Phase 1a.5 视觉模型客户端使用，minimax / OpenAI-兼容 chat completions）-->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
