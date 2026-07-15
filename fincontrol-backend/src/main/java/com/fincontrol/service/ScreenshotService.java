@@ -10,7 +10,6 @@ import com.fincontrol.mapper.ChatHistoryMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -54,7 +53,7 @@ public class ScreenshotService {
     // 1a.4 POST /api/screenshot/upload
     // ===================================================================
 
-    @Transactional
+    // 1a.4 upload 不写库，不需要事务管理。
     public ScreenshotUploadResponse upload(MultipartFile file) {
         try {
             FileStorageService.StoredFile stored = storage.store(file);
@@ -78,8 +77,12 @@ public class ScreenshotService {
      * 主入口。返回 ParsedAsset（成功）或抛 BusinessException（3001/3002/3003）。
      *
      * <p>写 chat_history 的两条记录（user + assistant）；失败时仅写 assistant 错误记录。
+     *
+     * <p>注意：本方法未使用 {@code @Transactional}——避免 parse 失败抛 3001/3002/3003 时把
+     * 已写入的 user 消息也回滚（之前导致 reparse 查不到 user 消息误抛 2001，parse-logs 永远空）。
+     * chat_history 单条 insert 走 MyBatis-Plus 默认 auto-commit，足够稳；1a.3 三表事务时由
+     * 业务上下文统一管理。
      */
-    @Transactional
     public ParsedAsset parse(ScreenshotParseRequest req) {
         if (req.getFileId() == null || req.getFileId().isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileId 必填");
@@ -150,7 +153,8 @@ public class ScreenshotService {
     // 1a.6 POST /api/screenshot/reparse（[P0-4.4](#)）
     // ===================================================================
 
-    @Transactional
+    // 1a.6 reparse 同 parse，不加 @Transactional，避免 reparse 失败抛 3001/3002/3003 时
+    // 把已写入的 user 消息及上一轮成功的 assistant 记录也回滚。
     public ParsedAsset reparse(ScreenshotReparseRequest req) {
         if (req.getConversationId() == null || req.getConversationId().isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "conversationId 必填");
