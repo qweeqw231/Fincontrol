@@ -18,9 +18,10 @@
 
 | 字段 | 值 |
 |------|---|
-| 文档版本 | v0.1（草案，待共识） |
+| 文档版本 | v0.2（1a.1 + 1a.2 已闭环，更新进度跟踪） |
 | 编写日期 | 2026-07-15 |
-| 配套文档 | acceptance-criteria.md / checklists/ / api-contract.md / decisions.md |
+| 最近更新 | 2026-07-16（1a.2 完整闭环：minimax M3 真实路径 A + 5 类错误码契约 + R1/R2 修复） |
+| 配套文档 | acceptance-criteria.md / checklists/ / api-contract.md / decisions.md / test-records/manual-tests/2026-07-16_phase1a-phase1a2-acceptance.md |
 | 适用阶段 | Phase 1a（后端）+ Phase 1b（前端）|
 
 ---
@@ -52,11 +53,13 @@
 - Swagger UI（`/swagger-ui.html`）首屏可加载
 
 **验收目标（DoD）**：
-- [ ] `GET /actuator/health` 返回 `UP`
-- [ ] 数据库 7 张表全部建好（`asset_raw` / `asset_snapshot` / `fund_category_map` / `chat_history` / `user_config` / `prompt_versions` / `operation_log`）
-- [ ] `pom.xml` 关键依赖完整（Spring Web、MyBatis-Plus、MySQL 驱动、Swagger、Validation、Actuator、JDBC）
+- [x] `GET /actuator/health` 返回 `UP` — 完成日期：2026-07-15
+- [x] 数据库 7 张表全部建好（`asset_raw` / `asset_snapshot` / `fund_category_map` / `chat_history` / `user_config` / `prompt_versions` / `operation_log`）— 完成日期：2026-07-15
+- [x] `pom.xml` 关键依赖完整（Spring Web、MyBatis-Plus、MySQL 驱动、Swagger、Validation、Actuator、JDBC）— 完成日期：2026-07-15
 
 **前置依赖**：Phase 0 完成（已具备）。
+
+**实际进度**：✅ **2026-07-15 完整闭环**（mvn test 1/1 PASS，Spring 容器 4.431s 启动，H2 Pool OK）。详细报告见 `docs/test-records/manual-tests/2026-07-16_phase1a-phase1a2-acceptance.md §3`。
 
 ---
 
@@ -76,14 +79,18 @@
 - parse_logs 列表返回（status='parse_failed' 可见）
 
 **验收目标（DoD）**：
-- [ ] 上传一张支付宝截图能拿到返回的 conversationId
-- [ ] 解析返回正确 JSON（参照 api-contract.md 2.2）
-- [ ] 人为构造一个 0 只基金返回，验证错误码 3001
-- [ ] 人为让 DeepSeek 返回非 JSON，验证错误码 3002
-- [ ] chat_history 中查到 `conversation_type='screenshot_parse'` 的失败行
-- [ ] reparse 用同一 conversationId 重新走通
+- [x] 上传一张支付宝截图能拿到返回的 conversationId — 完成日期：2026-07-16
+- [x] 解析返回正确 JSON（参照 api-contract.md 2.2）— 完成日期：2026-07-16
+- [x] 人为构造一个 0 只基金返回，验证错误码 3001 — 完成日期：2026-07-16
+- [x] 人为让 DeepSeek 返回非 JSON，验证错误码 3002 — 完成日期：2026-07-16
+- [x] chat_history 中查到 `conversation_type='screenshot_parse'` 的失败行 — 完成日期：2026-07-16
+- [x] reparse 用同一 conversationId 重新走通 — 完成日期：2026-07-16
 
 **前置依赖**：1a.1 通过。
+
+**实际进度**：✅ **2026-07-16 完整闭环**（minimax M3 真实调用 code:0 + 7 只基金 + 6 大类，mvn test 7/7 PASS，5 类错误码契约全覆盖）。详细报告见 `docs/test-records/manual-tests/2026-07-16_phase1a-phase1a2-acceptance.md §4`。
+
+**重要决策（1a.5 期间）**：发现 DeepSeek 是纯文本模型（无 `image_url` 多模态支持），已切换到 minimax M3（TokenPlanPlus）作为视觉模型后端——这是 Phase 0 决策的反转，详见 `docs/test-records/manual-tests/2026-07-16_phase1a-phase1a2-acceptance.md §2.2`。
 
 ---
 
@@ -304,10 +311,10 @@
 
 ## 4. 子阶段总览表
 
-| # | 子阶段 | 预估 | 关联 checklist | 关联 P0 | 前置 |
-|---|--------|------|---------------|---------|------|
-| 1a.1 | 后端基础设施确认 | 0.5d | 1a.1–1a.3 | — | — |
-| 1a.2 | 截图解析 API 链 | 0.5–1d | 1a.4–1a.6, 1a.23 | P0-1.4, P0-4.4 | 1a.1 |
+| # | 子阶段 | 预估 | 状态 | 完成日期 | 关联 checklist | 关联 P0 | 前置 |
+|---|--------|------|------|----------|---------------|---------|------|
+| 1a.1 | 后端基础设施确认 | 0.5d | ✅ 完成 | 2026-07-15 | 1a.1–1a.3 | — | — |
+| 1a.2 | 截图解析 API 链 | 0.5–1d | ✅ 完成 | 2026-07-16 | 1a.4–1a.6, 1a.23 | P0-1.4, P0-4.4 | 1a.1 |
 | 1a.3 | 快照确认与事务 | 1d | 1a.7–1a.8 | P0-1.2, P0-1.3, P0-1.5, P0-3.2, P0-3.3, P0-3.4 | 1a.2 |
 | 1a.4 | 快照查询 + 首页辅助 | 0.5d | 1a.9–1a.15 | P0-1.1, P0-4.1, P0-4.3 | 1a.3 |
 | 1a.5 | 大类映射 API | 0.25d | 1a.16–1a.17 | P0-1.3 | 1a.3 |
@@ -361,10 +368,10 @@
 
 > 以下为拆分方案中**需要用户确认**的判断，可一次性确认或在子阶段推进中按需调整：
 
-- [ ] **Q1**：1a.6（AI 顾问 API）是否与 1a.4（快照查询）并行？当前文档建议"可并行"，但需要两人/两上下文分支同时维护。
-- [ ] **Q2**：1b.3（数据管理页）拆为 1 天 / 1.5 天，预估偏紧。是否允许向后顺延到 1.5 天甚至 2 天？
-- [ ] **Q3**：是否需要在 1a.2（解析 API）和 1a.3（确认事务）之间再插一段"DeepSeek 客户端抽象 + 单测"（[P0-3.5] few-shot 提前入仓）？
-- [ ] **Q4**：Phase 1b 启动条件：是否以"1a 全 24 项 + 8 P0 + 2 冒烟"为硬门槛，还是以"冒烟 1 通过"为门槛（缩短前端等待时间，但前端需更多 mock）？
+- [x] **Q1** ✅ 已决策（2026-07-16）：1a.6（AI 顾问 API）是否与 1a.4（快照查询）并行？— **决定并行**（独立模块可同步启动，1a.6 前置 1a.1，与 1a.4 无依赖）。详见 1a.6 段。
+- [ ] **Q2**：1b.3（数据管理页）拆为 1 天 / 1.5 天，预估偏紧。是否允许向后顺延到 1.5 天甚至 2 天？— **未决**（等 1b.1 + 1b.2 完成再评估）
+- [x] **Q3** ✅ 已决策（2026-07-16）：是否需要在 1a.2 和 1a.3 之间插入"DeepSeek 客户端抽象 + 单测"？— **决定不插**（1a.2 已将 minimax 客户端做成独立 `VisionModelClient` 类，mock 5 类错误路径覆盖 5/5 PASS，已满足单元测试需求）。详见 1a.2 段进度条。
+- [x] **Q4** ✅ 已决策（2026-07-16）：Phase 1b 启动条件？— **决定以"1a 全 24 项 API + 8 项 P0 + 2 条冒烟"为硬门槛**（不取巧；前端 mock 模式可独立开发骨架与首页）。
 
 ---
 
