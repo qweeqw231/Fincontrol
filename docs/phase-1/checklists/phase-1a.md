@@ -9,7 +9,7 @@
 
 ### 后端项目骨架（4 项）
 
-- [ ] **1a.1** Spring Boot 项目可启动 — 完成日期：____
+- [x] **1a.1** Spring Boot 项目可启动 — 完成日期：2026-07-15（`mvn test` BUILD SUCCESS，Spring 容器 4.431s 启动，1 个测试用例通过）
 - [ ] **1a.2** MySQL 连接池配置正确（HikariCP pool size=10）— 完成日期：____
 - [ ] **1a.3** `docs/phase-0/db-schema.sql` 运行建表无错误 — 完成日期：____
 - [ ] **1a.24** 单元测试覆盖率 ≥ 60% — 完成日期：____
