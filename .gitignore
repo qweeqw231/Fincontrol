@@ -1,0 +1,132 @@
+# ============================================
+# FinControl Workspace .gitignore
+# ============================================
+# 本文件为工作区根级忽略规则，覆盖 IDE、操作系统、
+# 以及子仓库可能泄漏到工作区的构建产物。
+# 各子仓库（fincontrol-backend/、fincontrol-frontend/）
+# 应自行维护更细粒度的 .gitignore。
+
+# ------------------------------------------
+# IDE
+# ------------------------------------------
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+nbproject/private/
+nbbuild/
+nbdist/
+.nb-gradle/
+
+# ------------------------------------------
+# 操作系统
+# ------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+ehthumbs.db
+ehthumbs_vista.db
+.Trashes
+.Spotlight-V100
+.fseventsd
+.AppleDouble
+.LSOverride
+
+# ------------------------------------------
+# 子仓库构建产物兜底
+# （子仓库自有 .gitignore 为主，这里只兜底）
+# ------------------------------------------
+
+# Java / Maven / Gradle
+**/target/
+**/.gradle/
+**/build/
+**/out/
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+hs_err_pid*
+replay_pid*
+
+# Node / npm / yarn / pnpm
+**/node_modules/
+**/dist/
+**/.next/
+**/.nuxt/
+**/.vuepress/dist/
+**/coverage/
+.npm
+.yarn-integrity
+.pnpm-store/
+*.tgz
+
+# React/Vite 产物
+**/.vite/
+**/*.local
+
+# ------------------------------------------
+# 日志与临时文件
+# ------------------------------------------
+*.log
+*.log.*
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# ------------------------------------------
+# 环境变量与密钥
+# ------------------------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+secrets.yml
+
+# ------------------------------------------
+# 数据库与上传文件
+# ------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+**/uploads/
+**/tmp/
+
+# ------------------------------------------
+# 测试产物
+# ------------------------------------------
+**/test-output/
+**/reports/
+**/.pytest_cache/
+**/coverage/
+**/.nyc_output/
+
+# ------------------------------------------
+# 文档与备份
+# ------------------------------------------
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+*.orig
+*.rej
+
+# ------------------------------------------
+# 工作区特殊
+# ------------------------------------------
+# 评审过程中产生的临时草稿（评审结束后应清理）
+drafts/
+scratch/
