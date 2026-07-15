@@ -131,7 +131,7 @@ fincontrol:
   #   3. 本占位符（REPLACE_ME_VISION_API_KEY，启动时会抛 5001 强制填）
   vision:
     base-url: https://api.minimaxi.com/v1
-    model: MiniMax-M3-512k
+    model: MiniMax-M3
     timeout-seconds: 60
     api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
 
