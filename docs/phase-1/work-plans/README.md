@@ -24,11 +24,12 @@ docs/test-records/manual-tests/2026-07-16_phase1a4-acceptance-plan.md
 ## 生命周期
 
 ```text
-PLANNED → IN_PROGRESS → BUSINESS_PASS → PRODUCTION_PENDING → PASS
-                         └──────────────→ BLOCKED
+PLANNED → GATE0_PASS → IN_PROGRESS → BUSINESS_PASS → PRODUCTION_PENDING → PASS
+                                      └──────────────→ BLOCKED
 ```
 
-- `PLANNED`：范围和 DoD 已冻结，尚未编码；
+- `PLANNED`：范围和 DoD 已冻结，尚未完成 Gate 0；
+- `GATE0_PASS`：契约、数据来源、测试 ID 和替身边界已经冻结，可以开始编码；
 - `IN_PROGRESS`：正在实现；
 - `BUSINESS_PASS`：业务层测试通过，但真实数据库或端到端仍未验收；
 - `PRODUCTION_PENDING`：已明确遗留的生产验证项；

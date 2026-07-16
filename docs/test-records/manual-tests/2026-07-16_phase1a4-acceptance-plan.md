@@ -2,12 +2,14 @@
 
 **计划日期**：2026-07-16
 **子阶段**：整体 Phase 1a.4  〔快照查询 + 首页辅助 API〕
-**状态**：`NOT_RUN`
+**状态**：`NOT_RUN` 〔Gate 0：`PASS`；业务编码尚未开始〕
 **配套工作计划**：[`2026-07-16_phase1a4-work-plan.md`](../../phase-1/work-plans/2026-07-16_phase1a4-work-plan.md)
 **API 契约**：[`api-contract.md §3 / §9`](../../phase-0/api-contract.md)
 **总账**：[`phase-1a.md`](../../phase-1/checklists/phase-1a.md)
 
 > 这是编码前冻结的验收计划。测试 ID、测试目标、fixture 和测试替身先定义，开发过程中不得为了让测试通过而无记录地改变它们。完成测试后，在本文档追加“实际结果”和“遗留问题”，或创建同编号的 acceptance-report 并保留本文件。
+
+> **Gate 0 决策**：`operations/recent` 在 Phase 1 表示“解析活动”，数据源是当前 user 的 `chat_history` assistant 消息；summary 使用“解析 N 只基金”或“截图解析失败”，不表示确认入库成功。`operation_log` 留待后续阶段。
 
 ---
 
@@ -19,7 +21,7 @@
 - latest/detail 的分类汇总和基金 `profit` 字段；
 - 指定日期与历史排序；
 - 余额类过滤规则；
-- operations/recent 的字段、来源、排序和数量限制；
+- operations/recent 的字段、来源、排序和数量限制；Phase 1 来源冻结为 `chat_history` 解析活动；
 - cumulative-return 的 Phase 1 占位结构；
 - 空数据、用户隔离和基础参数边界。
 
@@ -59,11 +61,11 @@
 | A4-S04 | 指定日期快照 | Service + Controller | 两个日期、不同用户 fixture | 只返回指定 user/date 的数据，不能串用户或串日期 |
 | A4-S05 | 历史快照列表 | Service + Controller | 多个日期、重复分类 | 日期去重、按日期倒序，分页字段符合契约 |
 | A4-S06 | 余额查询 | Service + Controller | 余额类/非余额类 + latest true/false | 只累加 `category='余额类' AND is_latest=true` |
-| A4-S07 | 最近操作 | Service + Controller | operation_log 或已确认数据 fixture | 数据来源明确，按约定时间倒序，limit/pageSize 生效，空数据稳定 |
+| A4-S07 | 最近解析活动 | Service + Controller | 当前 user 的 chat_history assistant fixture | `operationType=screenshot_parse`，按 created_at/id 倒序，summary 为解析活动语义，limit=5 默认生效，空数据稳定 |
 | A4-S08 | 累计收益率占位 | Controller | Service/配置 mock | 返回 `{ available: false }`，HTTP 成功，不执行未实现算法 |
 | A4-S09 | 参数和用户隔离 | Controller | 缺 user、非法 date、page/pageSize 边界 | 使用统一 ApiResponse 和错误码；越权/跨 user 数据不可见 |
 
-> `A4-S07` 在实现前必须先确认 `operation_log` 的实际 schema 和项目约定；在数据来源未确定前，不允许用任意表临时拼接并宣称通过。
+> `A4-S07` 的数据来源已在 Gate 0 冻结为当前 user 的 `chat_history` 解析活动；不使用 `operation_log`，也不把解析活动宣称为确认入库。
 
 ---
 
@@ -137,7 +139,16 @@ docs/test-records/api-test-output/2026-07-16_phase1a4_<case-id>.json
 | A4-S08 | `NOT_RUN` | — | `PLANNED` |
 | A4-S09 | `NOT_RUN` | — | `PLANNED` |
 
-**当前验收结论**：`NOT_RUN`  〔编码尚未开始〕
+**当前验收结论**：`NOT_RUN` 〔Gate 0 已通过；Slice A 业务编码尚未开始〕
+
+### Gate 0 实际证据
+
+- API 契约、字段来源、空数据和分页规则：✅ 已核对并冻结；
+- operations/recent：✅ 冻结为当前 user 的 chat_history 解析活动，不宣称已入库；
+- user 隔离准备：✅ `ChatHistoryMapper` 增加 user_id 条件，`ParseLogController` 接入 `X-User-Id` 默认值 1；
+- 全量后端测试：✅ 首次运行暴露旧 `FincontrolApplicationTests` 只 mock `ChatHistoryMapper` 的装配回归；补齐其余 3 个 Mapper mock 后复验为 `Tests run: 16, Failures: 0, Errors: 0`；
+- 1a.3 回归验证：✅ `SnapShotConfirmServiceIT` 6/6 PASS；
+- 业务查询用例 A4-S01–S09：`NOT_RUN`，等待 Slice A 开始。
 
 ---
 
@@ -146,7 +157,8 @@ docs/test-records/api-test-output/2026-07-16_phase1a4_<case-id>.json
 1. 1a.3 真实 MySQL upsert 方言未验收，按计划不阻塞 1a.4；
 2. `prompt_versions` 在 H2 测试 schema 中缺失的 warning 未处理；
 3. 测试日期 fixture 应避免长期写死；
-4. Phase 1a.4 完成后，需把业务层结果与生产/前端结果分层记录。
+4. A4-S09 必须补充并验证 `ChatHistoryMapper`/解析日志查询的 user_id 隔离；代码入口已准备，验收尚未执行；
+5. Phase 1a.4 完成后，需把业务层结果与生产/前端结果分层记录。
 
 ---
 
@@ -155,3 +167,5 @@ docs/test-records/api-test-output/2026-07-16_phase1a4_<case-id>.json
 | 日期 | 变更 | 原因 |
 |---|---|---|
 | 2026-07-16 | 创建 A4-S01–A4-S09 验收计划，固定测试层级和替身边界 | 吸取 1a.3 测试目标漂移教训 |
+| 2026-07-16 | Gate 0 冻结 operations/recent 为 chat_history 解析活动 | operation_log 暂无 Phase 1 写入链，避免把解析误报为入库 |
+| 2026-07-16 | 修复全量测试上下文的 Mapper mock 缺口并复验 16/16 | 1a.3 新增 Mapper 后，基础容器测试的禁用 MyBatis 配置需要 mock 全部 Mapper |

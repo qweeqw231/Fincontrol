@@ -982,7 +982,7 @@ GET /api/asset/operations/recent
       {
         "operationType": "screenshot_parse",
         "operationDate": "2026-07-09T20:30:00",
-        "summary": "解析 18 只基金，已入库",
+        "summary": "解析 18 只基金",
         "snapshotDate": "2026-07-09"
       },
       {
@@ -998,8 +998,9 @@ GET /api/asset/operations/recent
 
 **说明**：
 
-- Phase 1 临时方案：从 `chat_history` 查最近 5 条 `conversation_type=screenshot_parse`
-- Phase 2 `operation_log` 上线后改为跨表查询
+- Phase 1 临时方案：从当前 user 的 `chat_history` 查最近 5 条 `conversation_type=screenshot_parse` 的 assistant 消息；此处表示“解析活动”，不表示确认入库已经成功。
+- Phase 1 的 `operationType` 固定为 `screenshot_parse`，`operationDate` 来自 `chat_history.created_at`，summary 由解析结果派生。
+- Phase 2 `operation_log` 上线后改为跨表查询，届时才展示月度校正等真实操作记录和确认入库状态。
 
 ### 9.3 获取累计收益率（Phase 3 启用）
 

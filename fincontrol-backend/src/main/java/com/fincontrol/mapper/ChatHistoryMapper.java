@@ -24,12 +24,15 @@ public interface ChatHistoryMapper extends BaseMapper<ChatHistory> {
     List<ChatHistory> selectByConversationIdOrderByCreatedAt(@Param("conversationId") String conversationId);
 
     /**
-     * 列出某个 type 下所有 assistant 消息（用于 parse-logs），按 created_at desc + id desc。
+     * 列出某个 user + type 下所有 assistant 消息（用于 parse-logs / operations/recent），按 created_at desc + id desc。
      * Phase 1 临时方案：operation_log 上线后改为跨表查询（[api-contract.md §9.2](#)）。
      */
     @Select("SELECT id, user_id, conversation_id, role, content, created_at, conversation_type " +
             "FROM chat_history " +
-            "WHERE conversation_type = #{conversationType} AND role = 'assistant' " +
+            "WHERE user_id = #{userId} " +
+            "AND conversation_type = #{conversationType} AND role = 'assistant' " +
             "ORDER BY created_at DESC, id DESC")
-    List<ChatHistory> selectAssistantByType(@Param("conversationType") String conversationType);
+    List<ChatHistory> selectAssistantByType(
+            @Param("userId") Long userId,
+            @Param("conversationType") String conversationType);
 }

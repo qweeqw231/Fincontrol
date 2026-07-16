@@ -31,9 +31,9 @@ public class ParseLogQueryService {
         this.objectMapper = objectMapper;
     }
 
-    public List<ParseLogItem> listLatest(int limit) {
+    public List<ParseLogItem> listLatest(Long userId, int limit) {
         List<ChatHistory> rows = chatHistoryMapper.selectAssistantByType(
-                ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
+                userId, ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
         List<ParseLogItem> items = new ArrayList<>();
         for (int i = 0; i < rows.size() && i < limit; i++) {
             items.add(toItem(rows.get(i)));

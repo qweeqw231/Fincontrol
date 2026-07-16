@@ -4,6 +4,7 @@ import com.fincontrol.common.ApiResponse;
 import com.fincontrol.dto.screenshot.ParseLogItem;
 import com.fincontrol.service.ParseLogQueryService;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,9 +30,11 @@ public class ParseLogController {
     }
 
     @GetMapping
-    public ApiResponse<Map<String, Object>> list(@RequestParam(defaultValue = "50") int limit) {
+    public ApiResponse<Map<String, Object>> list(
+            @RequestHeader(name = "X-User-Id", defaultValue = "1") Long userId,
+            @RequestParam(defaultValue = "50") int limit) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
-        List<ParseLogItem> items = parseLogQueryService.listLatest(safeLimit);
+        List<ParseLogItem> items = parseLogQueryService.listLatest(userId, safeLimit);
         Map<String, Object> data = new HashMap<>();
         data.put("items", items);
         data.put("total", items.size());

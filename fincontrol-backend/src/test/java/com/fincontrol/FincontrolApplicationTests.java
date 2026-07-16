@@ -1,6 +1,9 @@
 package com.fincontrol;
 
+import com.fincontrol.mapper.AssetRawMapper;
+import com.fincontrol.mapper.AssetSnapshotMapper;
 import com.fincontrol.mapper.ChatHistoryMapper;
+import com.fincontrol.mapper.FundCategoryMapMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -31,9 +34,18 @@ import org.springframework.test.context.TestPropertySource;
 })
 class FincontrolApplicationTests {
 
-    /** 替换 MyBatis-Plus mapper，避免 SqlSessionFactory 注入失败 */
+    /** 替换所有 MyBatis-Plus mapper，避免禁用 MybatisPlusAutoConfiguration 后注入失败 */
+    @MockBean
+    private AssetRawMapper assetRawMapper;
+
+    @MockBean
+    private AssetSnapshotMapper assetSnapshotMapper;
+
     @MockBean
     private ChatHistoryMapper chatHistoryMapper;
+
+    @MockBean
+    private FundCategoryMapMapper fundCategoryMapMapper;
 
     /** 替换 PromptLoaderService 依赖的 JdbcTemplate */
     @MockBean

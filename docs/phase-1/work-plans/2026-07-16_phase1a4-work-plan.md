@@ -3,13 +3,24 @@
 **计划日期**：2026-07-16
 **子阶段**：整体 Phase 1a.4  〔不是 1a.2 中的 checklist 1a.4 上传接口〕
 **负责人**：刘博丞
-**状态**：`PLANNED`
+**状态**：`GATE0_PASS`
 **配套验收计划**：[`2026-07-16_phase1a4-acceptance-plan.md`](../../test-records/manual-tests/2026-07-16_phase1a4-acceptance-plan.md)
 **总进度清单**：[`phase-1a.md`](../checklists/phase-1a.md)
 **API 契约**：[`api-contract.md §3 / §9`](../../phase-0/api-contract.md)
 **前置报告**：[`1a.3 补充验收报告`](../../test-records/manual-tests/2026-07-16_phase1a3-supplemental-acceptance.md)
 
 > 本计划先冻结工作范围和验收边界，再开始编码。生产 MySQL upsert 与完整前后端冒烟按当前用户计划留到前端完成后统一验证，不在本轮偷偷改变验收目标。
+
+## Gate 0 冻结结果（2026-07-16）
+
+- latest/历史/余额的字段、筛选条件和分页默认值已按 `api-contract.md` 冻结；
+- latest/detail 的 `profit` 唯一来自 `asset_raw`，分类汇总来自 `asset_snapshot`；
+- `operations/recent` 冻结为 Phase 1 的**解析活动**：读取当前 user 的 `chat_history` assistant 消息，`operationType=screenshot_parse`，summary 使用“解析 N 只基金/截图解析失败”，不宣称“已入库”；
+- `operation_log` 虽已存在于 MySQL schema，但没有 Phase 1 写入链，留到 Phase 2/统一生产验收；
+- 所有查询必须带 user 过滤；解析日志查询的 `ChatHistoryMapper` 已补齐 `user_id` 条件和 `X-User-Id` 默认入口；
+- 测试层级冻结为 Service mock、Controller MockMvc、必要的只读 H2；MySQL 和前端 E2E 保持 `PRODUCTION_PENDING`。
+
+Gate 0 结论：`PASS`。可以开始 Slice A；本阶段验收计划仍为 `NOT_RUN`，因为业务编码尚未开始。
 
 ---
 
@@ -36,7 +47,7 @@
 | `GET /api/snapshot/{date}` | 指定日期快照 |
 | `GET /api/snapshot/history` | 历史快照日期列表，按日期倒序 |
 | `GET /api/asset/balance` | `余额类` 且 `is_latest=true` 的余额汇总 |
-| `GET /api/asset/operations/recent` | 最近操作记录 |
+| `GET /api/asset/operations/recent` | 最近解析活动（Phase 1 来自 chat_history，不宣称已入库） |
 | `GET /api/asset/cumulative-return` | Phase 1 返回 `{ available: false }`，不报 500 |
 
 ### 2.2 本阶段非目标
@@ -66,7 +77,8 @@
 - 必要的 Mapper SELECT 方法；
 - Mapper mock 的 Service 测试；
 - Controller contract/MockMvc 测试；
-- operations/recent 的明确数据来源（优先确认 `operation_log`，不能凭空从其他表推断）。
+- operations/recent 复用 `ParseLogQueryService` 的 chat_history 派生逻辑；在 Phase 1 只表示解析活动，不能写成“已入库”；
+- `ChatHistoryMapper` 查询已补齐 `user_id` 条件，Slice C 仍需通过 A4-S09 验证用户隔离。
 
 ---
 
@@ -102,7 +114,7 @@
 任务：
 
 1. balance 只统计 `category='余额类' AND is_latest=true`；
-2. 确认 operations/recent 的表、排序和数量限制；
+2. 复用 `ParseLogQueryService` 生成 operations/recent 的解析活动摘要，排序按 `created_at DESC, id DESC`，默认 limit=5；
 3. cumulative-return 返回固定的 Phase 1 占位结构；
 4. 完成 `A4-S06`–`A4-S09`。
 
@@ -148,7 +160,7 @@
 | 风险 | 处理 |
 |---|---|
 | latest/detail 字段来源不清 | 先以 `api-contract.md` 冻结，profit 必须追溯到 raw |
-| operations/recent 没有清晰表来源 | 在 Slice C 前先检查 `operation_log` schema 和 mapper，不猜 |
+| operations/recent 没有清晰表来源 | Gate 0 已冻结 Phase 1 使用 chat_history；operation_log 留待后续 |
 | H2/MySQL SELECT 差异 | 先用标准 SELECT，必要时做最小 SQL 复现 |
 | 1a.3 upsert 方言再次干扰 | 记录为外部 pending，不把它混入 1a.4 读路径 |
 | 空数据导致 NPE | A4-S01 固定为第一批测试 |
