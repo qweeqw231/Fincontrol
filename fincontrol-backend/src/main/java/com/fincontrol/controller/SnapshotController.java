@@ -10,6 +10,8 @@ import com.fincontrol.service.SnapShotConfirmService;
 import com.fincontrol.service.SnapshotQueryService;
 import com.fincontrol.service.SnapshotRollbackService;
 import com.fincontrol.service.SnapshotRollbackService.RollbackResult;
+import com.fincontrol.common.BusinessException;
+import com.fincontrol.common.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -98,6 +100,9 @@ public class SnapshotController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int pageSize,
             @RequestParam(defaultValue = "true") boolean includeBalance) {
+        if (page < 1) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "page 必须 >= 1");
+        }
         log.info("1a.4 history: userId={} from={} to={} page={} pageSize={} includeBalance={}",
                 userId, from, to, page, pageSize, includeBalance);
         return ApiResponse.success(snapshotQueryService.getHistory(
