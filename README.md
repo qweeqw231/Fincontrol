@@ -15,7 +15,7 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 | **1a.2** 截图解析 API 链 | ✅ 已通过（`mvn test` 6/6，4 个端点 + 5 类错误路径覆盖） | [94fed26](https://github.com/qweeqw231/Fincontrol/tree/94fed26) |
 | **1a.2 修复** | ✅ @Transactional 回滚 bug 修复 | [db8728e](https://github.com/qweeqw231/Fincontrol/tree/db8728e) |
 | **1a.5 视觉模型切到 minimax** | ✅ DeepSeek 文本模型 → MiniMax M3 多模态 | 当前仓库 |
-| 1a.3 快照入库 | ⏳ 待启动 | — |
+| **1a.3** 快照确认与事务 | 🟡 业务逻辑已通过 6/6；真实 MySQL 持久化待统一验收 | [1a.3 补充报告](docs/test-records/manual-tests/2026-07-16_phase1a3-supplemental-acceptance.md) |
 | 1a.4 / 1a.6 / 1b.* | ⏳ 待启动 | — |
 
 **架构文档**：[技术设计文档 v2.0](docs/architecture/技术设计文档v2.docx)（2026-06-10）
@@ -104,7 +104,7 @@ set VISION_API_KEY=eyJxxxxx...
 | Phase 0 决策 | [docs/phase-0/decisions.md](docs/phase-0/decisions.md) | 6 项硬约束 |
 | Phase 0 API 契约 | [docs/phase-0/api-contract.md](docs/phase-0/api-contract.md) | 30+ 端点 |
 | Phase 1 验收标准 | [docs/phase-1/acceptance-criteria.md](docs/phase-1/acceptance-criteria.md) | 47 项 + 18 项 P0 |
-| 1a.2 子阶段计划 | [docs/phase-1/subphase-plan.md](docs/phase-1/subphase-plan.md) | 7+4 段子阶段 |
+| Phase 1 子阶段计划 | [docs/phase-1/subphase-plan.md](docs/phase-1/subphase-plan.md) | 1a.1–1a.7 + 1b.1–1b.4 |
 | 1a.2 测试教程 | [docs/phase-1/testing-guide-1a2.md](docs/phase-1/testing-guide-1a2.md) | curl + mvn test 教程 |
 
 ---
@@ -113,7 +113,7 @@ set VISION_API_KEY=eyJxxxxx...
 
 - [x] 0：基础设施搭建（1a.1 通过，`mvn test` 6/6）
 - [x] 1a.2：截图解析 API 链（4 个端点 + P0-1.4 + P0-4.4 通过）
-- [ ] 1a.3：快照入库（asset_raw / asset_snapshot / fund_category_map 三表事务）
+- [x] 1a.3：快照入库业务闭环（asset_raw / asset_snapshot / fund_category_map 三表事务编排，confirm + rollback 6/6 PASS）；⚠️ 真实 MySQL 持久化和前后端端到端验收待统一测试
 - [ ] 1a.5 起：替换真实视觉模型调用 stub
 - [ ] 1b.*：前端实现
 

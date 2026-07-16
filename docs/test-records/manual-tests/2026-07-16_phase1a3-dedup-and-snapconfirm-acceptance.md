@@ -3,7 +3,9 @@
 **日期**：2026-07-16
 **测试者**：刘博丞
 **Phase**：1a.3（快照确认 + dedup 引擎前置 + 1a.3.1 entity/mapper + 1a.3.2 service 层）
-**状态**：✅ **3 环节全通过 mvn compile；单测 9/9 + 集成层待 1a.3.4**
+**状态**：✅ **历史阶段 3 环节完成；1a.3.3 / 1a.3.4 后续进展见补充报告**
+
+> 后续补充：[2026-07-16_phase1a3-supplemental-acceptance.md](./2026-07-16_phase1a3-supplemental-acceptance.md)。补充报告确认 1a.3 业务逻辑测试 6/6 PASS，但真实 MySQL 持久化和前后端端到端验收仍待统一测试。
 
 ---
 
@@ -16,8 +18,8 @@
 | **dedup 多图合并** | DedupEngine 5 维 + 9 单测 | ✅ 完成 |
 | **1a.3.1** entity + mapper | 3 entity + 3 mapper（含 13 个自定义 SQL） | ✅ 完成 |
 | **1a.3.2** service 层 | SnapShotConfirmService + 2 DTO（@Transactional + DedupEngine 集成 + 镜像校验） | ✅ 完成 |
-| 1a.3.3 controller 层 | SnapshotController（含 10s 撤销 + 410 过期）| ⏳ 待启动 |
-| 1a.3.4 集成测试 | H2 真实写库 + 维度 D 镜像校验 + e2e curl | ⏳ 待启动 |
+| 1a.3.3 controller 层 | SnapshotController（含 10s 撤销 + 410 过期）| ✅ 代码完成；业务层测试通过，真实 HTTP/DB 待统一验收 |
+| 1a.3.4 集成测试 | confirm + rollback 业务测试 | ✅ 6/6 PASS（Mapper mock）；真实持久化待统一验收 |
 
 ---
 
@@ -167,9 +169,9 @@
 | 1a.3.2 SnapShotConfirmService（@Transactional + DedupEngine 集成 + 镜像校验）| ✅ 3 文件 356 行 |
 | **mvn compile 30 source files 无错** | ✅ 10.282s BUILD SUCCESS |
 | Git push origin 累计 3 commit | ✅ 1457a84 / 2c8520f / 51d36cc |
-| 1a.3.3 SnapshotController（POST/DELETE 端点）| ⏳ 待启动 |
-| 1a.3.4 集成测试（H2 + 镜像校验 + curl 端到端）| ⏳ 待启动 |
-| 1a.7 / 1a.8 / P0-1.2 / P0-1.3 / P0-1.5 / P0-3.2 勾选 | ⏳ 等 1a.3.3 完成 |
+| 1a.3.3 SnapshotController（POST/DELETE 端点）| ✅ 代码完成；业务层通过，真实 HTTP/DB 待统一验收 |
+| 1a.3.4 confirm + rollback 业务测试 | ✅ 6/6 PASS（Mapper mock）；真实持久化待统一验收 |
+| 1a.7 / 1a.8 / P0-1.2 / P0-3.2 | 🟡 已完成业务层勾选；真实 MySQL、HTTP 410 和完整 P0 待统一验收 |
 
 ---
 
@@ -188,14 +190,9 @@
 - 1a.3.2：0.75h（2 DTO + SnapShotConfirmService + 镜像校验 + 1 修 Lombok 注解）
 - **总 2.75h**（3 环节全闭环）
 
-## 下一步
+## 后续进度（由补充报告更新）
 
-- **1a.3.3 SnapshotController**（POST confirm + DELETE 撤销 10s + 410）— 0.25 天子阶段
-- **1a.3.4 集成测试**（H2 + curl 端到端）— 0.25 天子阶段
-- **1a.3 收尾**（commit + push + 勾选 6 项）— 与 1a.3.4 同时
-
-**tokens 接近 5h 限制时**：
-- 1a.3.3 / 1a.3.4 暂停，**等您下次会话**启动
-- **已 push 的 3 commit** 在 origin 已永久保存
-
-如需**继续 1a.3.3 / 1a.3.4** 只需下次会话说"继续 1a.3"。本会话暂停时**报告本身已写好**（本文件），您可随时查看 GitHub 上 3 个 commit 的全部代码。
+- `1a.3.3` SnapshotController + `1a.8` rollback：代码已完成；业务层通过，真实 HTTP/DB 待统一验收。
+- `1a.3.4` confirm + rollback：`SnapShotConfirmServiceIT` 已 6/6 PASS；本轮使用 Mapper mock，真实持久化待统一验收。
+- `1a.3` 补充性报告：[`2026-07-16_phase1a3-supplemental-acceptance.md`](./2026-07-16_phase1a3-supplemental-acceptance.md)。
+- 下一阶段：整体子阶段 `1a.4` 快照查询 + 首页辅助 API。

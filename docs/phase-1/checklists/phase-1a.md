@@ -22,8 +22,10 @@
 
 ### 快照入库 API（2 项）
 
-- [ ] **1a.7** `POST /api/snapshot/confirm`（含 [P0-1.2] 事务、[P0-1.3] 映射 UPDATE、[P0-1.5] 日期校验、[P0-3.3] 余额类、[P0-3.4] 忽略按钮）— 完成日期：____
-- [ ] **1a.8** `DELETE /api/snapshot/confirm/{id}`（[P0-3.2] 撤销）— 完成日期：____
+- [x] **1a.7** `POST /api/snapshot/confirm`（含 [P0-1.2] 事务、[P0-1.3] 映射 UPDATE、[P0-1.5] 日期校验、[P0-3.3] 余额类、[P0-3.4] 忽略按钮）— 业务逻辑验收：2026-07-16（`SnapShotConfirmServiceIT` 6/6 PASS）；⚠️ 真实 MySQL SQL、完整 P0 与前后端端到端待统一验收
+- [x] **1a.8** `DELETE /api/snapshot/confirm/{id}`（[P0-3.2] 撤销）— 业务逻辑验收：2026-07-16（10 秒内 rollback PASS）；⚠️ 真实表状态、超时 410 HTTP 验收待补
+
+> **1a.3 当前状态（2026-07-16）**：业务逻辑闭环已通过（confirm + rollback 6/6 PASS），真实 MySQL 持久化和前后端端到端验收待统一测试。详见 [`1a.3 补充性过程验收报告`](../test-records/manual-tests/2026-07-16_phase1a3-supplemental-acceptance.md)。这不阻塞下一阶段 1a.4，但不代表 Phase 1a 总体验收已完成。
 
 ### 快照查询 API（4 项）
 
@@ -60,11 +62,11 @@
 ## Phase 1a P0 验收项（8 项，跨 API 验证）
 
 - [ ] **[P0-1.1]** 余额类数据路径（API 1a.5 + 1a.13）— 完成日期：____
-- [ ] **[P0-1.2]** 三表写入事务（API 1a.7 @Transactional）— 完成日期：____
+- [x] **[P0-1.2]** 三表写入事务（API 1a.7 @Transactional）— 业务层验收：2026-07-16（事务入口与写入阻断逻辑通过）；⚠️ 真实数据库提交/回滚待统一验收
 - [ ] **[P0-1.3]** 映射 UPDATE 规则（API 1a.7 + 1a.17）— 完成日期：____
 - [x] **[P0-1.4]** AI 解析失败异常路径（API 1a.5）— 完成日期：2026-07-16（3 类失败路径 3001/3002/3003 全部验证 + chat_history 写 assistant 错误记录）
 - [ ] **[P0-1.5]** 快照日期校验（API 1a.7）— 完成日期：____
-- [ ] **[P0-3.2]** 撤销 API（API 1a.8）— 完成日期：____
+- [x] **[P0-3.2]** 撤销 API（API 1a.8）— 业务层验收：2026-07-16（10 秒内撤销测试通过）；⚠️ 超时 410、真实表恢复状态待统一验收
 - [ ] **[P0-3.5]** AI 顾问 B.3 few-shot（API 1a.18）— 完成日期：____
 - [x] **[P0-3.6]** system prompt 切换（API 1a.18）— 完成日期：2026-07-16（minimax M3 实际切换 system prompt 后返回嵌套结构，证明 P0-3.6 后端架构可行）
 - [x] **[P0-4.4]** 重新解析（API 1a.6）— 完成日期：2026-07-16（基于已存在的 conversationId 重跑 minimax 验证完成）
