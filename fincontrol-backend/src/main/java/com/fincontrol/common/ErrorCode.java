@@ -10,7 +10,7 @@ package com.fincontrol.common;
  *   <tr><td>1003</td><td>金额必须 > 0</td><td>400</td></tr>
  *   <tr><td>1004</td><td>大类名称不在枚举值内</td><td>400</td></tr>
  *   <tr><td>2001</td><td>该日期无快照数据</td><td>404</td></tr>
- *   <tr><td>2002</td><td>快照日期冲突</td><td>409</td></tr>
+ *   <tr><td>2002</td><td>快照日期与其他对话冲突</td><td>409</td></tr>
  *   <tr><td>2003</td><td>超过撤销时限（10 秒）</td><td>410</td></tr>
  *   <tr><td>3001</td><td>视觉模型 API 返回非 JSON</td><td>502</td></tr>
  *   <tr><td>3002</td><td>视觉模型 API 调用超时</td><td>504</td></tr>
