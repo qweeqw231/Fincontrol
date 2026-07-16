@@ -2,8 +2,11 @@ package com.fincontrol.service;
 
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
+import com.fincontrol.dto.snapshot.SnapshotByDateResponse;
 import com.fincontrol.dto.snapshot.SnapshotCategorySummary;
 import com.fincontrol.dto.snapshot.SnapshotFundDetail;
+import com.fincontrol.dto.snapshot.SnapshotHistoryItem;
+import com.fincontrol.dto.snapshot.SnapshotHistoryResponse;
 import com.fincontrol.dto.snapshot.SnapshotLatestResponse;
 import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.entity.AssetSnapshot;
@@ -20,6 +23,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 1a.4 快照查询服务（[api-contract.md §3.1/§3.2](#)）。
@@ -177,5 +181,142 @@ public class SnapshotQueryService {
             return BigDecimal.ZERO;
         }
         return value.multiply(HUNDRED).divide(base, 2, RoundingMode.HALF_UP);
+    }
+
+    // ========================================================================
+    // 1a.4 Slice B：指定日期 + history
+    // ========================================================================
+
+    /**
+     * 查询 user 指定日期的快照（[api-contract.md §3.3](#)）。
+     * <p>该日期无 snapshot 时抛 {@link BusinessException} {@code 2001}。
+     */
+    public SnapshotByDateResponse getByDate(Long userId, LocalDate date, boolean includeBalance) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
+        }
+        if (date == null) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "snapshotDate 必填");
+        }
+        List<AssetSnapshot> snapshots = Optional.ofNullable(
+                assetSnapshotMapper.selectLatestByUserAndDate(userId, date))
+                .orElse(Collections.emptyList());
+        if (snapshots.isEmpty()) {
+            throw new BusinessException(ErrorCode.SNAPSHOT_NOT_FOUND,
+                    "该日期无快照数据: " + date);
+        }
+        return buildByDateResponse(userId, date, snapshots, includeBalance);
+    }
+
+    private SnapshotByDateResponse buildByDateResponse(Long userId,
+                                                     LocalDate date,
+                                                     List<AssetSnapshot> snapshots,
+                                                     boolean includeBalance) {
+        List<SnapshotCategorySummary> summaries = new ArrayList<>();
+        BigDecimal sixTotal = BigDecimal.ZERO;
+        BigDecimal balanceTotal = BigDecimal.ZERO;
+        LocalDateTime confirmedAt = null;
+        for (AssetSnapshot snap : snapshots) {
+            if (snap.getUpdatedAt() != null && (confirmedAt == null || snap.getUpdatedAt().isAfter(confirmedAt))) {
+                confirmedAt = snap.getUpdatedAt();
+            }
+            boolean isBalance = "余额类".equals(snap.getCategory());
+            if (isBalance) {
+                if (!includeBalance) {
+                    continue;
+                }
+                balanceTotal = nz(snap.getTotalAmount());
+            } else {
+                sixTotal = sixTotal.add(nz(snap.getTotalAmount()));
+            }
+            if (isBalance && !includeBalance) {
+                continue;
+            }
+            summaries.add(toCategorySummary(userId, date, snap, false));
+        }
+        return SnapshotByDateResponse.builder()
+                .snapshotDate(date)
+                .snapshotConfirmedAt(confirmedAt)
+                .sixCategoriesTotal(sixTotal)
+                .balanceFund(balanceTotal)
+                .totalAssetWithBalance(sixTotal.add(balanceTotal))
+                .categories(summaries)
+                .build();
+    }
+
+    /**
+     * 查询 user 在 [from, to] 的历史快照日期列表（[api-contract.md §3.4](#)）。
+     * <p>每个日期默认排除余额类统计 6 大类合计；分页按 page/pageSize。
+     */
+    public SnapshotHistoryResponse getHistory(Long userId,
+                                             LocalDate from,
+                                             LocalDate to,
+                                             int page,
+                                             int pageSize,
+                                             boolean includeBalance) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
+        }
+        if (page < 1) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "page 必须 >= 1");
+        }
+        if (pageSize < 1) {
+            pageSize = 20;
+        }
+        if (pageSize > 100) {
+            pageSize = 100;
+        }
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "from 不能晚于 to");
+        }
+        List<LocalDate> dates = Optional.ofNullable(
+                assetSnapshotMapper.selectHistoryDates(userId, from, to))
+                .orElse(Collections.emptyList());
+        long total = dates.size();
+        int fromIndex = Math.min((page - 1) * pageSize, dates.size());
+        int toIndex = Math.min(fromIndex + pageSize, dates.size());
+        List<LocalDate> pageDates = dates.subList(fromIndex, toIndex);
+        List<SnapshotHistoryItem> items = pageDates.stream()
+                .map(d -> buildHistoryItem(userId, d, includeBalance))
+                .collect(Collectors.toList());
+        return SnapshotHistoryResponse.builder()
+                .items(items)
+                .total(total)
+                .page(page)
+                .pageSize(pageSize)
+                .build();
+    }
+
+    private SnapshotHistoryItem buildHistoryItem(Long userId, LocalDate date, boolean includeBalance) {
+        List<AssetSnapshot> snapshots = Optional.ofNullable(
+                assetSnapshotMapper.selectLatestByUserAndDate(userId, date))
+                .orElse(Collections.emptyList());
+        BigDecimal sixTotal = BigDecimal.ZERO;
+        BigDecimal balanceTotal = BigDecimal.ZERO;
+        LocalDateTime confirmedAt = null;
+        int categoryCount = 0;
+        for (AssetSnapshot snap : snapshots) {
+            if (snap.getUpdatedAt() != null && (confirmedAt == null || snap.getUpdatedAt().isAfter(confirmedAt))) {
+                confirmedAt = snap.getUpdatedAt();
+            }
+            categoryCount++;
+            boolean isBalance = "余额类".equals(snap.getCategory());
+            if (isBalance) {
+                if (!includeBalance) {
+                    categoryCount--; // 未计入响应 categoryCount
+                    continue;
+                }
+                balanceTotal = nz(snap.getTotalAmount());
+            } else {
+                sixTotal = sixTotal.add(nz(snap.getTotalAmount()));
+            }
+        }
+        return SnapshotHistoryItem.builder()
+                .snapshotDate(date)
+                .sixCategoriesTotal(sixTotal)
+                .balanceFund(includeBalance ? balanceTotal : BigDecimal.ZERO)
+                .categoryCount(categoryCount)
+                .confirmedAt(confirmedAt)
+                .build();
     }
 }

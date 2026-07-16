@@ -76,4 +76,14 @@
           AND is_latest = true
     </select>
 
+    <!-- 1a.4 启动用：列出 user 在 [from, to] 区间内存在 is_latest=true 行的 snapshot_date 集合，按日期倒序 -->
+    <select id="selectHistoryDates" resultType="java.time.LocalDate">
+        SELECT DISTINCT snapshot_date FROM asset_snapshot
+        WHERE user_id = #{userId}
+          AND is_latest = true
+          <if test="from != null"> AND snapshot_date &gt;= #{from} </if>
+          <if test="to   != null"> AND snapshot_date &lt;= #{to} </if>
+        ORDER BY snapshot_date DESC
+    </select>
+
 </mapper>

@@ -132,8 +132,8 @@ docs/test-records/api-test-output/2026-07-16_phase1a4_<case-id>.json
 | A4-S01 | ✅ PASS | `SnapshotQueryServiceTest.latest_noSnapshot_returnsNull` / `latest_noRowsForDate_returnsNull` | `BUSINESS_PASS` |
 | A4-S02 | ✅ PASS | `SnapshotQueryServiceTest.latest_summary_categories` / `latest_summary_excludeBalance` | `BUSINESS_PASS` |
 | A4-S03 | ✅ PASS | `SnapshotQueryServiceTest.latest_detail_includesFunds` | `BUSINESS_PASS` |
-| A4-S04 | `NOT_RUN` | — | `PLANNED` |
-| A4-S05 | `NOT_RUN` | — | `PLANNED` |
+| A4-S04 | ✅ PASS | `SnapshotQueryServiceTest.byDate_returnsCategorySummary` / `byDate_notFound_throws2001` | `BUSINESS_PASS` |
+| A4-S05 | ✅ PASS | `SnapshotQueryServiceTest.history_sortedAndPaged` / `history_rangeExcludesBalanceWhenDisabled` / `history_pageSizeClamp` | `BUSINESS_PASS` |
 | A4-S06 | `NOT_RUN` | — | `PLANNED` |
 | A4-S07 | `NOT_RUN` | — | `PLANNED` |
 | A4-S08 | `NOT_RUN` | — | `PLANNED` |
@@ -170,3 +170,4 @@ docs/test-records/api-test-output/2026-07-16_phase1a4_<case-id>.json
 | 2026-07-16 | Gate 0 冻结 operations/recent 为 chat_history 解析活动 | operation_log 暂无 Phase 1 写入链，避免把解析误报为入库 |
 | 2026-07-16 | 修复全量测试上下文的 Mapper mock 缺口并复验 16/16 | 1a.3 新增 Mapper 后，基础容器测试的禁用 MyBatis 配置需要 mock 全部 Mapper |
 | 2026-07-16 | Slice A 完成：`GET /api/snapshot/latest` 与 `GET /api/snapshot/latest/detail` 实现并业务层 PASS（A4-S01–S03），全量测试 21/21 | 工作计划确认进入 Slice A；DTO 英文 PascalCase |
+| 2026-07-16 | Slice B 完成：`GET /api/snapshot/{date}` 与 `GET /api/snapshot/history` 实现并业务层 PASS（A4-S04–S05），全量测试 26/26 | 复用 Slice A 响应模型；新增 history Mapper XML 区间过滤 |

@@ -1,8 +1,10 @@
 package com.fincontrol.controller;
 
 import com.fincontrol.common.ApiResponse;
+import com.fincontrol.dto.snapshot.SnapshotByDateResponse;
 import com.fincontrol.dto.snapshot.SnapshotConfirmRequest;
 import com.fincontrol.dto.snapshot.SnapshotConfirmResult;
+import com.fincontrol.dto.snapshot.SnapshotHistoryResponse;
 import com.fincontrol.dto.snapshot.SnapshotLatestResponse;
 import com.fincontrol.service.SnapShotConfirmService;
 import com.fincontrol.service.SnapshotQueryService;
@@ -10,6 +12,7 @@ import com.fincontrol.service.SnapshotRollbackService;
 import com.fincontrol.service.SnapshotRollbackService.RollbackResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -65,6 +68,40 @@ public class SnapshotController {
             @RequestParam(defaultValue = "true") boolean includeBalance) {
         log.info("1a.4 latest/detail: userId={} includeBalance={}", userId, includeBalance);
         return ApiResponse.success(snapshotQueryService.getLatest(userId, true, includeBalance));
+    }
+
+    // ========================================================================
+    // 1a.4 Slice B：指定日期 + history
+    // ========================================================================
+
+    /**
+     * 1a.4 指定日期快照（[api-contract.md §3.3](#)）。
+     * <p>无数据由 Service 抛 2001，Controller 透传给 GlobalExceptionHandler。
+     */
+    @GetMapping("/{date}")
+    public ApiResponse<SnapshotByDateResponse> byDate(
+            @RequestHeader(name = "X-User-Id", defaultValue = "1") Long userId,
+            @PathVariable("date") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate date,
+            @RequestParam(defaultValue = "true") boolean includeBalance) {
+        log.info("1a.4 byDate: userId={} date={} includeBalance={}", userId, date, includeBalance);
+        return ApiResponse.success(snapshotQueryService.getByDate(userId, date, includeBalance));
+    }
+
+    /**
+     * 1a.4 历史快照列表（[api-contract.md §3.4](#)）。
+     */
+    @GetMapping("/history")
+    public ApiResponse<SnapshotHistoryResponse> history(
+            @RequestHeader(name = "X-User-Id", defaultValue = "1") Long userId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate to,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(defaultValue = "true") boolean includeBalance) {
+        log.info("1a.4 history: userId={} from={} to={} page={} pageSize={} includeBalance={}",
+                userId, from, to, page, pageSize, includeBalance);
+        return ApiResponse.success(snapshotQueryService.getHistory(
+                userId, from, to, page, pageSize, includeBalance));
     }
 
     // ========================================================================

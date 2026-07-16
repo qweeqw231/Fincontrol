@@ -54,7 +54,15 @@ public interface AssetSnapshotMapper extends BaseMapper<AssetSnapshot> {
             @Param("snapshotDate") LocalDate snapshotDate);
 
     /**
-     * 1a.4 快照查询：取该 user 最近一次 is_latest=true 的 snapshot_date；没有数据返回 null。
+     * 1a.4 启动用：取 user 最近一次 is_latest=true 的 snapshot_date；没有数据返回 null。
      */
     java.time.LocalDate selectLatestSnapshotDate(@Param("userId") Long userId);
+
+    /**
+     * 1a.4 快照查询：列出 user 在 [from, to] 区间内存在 is_latest=true 行的 snapshot_date 集合，按日期倒序。
+     */
+    List<java.time.LocalDate> selectHistoryDates(
+            @Param("userId") Long userId,
+            @Param("from") java.time.LocalDate from,
+            @Param("to") java.time.LocalDate to);
 }

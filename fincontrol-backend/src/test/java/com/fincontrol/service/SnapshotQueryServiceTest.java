@@ -1,5 +1,7 @@
 package com.fincontrol.service;
 
+import com.fincontrol.dto.snapshot.SnapshotByDateResponse;
+import com.fincontrol.dto.snapshot.SnapshotHistoryResponse;
 import com.fincontrol.dto.snapshot.SnapshotLatestResponse;
 import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.entity.AssetSnapshot;
@@ -167,5 +169,99 @@ class SnapshotQueryServiceTest {
 
         assertThat(resp).isNull();
         verify(assetRawMapper, never()).selectByUserAndDateAndCategory(anyLong(), any(), any());
+    }
+
+    // ========================================================================
+    // 1a.4 Slice B：指定日期 + history
+    // ========================================================================
+
+    @Test
+    @DisplayName("A4-S04: 指定日期找到 snapshot，返回分类汇总")
+    void byDate_returnsCategorySummary() {
+        when(assetSnapshotMapper.selectLatestByUserAndDate(USER_ID, SNAP_DATE)).thenReturn(List.of(
+                snapOf("货币类", new BigDecimal("641.49"), new BigDecimal("10"), new BigDecimal("9.90")),
+                snapOf("固收类", new BigDecimal("954.24"), new BigDecimal("15"), new BigDecimal("14.72")),
+                snapOf("余额类", new BigDecimal("418.46"), new BigDecimal("0"), new BigDecimal("0"))));
+        when(assetRawMapper.countFundsByUserAndDateAndCategory(eq(USER_ID), eq(SNAP_DATE), any()))
+                .thenReturn(0);
+
+        SnapshotByDateResponse resp = service.getByDate(USER_ID, SNAP_DATE, true);
+
+        assertThat(resp.getSnapshotDate()).isEqualTo(SNAP_DATE);
+        assertThat(resp.getSixCategoriesTotal()).isEqualByComparingTo("1595.73");
+        assertThat(resp.getBalanceFund()).isEqualByComparingTo("418.46");
+        assertThat(resp.getCategories()).extracting("categoryName")
+                .containsExactly("货币类", "固收类", "余额类");
+    }
+
+    @Test
+    @DisplayName("A4-S04: 指定日期没数据，抛 2001 SNAPSHOT_NOT_FOUND")
+    void byDate_notFound_throws2001() {
+        when(assetSnapshotMapper.selectLatestByUserAndDate(USER_ID, SNAP_DATE))
+                .thenReturn(Collections.emptyList());
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> service.getByDate(USER_ID, SNAP_DATE, true))
+                .isInstanceOf(com.fincontrol.common.BusinessException.class)
+                .extracting("errorCode").isEqualTo(com.fincontrol.common.ErrorCode.SNAPSHOT_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("A4-S05: history 列表按日期倒序、分页正确")
+    void history_sortedAndPaged() {
+        LocalDate d1 = LocalDate.of(2026, 7, 16);
+        LocalDate d2 = LocalDate.of(2026, 7, 15);
+        LocalDate d3 = LocalDate.of(2026, 7, 14);
+        when(assetSnapshotMapper.selectHistoryDates(USER_ID, null, null))
+                .thenReturn(List.of(d1, d2, d3));
+        when(assetSnapshotMapper.selectLatestByUserAndDate(USER_ID, d1))
+                .thenReturn(List.of(snapOf("货币类", new BigDecimal("641.49"), new BigDecimal("10"), new BigDecimal("9.90"))));
+        when(assetSnapshotMapper.selectLatestByUserAndDate(USER_ID, d2))
+                .thenReturn(List.of(snapOf("固收类", new BigDecimal("954.24"), new BigDecimal("15"), new BigDecimal("14.72"))));
+        when(assetSnapshotMapper.selectLatestByUserAndDate(USER_ID, d3))
+                .thenReturn(List.of(snapOf("权益类", new BigDecimal("1000.00"), new BigDecimal("20"), new BigDecimal("20.00"))));
+
+        SnapshotHistoryResponse page1 = service.getHistory(USER_ID, null, null, 1, 2, true);
+        SnapshotHistoryResponse page2 = service.getHistory(USER_ID, null, null, 2, 2, true);
+
+        assertThat(page1.getTotal()).isEqualTo(3);
+        assertThat(page1.getPage()).isEqualTo(1);
+        assertThat(page1.getPageSize()).isEqualTo(2);
+        assertThat(page1.getItems()).extracting("snapshotDate").containsExactly(d1, d2);
+        assertThat(page2.getItems()).extracting("snapshotDate").containsExactly(d3);
+        assertThat(page1.getItems().get(0).getCategoryCount()).isEqualTo(1);
+        assertThat(page1.getItems().get(0).getSixCategoriesTotal()).isEqualByComparingTo("641.49");
+    }
+
+    @Test
+    @DisplayName("A4-S05: history 区间 + includeBalance=false 时余额类不计入 totalAmount")
+    void history_rangeExcludesBalanceWhenDisabled() {
+        LocalDate d1 = LocalDate.of(2026, 7, 16);
+        when(assetSnapshotMapper.selectHistoryDates(USER_ID,
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31)))
+                .thenReturn(List.of(d1));
+        when(assetSnapshotMapper.selectLatestByUserAndDate(USER_ID, d1)).thenReturn(List.of(
+                snapOf("货币类", new BigDecimal("641.49"), new BigDecimal("10"), new BigDecimal("9.90")),
+                snapOf("余额类", new BigDecimal("418.46"), new BigDecimal("0"), new BigDecimal("0"))));
+
+        SnapshotHistoryResponse resp = service.getHistory(USER_ID,
+                LocalDate.of(2026, 7, 1), LocalDate.of(2026, 7, 31), 1, 20, false);
+
+        assertThat(resp.getItems()).hasSize(1);
+        assertThat(resp.getItems().get(0).getBalanceFund()).isEqualByComparingTo("0");
+        assertThat(resp.getItems().get(0).getCategoryCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("A4-S05: history pageSize 越界自动纠正到 1–100")
+    void history_pageSizeClamp() {
+        when(assetSnapshotMapper.selectHistoryDates(USER_ID, null, null))
+                .thenReturn(Collections.emptyList());
+
+        SnapshotHistoryResponse tooSmall = service.getHistory(USER_ID, null, null, 1, 0, true);
+        SnapshotHistoryResponse tooBig = service.getHistory(USER_ID, null, null, 1, 9999, true);
+
+        assertThat(tooSmall.getPageSize()).isEqualTo(20); // 默认值
+        assertThat(tooBig.getPageSize()).isEqualTo(100);
     }
 }
