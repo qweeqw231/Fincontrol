@@ -2,16 +2,17 @@ package com.fincontrol.service;
 
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
-import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.entity.AssetSnapshot;
 import com.fincontrol.mapper.AssetRawMapper;
 import com.fincontrol.mapper.AssetSnapshotMapper;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
@@ -88,13 +89,16 @@ public class SnapshotRollbackService {
     }
 
     /**
-     * 撤销结果 record。
+     * 撤销结果（Lombok @Data 自动生成 getter/setter）。
      */
-    public record RollbackResult(
-            boolean rolledBack,
-            String snapshotDate,
-            String previousSnapshotRestored,
-            int assetRawUpdated,
-            int assetSnapshotUpdated
-    ) {}
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RollbackResult {
+        private boolean rolledBack;
+        private String snapshotDate;
+        private String previousSnapshotRestored;
+        private int assetRawUpdated;
+        private int assetSnapshotUpdated;
+    }
 }
