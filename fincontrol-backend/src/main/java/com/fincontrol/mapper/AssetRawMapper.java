@@ -56,4 +56,27 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
      */
     @Select("SELECT DISTINCT fund_name FROM asset_raw WHERE user_id = #{userId}")
     List<String> selectAllFundNamesByUser(@Param("userId") Long userId);
+
+    /**
+     * 1a.4 快照查询：取 user/date/category 下 is_latest=true 的基金行，按创建时间排序。
+     */
+    @Select("SELECT * FROM asset_raw " +
+            "WHERE user_id = #{userId} AND snapshot_date = #{snapshotDate} AND category = #{category} " +
+            "AND is_latest = true " +
+            "ORDER BY created_at ASC, id ASC")
+    List<AssetRaw> selectByUserAndDateAndCategory(
+            @Param("userId") Long userId,
+            @Param("snapshotDate") java.time.LocalDate snapshotDate,
+            @Param("category") String category);
+
+    /**
+     * 1a.4 快照查询：统计 user/date/category 下 is_latest=true 的基金行数。
+     */
+    @Select("SELECT COUNT(*) FROM asset_raw " +
+            "WHERE user_id = #{userId} AND snapshot_date = #{snapshotDate} AND category = #{category} " +
+            "AND is_latest = true")
+    int countFundsByUserAndDateAndCategory(
+            @Param("userId") Long userId,
+            @Param("snapshotDate") java.time.LocalDate snapshotDate,
+            @Param("category") String category);
 }

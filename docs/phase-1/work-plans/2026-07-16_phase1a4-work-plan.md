@@ -3,7 +3,7 @@
 **计划日期**：2026-07-16
 **子阶段**：整体 Phase 1a.4  〔不是 1a.2 中的 checklist 1a.4 上传接口〕
 **负责人**：刘博丞
-**状态**：`GATE0_PASS`
+**状态**：`IN_PROGRESS` 〔Slice A 实现并业务层验证；Slice B/C 待启动〕
 **配套验收计划**：[`2026-07-16_phase1a4-acceptance-plan.md`](../../test-records/manual-tests/2026-07-16_phase1a4-acceptance-plan.md)
 **总进度清单**：[`phase-1a.md`](../checklists/phase-1a.md)
 **API 契约**：[`api-contract.md §3 / §9`](../../phase-0/api-contract.md)

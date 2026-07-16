@@ -52,4 +52,9 @@ public interface AssetSnapshotMapper extends BaseMapper<AssetSnapshot> {
     List<AssetSnapshot> selectLatestByUserAndDate(
             @Param("userId") Long userId,
             @Param("snapshotDate") LocalDate snapshotDate);
+
+    /**
+     * 1a.4 快照查询：取该 user 最近一次 is_latest=true 的 snapshot_date；没有数据返回 null。
+     */
+    java.time.LocalDate selectLatestSnapshotDate(@Param("userId") Long userId);
 }

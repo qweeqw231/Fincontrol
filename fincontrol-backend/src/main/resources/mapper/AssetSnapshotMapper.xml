@@ -69,4 +69,11 @@
         ORDER BY category
     </select>
 
+    <!-- 1a.4 启动用：取 user 最近一次 is_latest=true 的 snapshot_date；没有数据返回 null -->
+    <select id="selectLatestSnapshotDate" resultType="java.time.LocalDate">
+        SELECT MAX(snapshot_date) FROM asset_snapshot
+        WHERE user_id = #{userId}
+          AND is_latest = true
+    </select>
+
 </mapper>

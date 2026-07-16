@@ -3,7 +3,9 @@ package com.fincontrol.controller;
 import com.fincontrol.common.ApiResponse;
 import com.fincontrol.dto.snapshot.SnapshotConfirmRequest;
 import com.fincontrol.dto.snapshot.SnapshotConfirmResult;
+import com.fincontrol.dto.snapshot.SnapshotLatestResponse;
 import com.fincontrol.service.SnapShotConfirmService;
+import com.fincontrol.service.SnapshotQueryService;
 import com.fincontrol.service.SnapshotRollbackService;
 import com.fincontrol.service.SnapshotRollbackService.RollbackResult;
 import org.slf4j.Logger;
@@ -26,11 +28,43 @@ public class SnapshotController {
 
     private final SnapShotConfirmService snapShotConfirmService;
     private final SnapshotRollbackService snapshotRollbackService;
+    private final SnapshotQueryService snapshotQueryService;
 
     public SnapshotController(SnapShotConfirmService snapShotConfirmService,
-                              SnapshotRollbackService snapshotRollbackService) {
+                              SnapshotRollbackService snapshotRollbackService,
+                              SnapshotQueryService snapshotQueryService) {
         this.snapShotConfirmService = snapShotConfirmService;
         this.snapshotRollbackService = snapshotRollbackService;
+        this.snapshotQueryService = snapshotQueryService;
+    }
+
+    // ========================================================================
+    // 1a.4 GET /api/snapshot/latest（latest / latest/detail）
+    // ========================================================================
+
+    /**
+     * 1a.4 latest 汇总（[api-contract.md §3.1](#)）。
+     * <p>无数据返回 code=0 + data=null，前端按空数据处理；不报 500。
+     */
+    @GetMapping("/latest")
+    public ApiResponse<SnapshotLatestResponse> latest(
+            @RequestHeader(name = "X-User-Id", defaultValue = "1") Long userId,
+            @RequestParam(defaultValue = "true") boolean includeBalance,
+            @RequestParam(defaultValue = "false") boolean includeDetail) {
+        log.info("1a.4 latest: userId={} includeBalance={} includeDetail={}",
+                userId, includeBalance, includeDetail);
+        return ApiResponse.success(snapshotQueryService.getLatest(userId, includeDetail, includeBalance));
+    }
+
+    /**
+     * 1a.4 latest 详情（[api-contract.md §3.2](#)）。强制 includeDetail=true。
+     */
+    @GetMapping("/latest/detail")
+    public ApiResponse<SnapshotLatestResponse> latestDetail(
+            @RequestHeader(name = "X-User-Id", defaultValue = "1") Long userId,
+            @RequestParam(defaultValue = "true") boolean includeBalance) {
+        log.info("1a.4 latest/detail: userId={} includeBalance={}", userId, includeBalance);
+        return ApiResponse.success(snapshotQueryService.getLatest(userId, true, includeBalance));
     }
 
     // ========================================================================
