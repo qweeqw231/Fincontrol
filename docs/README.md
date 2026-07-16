@@ -30,6 +30,9 @@ docs/
 │
 ├── phase-1/                                     ← Phase 1 交付物（核心闭环）
 │   ├── acceptance-criteria.md                   ← Phase 1 验收标准（47 项 + 18 项 P0）
+│   ├── work-plans/                              ← 子阶段实施工作计划
+│   │   ├── README.md                            ← 工作计划规范
+│   │   └── 2026-07-16_phase1a4-work-plan.md
 │   └── checklists/                              ← 实时验收清单
 │       ├── phase-1a.md                          ← Phase 1a 后端 24 项 API + 8 项 P0
 │       └── phase-1b.md                          ← Phase 1b 前端 23 项 UI + 4 项 P0
@@ -106,6 +109,7 @@ docs/
 ### 测试记录（跨阶段）
 
 - **[test-records/README.md](./test-records/README.md)** — 测试记录目录结构 + 命名规范 + 模板
+- **[phase-1/work-plans/README.md](./phase-1/work-plans/README.md)** — Phase 1 子阶段工作计划规范
 - `test-records/manual-tests/` — 手动测试记录（按日期命名）
 - `test-records/api-test-output/` — API 测试输出 JSON（按日期命名）
 
@@ -120,6 +124,7 @@ docs/
 | Phase 决策 | `decisions.md`（在 phase-N/ 内）| `phase-0/decisions.md` |
 | Phase 验收标准 | `acceptance-criteria.md`（在 phase-N/ 内）| `phase-1/acceptance-criteria.md` |
 | Phase 验收清单 | `checklists/phase-<n>.md` | `phase-1/checklists/phase-1a.md` |
+| 子阶段工作计划 | `<日期>_<phase>-work-plan.md`（在 `phase-1/work-plans/` 下） | `phase-1/work-plans/2026-07-16_phase1a4-work-plan.md` |
 | API 契约 | `api-contract.md`（在 phase-N/ 内）| `phase-0/api-contract.md` |
 | 数据库脚本 | `<类型>-schema.sql`（在 phase-N/ 内）| `phase-0/db-schema.sql` |
 | 补充设计 | `<主题>-<版本>.md` | `data-model-supplement-v1.md` |

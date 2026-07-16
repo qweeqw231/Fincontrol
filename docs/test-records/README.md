@@ -8,22 +8,22 @@
 
 ```
 docs/
-├── test-records/
-│   ├── README.md                                       ← 本说明
-│   ├── manual-tests/                                   ← 手动测试记录
-│   │   ├── 2026-07-09_smoke-test.md                    ← 冒烟测试（端到端核心流程）
-│   │   ├── 2026-07-09_screenshot-parse-test.md        ← 截图解析流程测试
-│   │   ├── 2026-07-09_monthly-correction-test.md     ← 月度校正流程测试
-│   │   └── ...
-│   └── api-test-output/                                ← API 测试输出（curl/HTTP Client 结果）
-│       ├── 2026-07-09_screenshot_parse.json          ← 截图解析 API 测试响应
-│       ├── 2026-07-09_snapshot_confirm.json          ← 快照确认 API 测试响应
-│       ├── 2026-07-09_chat_send.json                 ← AI 顾问 API 测试响应
-│       └── ...
-└── phase-1/
-    └── checklists/
-        ├── phase-1a.md                                ← Phase 1a 24 项 API + 8 项 P0 实时验收
-        └── phase-1b.md                                ← Phase 1b 23 项 UI + 4 项 P0 实时验收
+├── phase-1/
+│   ├── work-plans/                                    ← 子阶段实施工作计划
+│   │   ├── README.md                                  ← 工作计划规范
+│   │   └── 2026-07-16_phase1a4-work-plan.md
+│   └── checklists/
+│       ├── phase-1a.md                                ← Phase 1a 总体进度清单
+│       └── phase-1b.md                                ← Phase 1b 总体进度清单
+└── test-records/
+    ├── README.md                                      ← 本说明
+    ├── manual-tests/                                  ← 验收计划、验收报告、手动测试记录
+    │   ├── 2026-07-16_phase1a4-acceptance-plan.md
+    │   ├── 2026-07-16_phase1a3-supplemental-acceptance.md
+    │   └── ...
+    └── api-test-output/                               ← API 测试输出（curl/HTTP Client 结果）
+        ├── 2026-07-09_screenshot_parse.json
+        └── ...
 ```
 
 > 注意：实时验收清单已移至 `docs/phase-1/checklists/` 下，与 phase-1 交付物同目录。
@@ -34,10 +34,12 @@ docs/
 
 | 文件类型 | 命名规则 | 示例 |
 |---------|---------|------|
+| 工作计划 | `<日期>_<phase>-work-plan.md`（在 `phase-1/work-plans/` 下） | `2026-07-16_phase1a4-work-plan.md` |
 | 验收清单 | `phase-<n>-<a>.md`（在 phase-N/checklists/ 下）| `phase-1/checklists/phase-1a.md` |
+| 验收计划 | `<日期>_<phase>-acceptance-plan.md`（在 `manual-tests/` 下） | `2026-07-16_phase1a4-acceptance-plan.md` |
+| 验收报告 | `<日期>_<scope>-acceptance.md`（在 `manual-tests/` 下） | `2026-07-16_phase1a3-supplemental-acceptance.md` |
 | 手动测试 | `<日期>_<测试名>.md` | `2026-07-09_smoke-test.md` |
 | API 输出 | `<日期>_<api-name>.json` | `2026-07-09_screenshot_parse.json` |
-| 测试报告 | `<日期>_<scope>_report.md` | `2026-07-09_phase1a_summary.md` |
 
 ---
 
@@ -48,6 +50,17 @@ docs/
 1. 每完成一个 API 实现 → 在 `docs/phase-1/checklists/phase-1a.md` 中勾选对应项
 2. 关键测试 → curl 测试并保存响应到 `test-records/api-test-output/`
 3. 端到端冒烟测试 → 完成后写 `test-records/manual-tests/<日期>_smoke-test.md`
+
+### Phase 1a.4 起：计划、实现、验收三步闭环
+
+1. 先创建或更新 `docs/phase-1/work-plans/<日期>_<phase>-work-plan.md`；
+2. 同时创建 `docs/test-records/manual-tests/<日期>_<phase>-acceptance-plan.md`，先锁定测试 ID、测试目标、fixture 和 real/mock/H2/MySQL 边界；
+3. 按工作计划的垂直切片实现，每个切片单独编译和测试；
+4. 每次失败先分类并记录根因，不能无记录地改变测试替身或测试名称；
+5. 测试完成后在验收计划中追加实际结果，必要时生成 acceptance report；
+6. 最后同步 `phase-1a.md`、工作计划状态和验收报告状态。
+
+工作计划和验收计划必须互相链接，并共享阶段编号和测试用例 ID。
 
 ### Phase 1b 编码期间
 
@@ -147,7 +160,9 @@ docs/
 
 1. **测试记录不可删除**：失败的测试记录也是项目资产，不要删除
 2. **日期命名**：使用测试完成日期，不用创建日期
-3. **手动测试**：Phase 1a 关键路径必须手动跑通，不只依赖单元测试
-4. **API 输出**：curl 结果保存为 JSON 便于后续回溯
-5. **路径引用**：跨目录引用使用相对路径（如 `../phase-1/checklists/phase-1a.md`）
+3. **计划先于代码**：Phase 1a.4 起，工作计划和验收计划必须先于实现创建
+4. **测试边界不可漂移**：real/mock/H2/MySQL 策略变化必须记录原因并同步测试名称与结论
+5. **手动测试**：Phase 1a 关键路径必须手动跑通，不只依赖单元测试
+6. **API 输出**：curl 结果保存为 JSON 便于后续回溯
+7. **路径引用**：跨目录引用使用相对路径（如 `../phase-1/checklists/phase-1a.md`）
 </content>
