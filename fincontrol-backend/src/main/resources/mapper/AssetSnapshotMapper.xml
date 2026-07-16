@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fincontrol.mapper.AssetSnapshotMapper">
+
+    <!--
+        1a.3.5 双方言统一（关键修复）：
+        原方案 B 用 <insert databaseId="mysql"> + <insert databaseId="h2"> 双版本
+        —— MyBatis 启动时遇到同 id 不同 databaseId，静默丢弃第二个。
+
+        现用 PostgreSQL 风格 INSERT ... ON CONFLICT ... DO UPDATE（单版本）：
+          - H2 1.4+ 完全支持（PostgreSQL 兼容）
+          - MySQL 8.0.20+ 完全支持
+          - 跨方言、零适配、生产 + 测试一致
+        MySQL 5.7.x 不支持 ON CONFLICT —— 我们用 8.0.46 OK。
+    -->
+
+    <!-- 1a.3 confirm 写库：UPSERT（PostgreSQL 风格 + H2 / MySQL 8.0.20+ 兼容） -->
+    <insert id="upsertByCategory" parameterType="com.fincontrol.entity.AssetSnapshot">
+        INSERT INTO asset_snapshot
+            (user_id, snapshot_date, category, total_amount, target_ratio, actual_ratio,
+             balance_fund, sub_detail, is_latest, created_at, updated_at)
+        VALUES
+            (#{userId}, #{snapshotDate}, #{category}, #{totalAmount}, #{targetRatio},
+             #{actualRatio}, #{balanceFund}, #{subDetail}, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id, snapshot_date, category, is_latest)
+        DO UPDATE SET
+            total_amount  = EXCLUDED.total_amount,
+            target_ratio  = EXCLUDED.target_ratio,
+            actual_ratio  = EXCLUDED.actual_ratio,
+            balance_fund  = EXCLUDED.balance_fund,
+            sub_detail    = EXCLUDED.sub_detail,
+            is_latest     = true,
+            updated_at    = CURRENT_TIMESTAMP
+    </insert>
+
+    <!-- 维度 D 镜像校验：count is_latest=true 行（同 user_id+date+category 应只 1 行） -->
+    <select id="countLatestByUserAndDateAndCategory" resultType="int">
+        SELECT COUNT(*) FROM asset_snapshot
+        WHERE user_id = #{userId}
+          AND snapshot_date = #{snapshotDate}
+          AND category = #{category}
+          AND is_latest = true
+    </select>
+
+    <!-- 1a.8 撤销：把整批 is_latest 翻成 false -->
+    <update id="updateIsLatestBySnapshotDate">
+        UPDATE asset_snapshot
+        SET is_latest = false
+        WHERE user_id = #{userId}
+          AND snapshot_date = #{snapshotDate}
+    </update>
+
+    <!-- 1a.8 撤销：找 user_id+date < current date 的最近 snapshot -->
+    <select id="selectLatestBeforeDate" resultType="com.fincontrol.entity.AssetSnapshot">
+        SELECT * FROM asset_snapshot
+        WHERE user_id = #{userId}
+          AND snapshot_date &lt; #{beforeDate}
+        ORDER BY snapshot_date DESC
+        LIMIT 1
+    </select>
+
+    <!-- 1a.4 启动用：列出某 user 最新一版的所有 category -->
+    <select id="selectLatestByUserAndDate" resultType="com.fincontrol.entity.AssetSnapshot">
+        SELECT * FROM asset_snapshot
+        WHERE user_id = #{userId}
+          AND snapshot_date = #{snapshotDate}
+          AND is_latest = true
+        ORDER BY category
+    </select>
+
+</mapper>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fincontrol.mapper.FundCategoryMapMapper">
+
+    <!-- 1a3.5 双方言统一：upsertByFundName PostgreSQL 风格 + H2 / MySQL 8.0.20+ 兼容 -->
+    <insert id="upsertByFundName" parameterType="com.fincontrol.entity.FundCategoryMap">
+        INSERT INTO fund_category_map
+            (user_id, fund_name, category, source, confirmed_at)
+        VALUES
+            (#{userId}, #{fundName}, #{category}, #{source}, CURRENT_TIMESTAMP)
+        ON CONFLICT (user_id, fund_name)
+        DO UPDATE SET
+            category      = EXCLUDED.category,
+            source        = EXCLUDED.source,
+            confirmed_at  = CURRENT_TIMESTAMP
+    </insert>
+
+    <!-- 1a5 暴露给前端：按 fund_name 查单条 -->
+    <select id="selectByUserAndFundName" resultType="com.fincontrol.entity.FundCategoryMap">
+        SELECT * FROM fund_category_map
+        WHERE user_id = #{userId}
+          AND fund_name = #{fundName}
+    </select>
+
+    <!-- 1a3 confirm 维度 D 镜像校验：查同 user 下 fund_name 集合 -->
+    <select id="selectFundNamesByUser" resultType="string">
+        SELECT DISTINCT fund_name FROM fund_category_map
+        WHERE user_id = #{userId}
+    </select>
+
+    <!-- 1a3 confirm 维度 E 检测：同 user_id+date 下 fund_name 集合（关联 asset_raw） -->
+    <select id="selectFundNamesByUserAndSnapshotDate" resultType="string">
+        SELECT DISTINCT fund_name FROM fund_category_map fcm
+        WHERE fcm.user_id = #{userId}
+          AND EXISTS (SELECT 1 FROM asset_raw ar
+                      WHERE ar.user_id = fcm.user_id
+                        AND ar.snapshot_date = #{snapshotDate}
+                        AND ar.fund_name = fcm.fund_name
+                        AND ar.is_latest = true)
+    </select>
+
+</mapper>

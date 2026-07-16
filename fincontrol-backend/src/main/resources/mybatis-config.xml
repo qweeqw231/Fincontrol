@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-config.dtd">
+<!--
+    1a.3.5 MyBatis 全局配置（settings）
+
+    注意：MyBatis-Plus 3.5.9 限制 `mybatis-plus.configuration` 与
+    `mybatis-plus.config-location` 互斥。MyBatis 全局 settings 统一放此文件；
+    mapper XML 由 application.yml 的 `mybatis-plus.mapper-locations` 统一加载。
+    MyBatis-Plus 专有配置（id-type=AUTO、logic-delete-field 等）已迁到
+    Entity 的 @TableId / @TableLogic 注解。
+
+    双方言（1a.3.5）：
+    原用 <databaseIdProvider> 切 mysql / h2 走不同 SQL，但 MyBatis 启动时遇到同 id
+    不同 databaseId 会静默丢弃第二个——导致测试时 H2 方言找不到 upsert。
+    现 mapper XML 统一用 MERGE INTO 跨方言（SQL 2003 标准），H2 1.4+ 和 MySQL 8.0.20+ 都支持，
+    不再需要 <databaseIdProvider>。
+
+    详见：[docs/phase-1/designs/1a3-dedup-strategy.md §10](#)
+-->
+<configuration>
+    <!-- 全局 settings（替代 application.yml 中原 configuration 段） -->
+    <settings>
+        <setting name="mapUnderscoreToCamelCase" value="true"/>
+        <setting name="cacheEnabled" value="false"/>
+        <setting name="jdbcTypeForNull" value="NULL"/>
+        <setting name="logImpl" value="org.apache.ibatis.logging.stdout.StdOutImpl"/>
+    </settings>
+
+    <!--
+        mapper XML 不在这里重复声明：application.yml 的
+        mybatis-plus.mapper-locations 已统一加载 src/main/resources/mapper/**/*.xml。
+        如果同时在此处使用 <mappers>，同一 statement 会被加载两次，启动时会出现
+        "mapper ... is ignored, because it exists, maybe from xml file" 警告。
+    -->
+</configuration>

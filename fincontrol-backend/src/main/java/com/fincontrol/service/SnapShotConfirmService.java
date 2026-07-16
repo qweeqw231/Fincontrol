@@ -195,7 +195,11 @@ public class SnapShotConfirmService {
             snap.setSnapshotDate(req.getSnapshotDate());
             snap.setCategory(cat.getCategoryName());
             snap.setTotalAmount(cat.getCategoryTotal());
-            snap.setActualRatio(cat.getCategoryPercentage());
+            // 1a.3.5 修法 A：null-safe 三个 NOT NULL BigDecimal 字段
+            snap.setTargetRatio(BigDecimal.ZERO);
+            snap.setActualRatio(cat.getCategoryPercentage() != null
+                    ? cat.getCategoryPercentage()
+                    : BigDecimal.ZERO);
             // 余额类金额
             if ("余额类".equals(cat.getCategoryName()) && !Boolean.FALSE.equals(req.getIncludeBalance())) {
                 snap.setBalanceFund(cat.getCategoryTotal());

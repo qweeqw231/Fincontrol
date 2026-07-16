@@ -59,18 +59,11 @@ spring:
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   type-aliases-package: com.fincontrol.entity
-  configuration:
-    map-underscore-to-camel-case: true
-    cache-enabled: false
-    jdbc-type-for-null: NULL
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-  global-config:
-    banner: false
-    db-config:
-      id-type: AUTO
-      logic-delete-field: deleted
-      logic-delete-value: 1
-      logic-not-delete-value: 0
+  # 1a.3.5 双方言支持（[docs/phase-1/designs/1a3-dedup-strategy.md §10](#)）
+  # 重要：MyBatis-Plus 限制 configuration 与 config-location 互斥。
+  # 所有 MyBatis 配置（settings + DatabaseIdProvider）统一在 mybatis-config.xml。
+  # MyBatis-Plus 专有配置（id-type=auto 等）已移到 Entity 的 @TableId 注解。
+  config-location: classpath:mybatis-config.xml
 
 # ============================================
 # springdoc-openapi（Swagger UI）

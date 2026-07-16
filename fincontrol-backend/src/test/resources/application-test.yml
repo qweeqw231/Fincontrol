@@ -1,0 +1,26 @@
+# 1a.3.5 IT 测试 profile — H2 内存库 + 双方言
+# 配合 AbstractIT @ActiveProfiles("test") 使用
+
+spring:
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:fincontrol_it;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password: ""
+
+# 1a.3.5 双方言 — H2 方言选 h2 SQL
+# 注意：mybatis-plus.configuration 与 config-location 互斥——所有配置走 mybatis-config.xml
+# （mybatis-config.xml 已在 main/resources 下，由 application.yml 的 config-location 加载）
+# H2 方言由 mybatis-config.xml 的 <databaseIdProvider> 自动识别（无需在此指定）
+mybatis-plus:
+  database-id: h2
+  config-location: classpath:mybatis-config.xml
+
+# 关闭视觉模型加载（PromtLoaderService 启动时若 DB 无 prompt_versions 表会失败）
+fincontrol:
+  vision:
+    api-key: test-fake-key-for-it
+    timeout-seconds: 1
+  upload:
+    screenshot:
+      path: ./uploads/test-screenshots/

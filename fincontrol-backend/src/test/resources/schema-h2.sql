@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS fund_category_map (
 );
 CREATE INDEX IF NOT EXISTS idx_map_user_category ON fund_category_map(user_id, category);
 
--- 唯一键（H2 1.4+ 支持，MySQL 8 兼容）
-ALTER TABLE asset_snapshot ADD CONSTRAINT uk_snap_user_date_cat_latest
-    UNIQUE (user_id, snapshot_date, category, is_latest);
-ALTER TABLE fund_category_map ADD CONSTRAINT uk_map_user_fund
-    UNIQUE (user_id, fund_name);
+-- 唯一键（CREATE UNIQUE INDEX IF NOT EXISTS 多次跑幂等；H2 1.4+ + MySQL 8 兼容）
+CREATE UNIQUE INDEX IF NOT EXISTS uk_snap_user_date_cat_latest
+    ON asset_snapshot(user_id, snapshot_date, category, is_latest);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_map_user_fund
+    ON fund_category_map(user_id, fund_name);
