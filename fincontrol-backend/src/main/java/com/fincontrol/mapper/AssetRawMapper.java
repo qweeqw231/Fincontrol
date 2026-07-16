@@ -79,4 +79,14 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
             @Param("userId") Long userId,
             @Param("snapshotDate") java.time.LocalDate snapshotDate,
             @Param("category") String category);
+
+    /**
+     * 1a.4 余额查询：列出 user 当前最新一版（is_latest=true）的"余额类"行。
+     */
+    @Select("SELECT * FROM asset_raw " +
+            "WHERE user_id = #{userId} " +
+            "AND category = '余额类' " +
+            "AND is_latest = true " +
+            "ORDER BY snapshot_date DESC, id DESC")
+    List<AssetRaw> selectBalanceByUser(@Param("userId") Long userId);
 }
