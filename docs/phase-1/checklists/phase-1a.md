@@ -42,8 +42,8 @@
 
 ### 大类映射 API（2 项）
 
-- [ ] **1a.16** `GET /api/category-map/match` 实现 — 完成日期：____
-- [ ] **1a.17** `POST /api/category-map/update`（[P0-1.3]）— 完成日期：____
+- [x] **1a.16** `GET /api/category-map/match` 实现 — 完成日期：2026-07-17（cur 4.5 A5-S01/S02/S03 PASS，Service + Controller MockMvc 13 + 10 = 23 用例全过）
+- [x] **1a.17** `POST /api/category-map/update`（[P0-1.3]）— 完成日期：2026-07-17（A5-S04/S05/S06 PASS：UPDATE 路径 source='user_correct'、INSERT 路径 source='user_manual'、userId 隔离；1004 透传校验非六大类）
 
 ### AI 顾问 API（5 项）
 
@@ -63,7 +63,7 @@
 
 - [ ] **[P0-1.1]** 余额类数据路径（API 1a.5 + 1a.13）— 完成日期：____
 - [x] **[P0-1.2]** 三表写入事务（API 1a.7 @Transactional）— 业务层验收：2026-07-16（事务入口与写入阻断逻辑通过）；⚠️ 真实数据库提交/回滚待统一验收
-- [ ] **[P0-1.3]** 映射 UPDATE 规则（API 1a.7 + 1a.17）— 完成日期：____
+- [x] **[P0-1.3]** 映射 UPDATE 规则（API 1a.7 + 1a.17）— 完成日期：2026-07-17（已存在 → UPDATE source='user_correct'；不存在 → INSERT source='user_manual'；id 不变；XML 端 ON CONFLICT DO UPDATE SET source = EXCLUDED.source 统一两条路径）
 - [x] **[P0-1.4]** AI 解析失败异常路径（API 1a.5）— 完成日期：2026-07-16（3 类失败路径 3001/3002/3003 全部验证 + chat_history 写 assistant 错误记录）
 - [ ] **[P0-1.5]** 快照日期校验（API 1a.7）— 完成日期：____
 - [x] **[P0-3.2]** 撤销 API（API 1a.8）— 业务层验收：2026-07-16（10 秒内撤销测试通过）；⚠️ 超时 410、真实表恢复状态待统一验收
