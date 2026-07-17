@@ -7,6 +7,7 @@ package com.fincontrol.common;
  *   <tr><th>码</th><th>含义</th><th>HTTP</th></tr>
  *   <tr><td>0</td><td>成功</td><td>200</td></tr>
  *   <tr><td>1001</td><td>快照日期无效</td><td>400</td></tr>
+ *   <tr><td>1002</td><td>基金数量超过上限（match 限 50）</td><td>400</td></tr>
  *   <tr><td>1003</td><td>金额必须 > 0</td><td>400</td></tr>
  *   <tr><td>1004</td><td>大类名称不在枚举值内</td><td>400</td></tr>
  *   <tr><td>2001</td><td>该日期无快照数据</td><td>404</td></tr>
@@ -33,6 +34,7 @@ package com.fincontrol.common;
 public enum ErrorCode {
     SUCCESS(0, "success"),
     INVALID_SNAPSHOT_DATE(1001, "快照日期无效"),
+    FUNDS_COUNT_EXCEEDS_LIMIT(1002, "基金数量超过上限（match 单次最多 50 个）"),
     AMOUNT_MUST_BE_POSITIVE(1003, "金额必须 > 0"),
     INVALID_CATEGORY_NAME(1004, "大类名称不在枚举值内"),
     SNAPSHOT_NOT_FOUND(2001, "该日期无快照数据"),
