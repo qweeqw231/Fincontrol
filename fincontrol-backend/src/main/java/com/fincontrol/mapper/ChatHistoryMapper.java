@@ -35,4 +35,43 @@ public interface ChatHistoryMapper extends BaseMapper<ChatHistory> {
     List<ChatHistory> selectAssistantByType(
             @Param("userId") Long userId,
             @Param("conversationType") String conversationType);
+
+    /**
+     * 1a.19 列出某 user 的所有对话（按 conversation_id 分组），按 MAX(created_at) desc。
+     * <p>可选按 conversationType 过滤（{@code NULL} = 不过滤）。
+     * <p>使用返回 {@code Map<String, Object>} 避免在 mapper 端 @Results 转换复杂。
+     */
+    @Select("SELECT conversation_id AS conversationId, " +
+            "       conversation_type AS conversationType, " +
+            "       MIN(created_at) AS createdAt, " +
+            "       MAX(created_at) AS lastMessageAt, " +
+            "       COUNT(*) AS messageCount " +
+            "FROM chat_history " +
+            "WHERE user_id = #{userId} " +
+            "  AND (#{conversationType} IS NULL OR conversation_type = #{conversationType}) " +
+            "GROUP BY conversation_id, conversation_type " +
+            "ORDER BY lastMessageAt DESC " +
+            "LIMIT #{limit} OFFSET #{offset}")
+    List<java.util.Map<String, Object>> selectConversationList(
+            @Param("userId") Long userId,
+            @Param("conversationType") String conversationType,
+            @Param("limit") int limit,
+            @Param("offset") int offset);
+
+    /**
+     * 1a.19 count conversations（配合 selectConversationList 分页）。
+     */
+    @Select("SELECT COUNT(DISTINCT conversation_id) " +
+            "FROM chat_history " +
+            "WHERE user_id = #{userId} " +
+            "  AND (#{conversationType} IS NULL OR conversation_type = #{conversationType})")
+    int countConversations(
+            @Param("userId") Long userId,
+            @Param("conversationType") String conversationType);
+
+    /**
+     * 1a.22 物理删除某 conversation 的全部消息，返回删除行数。
+     */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM chat_history WHERE conversation_id = #{conversationId}")
+    int deleteByConversationId(@Param("conversationId") String conversationId);
 }
