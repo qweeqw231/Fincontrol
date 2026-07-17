@@ -8,10 +8,21 @@
 #   4. confirm 4 张图（取真实 MySQL upsert）
 #   5. balance 端点验证
 #   6. 查真表：asset_raw / fund_category_map / asset_snapshot / chat_history
+#
+# 重要：单步 curl 失败不退出（set +e 兜底），避免 minimax 限流让整脚本中断
+# 最终用 OK_COUNT / ERR_COUNT 报
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SCRIPT_DIR/lib-common.sh"
+
+# 计数器：单步失败不退出
+set +e
+OK_COUNT=0
+ERR_COUNT=0
+
+mark_ok()  { OK_COUNT=$((OK_COUNT+1)); ok  "$1"; }
+mark_err() { ERR_COUNT=$((ERR_COUNT+1)); err "$1"; }
 
 SAMPLES_DIR="$BACKEND_ROOT/uploads/samples"
 EXPECTED_FILES=(
@@ -25,18 +36,20 @@ section "03-smoke-1: 截图全链路端到端（4 张真实图）"
 
 # 前置：后端 ready
 if ! curl -fsS http://127.0.0.1:8080/actuator/health >/dev/null 2>&1; then
-  err "后端未启动，请先 bash scripts/1a7/02-up-backend.sh"
+  mark_err "后端未启动，请先 bash scripts/1a7/02-up-backend.sh"
+  err_count_report
   exit 1
 fi
 
 # 前置：4 张图存在
 for f in "${EXPECTED_FILES[@]}"; do
   if [ ! -f "$SAMPLES_DIR/$f" ]; then
-    err "缺失样本：$SAMPLES_DIR/$f"
+    mark_err "缺失样本：$SAMPLES_DIR/$f"
+    err_count_report
     exit 1
   fi
 done
-ok "4 张真实图都在 samples/"
+mark_ok "4 张真实图都在 samples/"
 
 # ---------- A7-S01: 4 张图 upload ----------
 section "A7-S01: upload 4 张图"
@@ -50,13 +63,16 @@ for i in "${!EXPECTED_FILES[@]}"; do
     -o "$outfile" -w "%{http_code}" 2>&1)
   if [ "$status" = "200" ]; then
     fid=$(python -c "import json; print(json.load(open('$outfile')).get('data', {}).get('fileId', ''))" 2>/dev/null)
-    FILE_IDS[$f]="$fid"
-    ok "  upload #$((i+1)) $f → fileId=$fid"
+    if [ -n "$fid" ] && [ "$fid" != "None" ]; then
+      FILE_IDS[$f]="$fid"
+      mark_ok "  upload #$((i+1)) $f → fileId=$fid"
+    else
+      mark_err "  upload #$((i+1)) $f 返 200 但 fileId 缺失"
+      head -3 "$outfile" 2>/dev/null
+    fi
   else
-    err "  upload #$((i+1)) $f 失败（HTTP $status）"
-    err "  可能 minimax vision 限流或 key 无效"
-    cat "$outfile" | head -5
-    exit 1
+    mark_err "  upload #$((i+1)) $f HTTP $status（minimax vision 限流或 key 无效）"
+    head -3 "$outfile" 2>/dev/null
   fi
 done
 
@@ -72,14 +88,16 @@ for f in "${!FILE_IDS[@]}"; do
     -o "$outfile" -w "%{http_code}" 2>&1)
   if [ "$status" = "200" ]; then
     cid=$(python -c "import json; print(json.load(open('$outfile')).get('data', {}).get('conversationId', ''))" 2>/dev/null)
-    CONV_IDS[$f]="$cid"
-    fc=$(python -c "import json; print(sum(len(c.get('funds', [])) for c in json.load(open('$outfile')).get('data', {}).get('categories', [])))" 2>/dev/null)
-    ok "  parse $f → convId=$cid（$fc funds）"
+    if [ -n "$cid" ] && [ "$cid" != "None" ]; then
+      CONV_IDS[$f]="$cid"
+      fc=$(python -c "import json; print(sum(len(c.get('funds', [])) for c in json.load(open('$outfile')).get('data', {}).get('categories', [])))" 2>/dev/null)
+      mark_ok "  parse $f → convId=$cid（$fc funds）"
+    else
+      mark_err "  parse $f 返 200 但 conversationId 缺失"
+    fi
   else
-    err "  parse $f 失败（HTTP $status）"
-    cat "$outfile" | head -10
-    # 失败不退出，记录到 log 后继续
-    warn "  继续后续步骤（parse 失败仅影响 confirm）"
+    mark_err "  parse $f HTTP $status（minimax vision 限流）"
+    head -3 "$outfile" 2>/dev/null
   fi
 done
 
@@ -94,9 +112,9 @@ if [ -n "$first_cid" ]; then
     -d "{\"conversationId\":\"$first_cid\",\"userId\":1}" \
     -o "$outfile" -w "%{http_code}" 2>&1)
   if [ "$status" = "200" ]; then
-    ok "  reparse $first_cid HTTP 200（幂等 OK）"
+    mark_ok "  reparse $first_cid HTTP 200（幂等 OK）"
   else
-    warn "  reparse 失败（HTTP $status）"
+    mark_err "  reparse HTTP $status"
   fi
 fi
 
@@ -105,16 +123,14 @@ section "A7-S03: confirm 4 张图（真实 MySQL upsert，1a.7-PRE dialect 验�
 declare -A CONFIRM_OK=()
 for f in "${!FILE_IDS[@]}"; do
   fid="${FILE_IDS[$f]}"
-  # 读 parse 的 ParsedAsset（从 outfile）
   parse_outfile="$API_OUT_DIR/03_s02_parse_${fid}.json"
   if [ ! -f "$parse_outfile" ]; then
-    warn "  skip confirm $f (no parse output)"
+    mark_err "  skip confirm $f (no parse output)"
     continue
   fi
-  # 提取 ParsedAsset（不含 fileId/conversationId 字段）
   pa=$(python -c "import json; d=json.load(open('$parse_outfile'))['data']; d.pop('fileId', None); d.pop('conversationId', None); d['userId']=1; d['confirmedOverwrite']=True; print(json.dumps(d))" 2>/dev/null)
   if [ -z "$pa" ]; then
-    warn "  skip confirm $f (parse failed)"
+    mark_err "  skip confirm $f (parse failed)"
     continue
   fi
   outfile="$API_OUT_DIR/03_s03_confirm_${fid}.json"
@@ -124,11 +140,10 @@ for f in "${!FILE_IDS[@]}"; do
     -o "$outfile" -w "%{http_code}" 2>&1)
   if [ "$status" = "200" ]; then
     CONFIRM_OK[$f]=1
-    ok "  confirm $f → HTTP 200（1a.7-PRE MERGE INTO 修复生效）"
+    mark_ok "  confirm $f → HTTP 200（1a.7-PRE MERGE INTO 修复生效）"
   else
-    err "  confirm $f 失败（HTTP $status）"
+    mark_err "  confirm $f HTTP $status"
     head -3 "$outfile" 2>/dev/null
-    cat "$outfile" | head -10
   fi
 done
 
@@ -141,43 +156,43 @@ status=$(curl -sS http://127.0.0.1:8080/api/asset/balance \
 if [ "$status" = "200" ]; then
   total=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d.get('balanceFundTotal', 0))" 2>/dev/null)
   count=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(len(d.get('items', [])))" 2>/dev/null)
-  ok "  balance HTTP 200: total=$total, items=$count"
+  mark_ok "  balance HTTP 200: total=$total, items=$count"
 else
-  err "  balance HTTP $status"
+  mark_err "  balance HTTP $status"
 fi
 
 # ---------- A7-S12: 真表 SQL 验证 ----------
 section "A7-S12: 真表 SQL 验证（1a.7-PRE dialect 修复）"
 if [ ${#CONFIRM_OK[@]} -gt 0 ]; then
   info "asset_raw 总数（应 ≥ 6 大类 × 1 张图 = 6）"
-  sql_query "SELECT COUNT(*) AS raw_count FROM asset_raw WHERE user_id=1;" | grep -oE '[0-9]+' | tail -1 | while read c; do
-    if [ "$c" -ge 6 ]; then ok "  asset_raw 总数: $c（≥ 6）"
-    else warn "  asset_raw 总数: $c（< 6，可能 confirm 部分失败）"; fi
-  done
+  raw=$(sql_query "SELECT COUNT(*) FROM asset_raw WHERE user_id=1;" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
+  if [ "${raw:-0}" -ge 6 ]; then mark_ok "  asset_raw: $raw"
+  else mark_err "  asset_raw: $raw (< 6)"; fi
+
   info "fund_category_map 总数"
-  sql_query "SELECT COUNT(*) AS map_count FROM fund_category_map WHERE user_id=1;" | grep -oE '[0-9]+' | tail -1 | while read c; do
-    if [ "$c" -ge 6 ]; then ok "  fund_category_map 总数: $c（≥ 6）"
-    else warn "  fund_category_map 总数: $c"; fi
-  done
-  info "asset_snapshot 总数（7：6 大类 + 余额类）"
-  sql_query "SELECT COUNT(*) AS snap_count FROM asset_snapshot WHERE user_id=1;" | grep -oE '[0-9]+' | tail -1 | while read c; do
-    if [ "$c" -ge 7 ]; then ok "  asset_snapshot 总数: $c（≥ 7）"
-    else warn "  asset_snapshot 总数: $c"; fi
-  done
-  info "chat_history 总数（user + assistant 各 1 条 per 解析）"
-  sql_query "SELECT COUNT(*) AS chat_count FROM chat_history WHERE user_id=1 AND conversation_type='screenshot_parse';" | grep -oE '[0-9]+' | tail -1 | while read c; do
-    ok "  chat_history 总数: $c（user + assistant 各 1 条 per 解析）"
-  done
-  info "1a.7-PRE dialect 验证：连续 ON DUPLICATE KEY UPDATE 应工作"
-  sql_query "SHOW CREATE TABLE fund_category_map\\G" 2>/dev/null | grep "ON DUPLICATE KEY" | head -1
+  map=$(sql_query "SELECT COUNT(*) FROM fund_category_map WHERE user_id=1;" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
+  if [ "${map:-0}" -ge 6 ]; then mark_ok "  fund_category_map: $map"
+  else mark_err "  fund_category_map: $map"; fi
+
+  info "asset_snapshot 总数（应 = 7：6 大类 + 余额类）"
+  snap=$(sql_query "SELECT COUNT(*) FROM asset_snapshot WHERE user_id=1;" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
+  if [ "${snap:-0}" -ge 7 ]; then mark_ok "  asset_snapshot: $snap"
+  else mark_err "  asset_snapshot: $snap (< 7)"; fi
+
+  info "chat_history 总数（screenshot_parse）"
+  chat=$(sql_query "SELECT COUNT(*) FROM chat_history WHERE user_id=1 AND conversation_type='screenshot_parse';" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
+  if [ "${chat:-0}" -ge 2 ]; then mark_ok "  chat_history: $chat"
+  else mark_err "  chat_history: $chat (< 2)"; fi
 fi
 
 # 总结
 section "A7-S01~S04 + S12 总结"
-total_ok=${#CONFIRM_OK[@]}
-total_files=${#EXPECTED_FILES[@]}
-echo "  upload 全部成功: $total_files/$total_files"
-echo "  parse 成功: ${#CONV_IDS[@]}/$total_files"
-echo "  confirm 成功: $total_ok/$total_files"
-ok "03-smoke-1 完成：详见 $LOG_FILE 和 $API_OUT_DIR/03_*.json"
+echo "  累计：OK=$OK_COUNT / ERR=$ERR_COUNT"
+echo "  文件：详见 $API_OUT_DIR/03_*.json"
+
+if [ "$ERR_COUNT" -eq 0 ]; then
+  ok "03-smoke-1 完成：全部 0 错误"
+else
+  warn "03-smoke-1 完成但有 $ERR_COUNT 错误（minimax 限流或 key 问题）"
+fi
 info "下一步：bash scripts/1a7/04-smoke-2-chat.sh"
