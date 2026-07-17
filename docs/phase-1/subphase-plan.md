@@ -189,13 +189,15 @@
 - routedTo 标识在响应中暴露
 
 **验收目标（DoD）**：
-- [ ] 投资决策类问题 → main_loop（带 ai_assistant system prompt）
-- [ ] 闲聊/技术支持/写作/模型身份询问 → garbage_loop（无 system prompt）
-- [ ] 响应中 `routedTo` 字段与走过的回路一致
-- [ ] conversation 列表 CRUD 全部走通
-- [ ] chat_history 写入正确（role/user|assistant、content 不丢失）
+- [x] 投资决策类问题 → main_loop（带 ai_assistant system prompt）— 完成日期：2026-07-17
+- [x] 闲聊/技术支持/写作/模型身份询问 → garbage_loop（无 system prompt）— 完成日期：2026-07-17
+- [x] 响应中 `routedTo` 字段与走过的回路一致 — 完成日期：2026-07-17
+- [x] conversation 列表CRUD 全部走通 — 完成日期：2026-07-17
+- [x] chat_history 写入正确（role/user|assistant、content 不丢失）— 完成日期：2026-07-17
 
 **前置依赖**：1a.1 通过（独立模块，可与 1a.4 并行）。
+
+**实际进度**：✅ **2026-07-17 完整闭环**（cur 4.6：TextAiClient 16/16 + IntentClassifier 18/18 + ChatService 11/11 + ChatController 7/7 + ConversationService 16/16 + ConversationController 11/11 = 79/79 PASS；mvn test 151/151 全过，0 回归）。详细报告见 `docs/test-records/manual-tests/2026-07-17_phase1a6-acceptance-report.md`。
 
 ---
 
@@ -329,7 +331,7 @@
 | 1a.3 | 快照确认与事务 | 1d | 🟡 业务闭环通过；真实 MySQL 持久化待统一验收 | 2026-07-16 | 1a.7–1a.8 | P0-1.2, P0-1.3, P0-1.5, P0-3.2, P0-3.3, P0-3.4 | 1a.2 |
 | 1a.4 | 快照查询 + 首页辅助 | 0.5d | 1a.9–1a.15 | P0-1.1, P0-4.1, P0-4.3 | 1a.3 |
 | 1a.5 | 大类映射 API | 0.25d | ✅ 完成 | 2026-07-17 | 1a.16–1a.17 | P0-1.3 | 1a.3 |
-| 1a.6 | AI 顾问 API | 0.5–1d | 1a.18–1a.22 | P0-3.5, P0-3.6 | 1a.1（可与 1a.4 并行）|
+| 1a.6 | AI 顾问 API | 0.5–1d | ✅ 完成 2026-07-17 | 1a.18–1a.22 | P0-3.5, P0-3.6 | 1a.1（可与 1a.4 并行）|
 | 1a.7 | 冒烟 + 覆盖率 | 0.5d | 1a.24 + 冒烟 1/2 | — | 1a.2–1a.6 |
 | 1b.1 | 前端骨架 + 全局状态 | 0.5d | 1b.1–1b.5 | P0-3.1 | Phase 1a 全 |
 | 1b.2 | 首页 + 全局联动 | 1d | 1b.6–1b.9, 1b.23 | P0-3.1, P0-4.1, P0-4.3 | 1b.1 + 1a.4 |

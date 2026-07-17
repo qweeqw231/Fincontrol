@@ -47,11 +47,11 @@
 
 ### AI 顾问 API（5 项）
 
-- [ ] **1a.18** `POST /api/chat/send`（[P0-3.5] few-shot、[P0-3.6] system prompt 切换）— 完成日期：____
-- [ ] **1a.19** `GET /api/conversations` 实现 — 完成日期：____
-- [ ] **1a.20** `GET /api/conversations/{id}` 实现 — 完成日期：____
-- [ ] **1a.21** `POST /api/conversations` 实现 — 完成日期：____
-- [ ] **1a.22** `DELETE /api/conversations/{id}` 实现 — 完成日期：____
+- [x] **1a.18** `POST /api/chat/send`（[P0-3.5] few-shot、[P0-3.6] system prompt 切换）— 完成日期：2026-07-17（TextAiClient 16/16 + IntentClassifier 18/18 + ChatService 11/11 + ChatController 7/7 = 52/52 PASS）
+- [x] **1a.19** `GET /api/conversations` 实现 — 完成日期：2026-07-17（ConversationService 16/16 + Controller 11/11 = 27/27 PASS）
+- [x] **1a.20** `GET /api/conversations/{id}` 实现 — 完成日期：2026-07-17（包含在上述 Controller 7 用例中）
+- [x] **1a.21** `POST /api/conversations` 实现 — 完成日期：2026-07-17（包含在上述 Controller 7 用例中）
+- [x] **1a.22** `DELETE /api/conversations/{id}` 实现 — 完成日期：2026-07-17（包含在上述 Controller 7 用例中）
 
 ### 解析日志 API（1 项）
 
@@ -67,8 +67,8 @@
 - [x] **[P0-1.4]** AI 解析失败异常路径（API 1a.5）— 完成日期：2026-07-16（3 类失败路径 3001/3002/3003 全部验证 + chat_history 写 assistant 错误记录）
 - [ ] **[P0-1.5]** 快照日期校验（API 1a.7）— 完成日期：____
 - [x] **[P0-3.2]** 撤销 API（API 1a.8）— 业务层验收：2026-07-16（10 秒内撤销测试通过）；⚠️ 超时 410、真实表恢复状态待统一验收
-- [ ] **[P0-3.5]** AI 顾问 B.3 few-shot（API 1a.18）— 完成日期：____
-- [x] **[P0-3.6]** system prompt 切换（API 1a.18）— 完成日期：2026-07-16（minimax M3 实际切换 system prompt 后返回嵌套结构，证明 P0-3.6 后端架构可行）
+- [x] **[P0-3.5]** AI 顾问 B.3 few-shot（API 1a.18）— 完成日期：2026-07-17（IntentClassifier 复用 db-schema.sql §6 intent_classifier v1.0 7 正 7 反 few-shot，18/18 PASS；parseBoolean 严格解析 true/false）
+- [x] **[P0-3.6]** system prompt 切换（API 1a.18）— 完成日期：2026-07-17（ChatService 路由：投资类 → main_loop + ai_assistant v1.0；非投资类 → garbage_loop + systemPrompt=null；11/11 PASS）
 - [x] **[P0-4.4]** 重新解析（API 1a.6）— 完成日期：2026-07-16（基于已存在的 conversationId 重跑 minimax 验证完成）
 
 ---
