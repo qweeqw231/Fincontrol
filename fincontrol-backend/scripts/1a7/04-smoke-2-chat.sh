@@ -10,6 +10,7 @@
 #   A7-S12  真表 SQL：chat_history 多条记录
 #
 # 重要：单步 curl 失败不退出（set +e 兜底），minimax 限流时降级到 garbage_loop
+# JSON body 用 --data @file（避免 Windows + cygwin 嵌套引号问题）
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
@@ -22,6 +23,36 @@ ERR_COUNT=0
 
 mark_ok()  { OK_COUNT=$((OK_COUNT+1)); ok  "$1"; }
 mark_err() { ERR_COUNT=$((ERR_COUNT+1)); err "$1"; }
+
+# 解析 JSON 字段（grep 替代 python，兼容 Windows）
+extract_json_field() {
+  local f="$1"; local field="$2"
+  grep -oE "\"${field}\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" "$f" 2>/dev/null | head -1 | cut -d'"' -f4
+}
+
+# 准备 5 个 JSON body 文件（避免在 curl -d 里嵌套引号）
+TMP_DIR=$(mktemp -d)
+trap "rm -rf $TMP_DIR" EXIT
+
+cat > "$TMP_DIR/investment_1.json" <<'EOF'
+{"message":"本月应该补仓多少"}
+EOF
+
+cat > "$TMP_DIR/investment_2.json" <<'EOF'
+{"message":"海外权益类占比偏高怎么办"}
+EOF
+
+cat > "$TMP_DIR/chitchat_1.json" <<'EOF'
+{"message":"今天天气怎么样"}
+EOF
+
+cat > "$TMP_DIR/chitchat_2.json" <<'EOF'
+{"message":"你是什么模型"}
+EOF
+
+cat > "$TMP_DIR/empty.json" <<'EOF'
+{"message":""}
+EOF
 
 section "04-smoke-2: chat send 多轮端到端（5 个用例）"
 
@@ -36,21 +67,19 @@ section "A7-S05: 投资决策类 → main_loop + ai_assistant v1.0"
 outfile="$API_OUT_DIR/04_s05_main_loop.json"
 status=$(curl -sS -X POST http://127.0.0.1:8080/api/chat/send \
   -H "Content-Type: application/json" -H "X-User-Id: 1" \
-  -d '{"message":"本月应该补仓多少"}' \
+  --data @"$TMP_DIR/investment_1.json" \
   -o "$outfile" -w "%{http_code}" 2>&1)
-if [ "$status" = "200" ]; then
-  routed=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d['assistantMessage'].get('routedTo', '?'))" 2>/dev/null)
-  pv=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d['assistantMessage'].get('promptVersion') or '(none)')" 2>/dev/null)
-  lat=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d['intentClassification'].get('latencyMs', '?'))" 2>/dev/null)
-  inv=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d['intentClassification'].get('result', '?'))" 2>/dev/null)
+if [ "$status" = "200" ] && [ -s "$outfile" ]; then
+  routed=$(extract_json_field "$outfile" "routedTo")
+  pv=$(extract_json_field "$outfile" "promptVersion")
   if [ "$routed" = "main_loop" ] && [ "$pv" = "ai_assistant v1.0" ]; then
-    mark_ok "  routedTo=$routed, promptVersion=$pv, latencyMs=$lat, isInvestment=$inv"
+    mark_ok "  routedTo=$routed, promptVersion=$pv"
   else
     mark_err "  路由不对: routedTo=$routed, promptVersion=$pv"
   fi
 else
   mark_err "  HTTP $status（minimax 限流）"
-  head -3 "$outfile" 2>/dev/null
+  head -c 200 "$outfile" 2>/dev/null
 fi
 
 # ---------- A7-S06: 投资决策类（同主题）→ main_loop ----------
@@ -58,10 +87,10 @@ section "A7-S06: 投资决策类（同主题）→ main_loop"
 outfile="$API_OUT_DIR/04_s06_investment_2.json"
 status=$(curl -sS -X POST http://127.0.0.1:8080/api/chat/send \
   -H "Content-Type: application/json" -H "X-User-Id: 1" \
-  -d '{"message":"海外权益类占比偏高怎么办"}' \
+  --data @"$TMP_DIR/investment_2.json" \
   -o "$outfile" -w "%{http_code}" 2>&1)
-if [ "$status" = "200" ]; then
-  routed=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d['assistantMessage'].get('routedTo', '?'))" 2>/dev/null)
+if [ "$status" = "200" ] && [ -s "$outfile" ]; then
+  routed=$(extract_json_field "$outfile" "routedTo")
   if [ "$routed" = "main_loop" ]; then
     mark_ok "  routedTo=main_loop（与 A7-S05 一致）"
   else
@@ -76,12 +105,12 @@ section "A7-S07: 闲聊 → garbage_loop（无 promptVersion）"
 outfile="$API_OUT_DIR/04_s07_garbage_loop.json"
 status=$(curl -sS -X POST http://127.0.0.1:8080/api/chat/send \
   -H "Content-Type: application/json" -H "X-User-Id: 1" \
-  -d '{"message":"今天天气怎么样"}' \
+  --data @"$TMP_DIR/chitchat_1.json" \
   -o "$outfile" -w "%{http_code}" 2>&1)
-if [ "$status" = "200" ]; then
-  routed=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d['assistantMessage'].get('routedTo', '?'))" 2>/dev/null)
-  pv=$(python -c "import json; d=json.load(open('$outfile'))['data']; v=d['assistantMessage'].get('promptVersion'); print('(none)' if v is None else v)" 2>/dev/null)
-  if [ "$routed" = "garbage_loop" ] && [ "$pv" = "(none)" ]; then
+if [ "$status" = "200" ] && [ -s "$outfile" ]; then
+  routed=$(extract_json_field "$outfile" "routedTo")
+  pv=$(extract_json_field "$outfile" "promptVersion")
+  if [ "$routed" = "garbage_loop" ] && [ -z "$pv" ]; then
     mark_ok "  routedTo=garbage_loop, promptVersion=(none) ✓"
   else
     mark_err "  期望 garbage_loop + 无 promptVersion：实际 routedTo=$routed, promptVersion=$pv"
@@ -95,10 +124,10 @@ section "A7-S08: 模型身份询问 → garbage_loop"
 outfile="$API_OUT_DIR/04_s08_model_identity.json"
 status=$(curl -sS -X POST http://127.0.0.1:8080/api/chat/send \
   -H "Content-Type: application/json" -H "X-User-Id: 1" \
-  -d '{"message":"你是什么模型"}' \
+  --data @"$TMP_DIR/chitchat_2.json" \
   -o "$outfile" -w "%{http_code}" 2>&1)
-if [ "$status" = "200" ]; then
-  routed=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d['assistantMessage'].get('routedTo', '?'))" 2>/dev/null)
+if [ "$status" = "200" ] && [ -s "$outfile" ]; then
+  routed=$(extract_json_field "$outfile" "routedTo")
   if [ "$routed" = "garbage_loop" ]; then
     mark_ok "  routedTo=garbage_loop（与 A7-S07 一致）"
   else
@@ -113,10 +142,10 @@ section "A7-S09: 空 message → HTTP 400 + code 1001"
 outfile="$API_OUT_DIR/04_s09_empty_msg.json"
 status=$(curl -sS -X POST http://127.0.0.1:8080/api/chat/send \
   -H "Content-Type: application/json" -H "X-User-Id: 1" \
-  -d '{"message":""}' \
+  --data @"$TMP_DIR/empty.json" \
   -o "$outfile" -w "%{http_code}" 2>&1)
-if [ "$status" = "400" ]; then
-  code=$(python -c "import json; d=json.load(open('$outfile')); print(d.get('code', 0))" 2>/dev/null)
+if [ "$status" = "400" ] && [ -s "$outfile" ]; then
+  code=$(grep -oE '"code"[[:space:]]*:[[:space:]]*[0-9]+' "$outfile" | head -1 | grep -oE '[0-9]+')
   if [ "$code" = "1001" ]; then
     mark_ok "  HTTP 400 + code=1001 ✓"
   else
@@ -130,7 +159,7 @@ fi
 section "A7-S12: chat_history 真表 SQL 验证"
 total_chat=$(sql_query "SELECT COUNT(*) FROM chat_history WHERE user_id=1 AND conversation_type='ai_assistant';" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
 if [ "${total_chat:-0}" -ge 8 ]; then
-  mark_ok "  chat_history (ai_assistant): $total_chat（≥ 8，对应 4 个用例各 2 条：user+assistant）"
+  mark_ok "  chat_history (ai_assistant): $total_chat（≥ 8）"
 else
   mark_err "  chat_history (ai_assistant): $total_chat（< 8）"
 fi

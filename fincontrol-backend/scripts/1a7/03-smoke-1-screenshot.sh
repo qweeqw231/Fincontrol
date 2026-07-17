@@ -24,6 +24,13 @@ ERR_COUNT=0
 mark_ok()  { OK_COUNT=$((OK_COUNT+1)); ok  "$1"; }
 mark_err() { ERR_COUNT=$((ERR_COUNT+1)); err "$1"; }
 
+# 安全解析 fileId / conversationId：用 grep 替代 python（兼容 Windows + cygwin）
+# 用法：extract_json_field <file> <field>  → 输出 value（不带引号）
+extract_json_field() {
+  local f="$1"; local field="$2"
+  grep -oE "\"${field}\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" "$f" 2>/dev/null | head -1 | cut -d'"' -f4
+}
+
 SAMPLES_DIR="$BACKEND_ROOT/uploads/samples"
 EXPECTED_FILES=(
   "phase1a2-alipay-fund-list-20260715-2355-1.jpg"
@@ -61,18 +68,17 @@ for i in "${!EXPECTED_FILES[@]}"; do
     -H "X-User-Id: 1" \
     -F "file=@$SAMPLES_DIR/$f" \
     -o "$outfile" -w "%{http_code}" 2>&1)
-  if [ "$status" = "200" ]; then
-    fid=$(python -c "import json; print(json.load(open('$outfile')).get('data', {}).get('fileId', ''))" 2>/dev/null)
+  if [ "$status" = "200" ] && [ -s "$outfile" ]; then
+    fid=$(extract_json_field "$outfile" "fileId")
     if [ -n "$fid" ] && [ "$fid" != "None" ]; then
       FILE_IDS[$f]="$fid"
       mark_ok "  upload #$((i+1)) $f → fileId=$fid"
     else
-      mark_err "  upload #$((i+1)) $f 返 200 但 fileId 缺失"
-      head -3 "$outfile" 2>/dev/null
+      mark_err "  upload #$((i+1)) $f 返 200 但 fileId 缺失（$(head -c 200 $outfile)）"
     fi
   else
-    mark_err "  upload #$((i+1)) $f HTTP $status（minimax vision 限流或 key 无效）"
-    head -3 "$outfile" 2>/dev/null
+    mark_err "  upload #$((i+1)) $f HTTP $status"
+    head -c 200 "$outfile" 2>/dev/null
   fi
 done
 
@@ -86,18 +92,18 @@ for f in "${!FILE_IDS[@]}"; do
     -H "Content-Type: application/json" -H "X-User-Id: 1" \
     -d "{\"fileId\":\"$fid\",\"userId\":1}" \
     -o "$outfile" -w "%{http_code}" 2>&1)
-  if [ "$status" = "200" ]; then
-    cid=$(python -c "import json; print(json.load(open('$outfile')).get('data', {}).get('conversationId', ''))" 2>/dev/null)
+  if [ "$status" = "200" ] && [ -s "$outfile" ]; then
+    cid=$(extract_json_field "$outfile" "conversationId")
     if [ -n "$cid" ] && [ "$cid" != "None" ]; then
       CONV_IDS[$f]="$cid"
-      fc=$(python -c "import json; print(sum(len(c.get('funds', [])) for c in json.load(open('$outfile')).get('data', {}).get('categories', [])))" 2>/dev/null)
+      fc=$(grep -c '"fundName"' "$outfile" 2>/dev/null || echo 0)
       mark_ok "  parse $f → convId=$cid（$fc funds）"
     else
-      mark_err "  parse $f 返 200 但 conversationId 缺失"
+      mark_err "  parse $f 返 200 但 conversationId 缺失（$(head -c 200 $outfile)）"
     fi
   else
     mark_err "  parse $f HTTP $status（minimax vision 限流）"
-    head -3 "$outfile" 2>/dev/null
+    head -c 200 "$outfile" 2>/dev/null
   fi
 done
 
@@ -124,26 +130,31 @@ declare -A CONFIRM_OK=()
 for f in "${!FILE_IDS[@]}"; do
   fid="${FILE_IDS[$f]}"
   parse_outfile="$API_OUT_DIR/03_s02_parse_${fid}.json"
-  if [ ! -f "$parse_outfile" ]; then
+  if [ ! -s "$parse_outfile" ]; then
     mark_err "  skip confirm $f (no parse output)"
     continue
   fi
-  pa=$(python -c "import json; d=json.load(open('$parse_outfile'))['data']; d.pop('fileId', None); d.pop('conversationId', None); d['userId']=1; d['confirmedOverwrite']=True; print(json.dumps(d))" 2>/dev/null)
+  # 提取 ParsedAsset（不含 fileId/conversationId 字段）；用 sed 删除两行
+  pa=$(grep -v '"fileId"\|"conversationId"\|"userId"\|"confirmedOverwrite"' "$parse_outfile" | head -1)
   if [ -z "$pa" ]; then
-    mark_err "  skip confirm $f (parse failed)"
+    mark_err "  skip confirm $f (parse JSON 异常)"
     continue
   fi
+  # 注入 userId=1 + confirmedOverwrite=true（直接 sed 替换）
+  pa=$(echo "$pa" | sed 's/}/,"userId":1,"confirmedOverwrite":true}/' | head -1)
   outfile="$API_OUT_DIR/03_s03_confirm_${fid}.json"
+  echo "$pa" > /tmp/req-$$.json
   status=$(curl -sS -X POST http://127.0.0.1:8080/api/snapshot/confirm \
     -H "Content-Type: application/json" -H "X-User-Id: 1" \
-    -d "$pa" \
+    --data @/tmp/req-$$.json \
     -o "$outfile" -w "%{http_code}" 2>&1)
+  rm -f /tmp/req-$$.json
   if [ "$status" = "200" ]; then
     CONFIRM_OK[$f]=1
     mark_ok "  confirm $f → HTTP 200（1a.7-PRE MERGE INTO 修复生效）"
   else
     mark_err "  confirm $f HTTP $status"
-    head -3 "$outfile" 2>/dev/null
+    head -c 200 "$outfile" 2>/dev/null
   fi
 done
 
@@ -153,9 +164,9 @@ outfile="$API_OUT_DIR/03_s04_balance.json"
 status=$(curl -sS http://127.0.0.1:8080/api/asset/balance \
   -H "X-User-Id: 1" \
   -o "$outfile" -w "%{http_code}" 2>&1)
-if [ "$status" = "200" ]; then
-  total=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(d.get('balanceFundTotal', 0))" 2>/dev/null)
-  count=$(python -c "import json; d=json.load(open('$outfile'))['data']; print(len(d.get('items', [])))" 2>/dev/null)
+if [ "$status" = "200" ] && [ -s "$outfile" ]; then
+  total=$(extract_json_field "$outfile" "balanceFundTotal")
+  count=$(grep -c '"fundName"' "$outfile" 2>/dev/null || echo 0)
   mark_ok "  balance HTTP 200: total=$total, items=$count"
 else
   mark_err "  balance HTTP $status"

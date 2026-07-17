@@ -87,23 +87,26 @@ fi
 
 # ---------- Swagger 端点数 ----------
 section "D: Swagger 端点数 ≥ 24"
+# 等 3 秒让 springdoc 路由初始化
+info "等 3 秒让 springdoc 路由初始化..."
+sleep 3
 outfile="$API_OUT_DIR/05_swagger_paths.json"
 status=$(curl -sS http://127.0.0.1:8080/v3/api-docs \
   -o "$outfile" -w "%{http_code}" 2>&1)
-if [ "$status" = "200" ]; then
+if [ "$status" = "200" ] && [ -s "$outfile" ]; then
   if command -v jq >/dev/null 2>&1; then
-    NPATHS=$(jq '.paths | length' "$outfile")
+    NPATHS=$(jq '.paths | length' "$outfile" 2>/dev/null || echo 0)
   else
-    NPATHS=$(python -c "import json; print(len(json.load(open('$outfile'))['paths']))" 2>/dev/null || echo 0)
+    NPATHS=$(grep -oE '"/api/[a-zA-Z0-9/_-]+":[[:space:]]*\{' "$outfile" 2>/dev/null | wc -l || echo 0)
   fi
   info "Swagger paths: $NPATHS"
   if [ "$NPATHS" -ge 24 ]; then
-    ok "  ≥ 24 端点 ✓"
+    mark_ok "  ≥ 24 端点 ✓"
   else
-    warn "  < 24 端点（$NPATHS < 24）"
+    mark_err "  < 24 端点（$NPATHS < 24）"
   fi
 else
-  err "  Swagger 不可访问：HTTP $status"
+  mark_err "  Swagger 不可访问：HTTP $status"
 fi
 
 # ---------- 总结 ----------
