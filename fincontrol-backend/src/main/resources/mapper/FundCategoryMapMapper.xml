@@ -23,6 +23,16 @@
           AND fund_name = #{fundName}
     </select>
 
+    <!-- 1a5 批量查询（match 接口优化：一次往返完成 50 个 fund 查表） -->
+    <select id="selectByUserAndFundNames" resultType="com.fincontrol.entity.FundCategoryMap">
+        SELECT * FROM fund_category_map
+        WHERE user_id = #{userId}
+          AND fund_name IN
+          <foreach collection="fundNames" item="name" open="(" separator="," close=")">
+              #{name}
+          </foreach>
+    </select>
+
     <!-- 1a3 confirm 维度 D 镜像校验：查同 user 下 fund_name 集合 -->
     <select id="selectFundNamesByUser" resultType="string">
         SELECT DISTINCT fund_name FROM fund_category_map

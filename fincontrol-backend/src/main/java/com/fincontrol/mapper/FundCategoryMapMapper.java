@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
@@ -29,6 +30,14 @@ public interface FundCategoryMapMapper extends BaseMapper<FundCategoryMap> {
     FundCategoryMap selectByUserAndFundName(
             @Param("userId") Long userId,
             @Param("fundName") String fundName);
+
+    /**
+     * 1a.5 暴露给前端：按 fund_name 集合批量查询（避免 N+1）。
+     * <p>实现见 XML — MySQL 8.0.20+ 与 H2 均支持 {@code IN (...)}。
+     */
+    List<FundCategoryMap> selectByUserAndFundNames(
+            @Param("userId") Long userId,
+            @Param("fundNames") Collection<String> fundNames);
 
     /**
      * 1a.3 confirm 维度 D 镜像校验：查同 user 下 fund_name 集合。
