@@ -12,12 +12,22 @@ require_cmd mvn java || exit 1
 
 section "02-up-backend: 启动 Spring Boot 后端"
 
-# 0. 检查前置：MySQL 容器必须已启动
-if ! docker ps --format '{{.Names}}' | grep -q "^fincontrol-mysql$"; then
-  err "MySQL 容器 fincontrol-mysql 未运行"
-  err "请先执行：bash scripts/1a7/01-up-mysql.sh"
+# 0. 检查前置：MySQL 可达（本地或 Docker 二选一）
+LOCAL_OK=0
+if mysqladmin ping -h127.0.0.1 -u"${DB_USER:-root}" -p"${DB_PASS:-root}" --silent 2>/dev/null; then
+  LOCAL_OK=1
+elif command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME:-fincontrol-mysql}$" 2>/dev/null; then
+  if docker exec "${CONTAINER_NAME:-fincontrol-mysql}" mysqladmin ping -u"${DB_USER:-root}" -p"${DB_PASS:-root}" --silent 2>/dev/null; then
+    LOCAL_OK=1
+  fi
+fi
+if [ "$LOCAL_OK" -eq 0 ]; then
+  err "MySQL 不可达（本地或 Docker 容器）"
+  err "  1) 本地 MySQL: net start mysql"
+  err "  2) Docker:    bash scripts/1a7/01-up-mysql.sh"
   exit 1
 fi
+ok "MySQL ready（本地或 Docker 容器）"
 
 # 1. 检查 8080 是否已被占用
 if curl -fsS -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/actuator/health 2>/dev/null | grep -q "200"; then
