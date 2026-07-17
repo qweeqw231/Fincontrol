@@ -129,6 +129,22 @@ fincontrol:
     timeout-seconds: 300
     api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
 
+  # 文本 AI 模型（Phase 1a.6 起，与 vision 端完全隔离 [ai-client-split.md](#)）
+  # 独立 OkHttpClient / 独立 temperature / 独立 model。
+  # API Key 默认与 VISION_API_KEY 同源（minimax M3 文本/视觉复用 key），但允许独立覆盖。
+  # 加载优先级：
+  #   1. 环境变量 TEXT_AI_API_KEY
+  #   2. application-local.yml 中的 fincontrol.ai.text.api-key
+  #   3. 本占位符（REPLACE_ME_TEXT_AI_KEY，启动时 TextAiClient 抛 5001 强制填）
+  ai:
+    text:
+      base-url: https://api.minimaxi.com/v1
+      model: MiniMax-Text-01
+      temperature: 0.7
+      max-tokens: 1024
+      timeout-seconds: 60
+      api-key: ${TEXT_AI_API_KEY:REPLACE_ME_TEXT_AI_KEY}
+
 # ============================================
 # 服务端口
 # ============================================
