@@ -15,7 +15,7 @@
         MySQL 5.7.x 不支持 ON CONFLICT —— 我们用 8.0.46 OK。
     -->
 
-    <!-- 1a.3 confirm 写库：UPSERT（PostgreSQL 风格 + H2 / MySQL 8.0.20+ 兼容） -->
+    <!-- 1a7-PRE 双方言统一：upsertByCategory 改为 MySQL `ON DUPLICATE KEY UPDATE` -->
     <insert id="upsertByCategory" parameterType="com.fincontrol.entity.AssetSnapshot">
         INSERT INTO asset_snapshot
             (user_id, snapshot_date, category, total_amount, target_ratio, actual_ratio,
@@ -23,13 +23,12 @@
         VALUES
             (#{userId}, #{snapshotDate}, #{category}, #{totalAmount}, #{targetRatio},
              #{actualRatio}, #{balanceFund}, #{subDetail}, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        ON CONFLICT (user_id, snapshot_date, category, is_latest)
-        DO UPDATE SET
-            total_amount  = EXCLUDED.total_amount,
-            target_ratio  = EXCLUDED.target_ratio,
-            actual_ratio  = EXCLUDED.actual_ratio,
-            balance_fund  = EXCLUDED.balance_fund,
-            sub_detail    = EXCLUDED.sub_detail,
+        ON DUPLICATE KEY UPDATE
+            total_amount  = VALUES(total_amount),
+            target_ratio  = VALUES(target_ratio),
+            actual_ratio  = VALUES(actual_ratio),
+            balance_fund  = VALUES(balance_fund),
+            sub_detail    = VALUES(sub_detail),
             is_latest     = true,
             updated_at    = CURRENT_TIMESTAMP
     </insert>

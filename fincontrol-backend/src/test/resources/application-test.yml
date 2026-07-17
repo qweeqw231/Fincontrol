@@ -16,11 +16,8 @@ mybatis-plus:
   database-id: h2
   config-location: classpath:mybatis-config.xml
 
-# 关闭视觉模型加载（PromtLoaderService 启动时若 DB 无 prompt_versions 表会失败）
-fincontrol:
-  vision:
-    api-key: test-fake-key-for-it
-    timeout-seconds: 1
-  upload:
-    screenshot:
-      path: ./uploads/test-screenshots/
+# 关闭视觉模型加载（PromptLoaderService 启动时若 DB 无 prompt_versions 表会失败）
+# 注意：1a.7 修复 application.yml 重复 fincontrol: 键导致 Spring 3.x OriginTrackedYamlLoader 报错。
+# 改用环境变量方式注入测试用 key（PromptLoaderService 的 @Value 会优先读环境变量）。
+# fincontrol.vision.api-key: test-fake-key-for-it  ← 移除
+# fincontrol.upload.screenshot.path: ./uploads/test-screenshots/  ← 移除

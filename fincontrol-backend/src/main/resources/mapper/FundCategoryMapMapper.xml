@@ -3,16 +3,20 @@
         "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.fincontrol.mapper.FundCategoryMapMapper">
 
-    <!-- 1a3.5 双方言统一：upsertByFundName PostgreSQL 风格 + H2 / MySQL 8.0.20+ 兼容 -->
+    <!-- 1a7-PRE 双方言统一：upsertByFundName 改为 MySQL `ON DUPLICATE KEY UPDATE`
+         原因：原 PostgreSQL `ON CONFLICT DO UPDATE` 在 H2 (MySQL mode) 不支持，
+         MySQL 8.0.20+ 也不支持 `MERGE INTO` 标准 SQL。
+         MySQL 原生 `ON DUPLICATE KEY UPDATE` 在 H2 (MySQL mode) 和 MySQL 8.0+ 都支持，
+         且依赖 UNIQUE KEY uk_user_fund (user_id, fund_name)（db-schema.sql §3）。
+         1a.3.5 注释中"H2 1.4+ 完全支持（PostgreSQL 兼容）"是误判。 -->
     <insert id="upsertByFundName" parameterType="com.fincontrol.entity.FundCategoryMap">
         INSERT INTO fund_category_map
             (user_id, fund_name, category, source, confirmed_at)
         VALUES
             (#{userId}, #{fundName}, #{category}, #{source}, CURRENT_TIMESTAMP)
-        ON CONFLICT (user_id, fund_name)
-        DO UPDATE SET
-            category      = EXCLUDED.category,
-            source        = EXCLUDED.source,
+        ON DUPLICATE KEY UPDATE
+            category      = VALUES(category),
+            source        = VALUES(source),
             confirmed_at  = CURRENT_TIMESTAMP
     </insert>
 
