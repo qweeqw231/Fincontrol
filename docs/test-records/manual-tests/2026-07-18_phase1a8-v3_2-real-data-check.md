@@ -14,7 +14,25 @@
 - v2.4：+ v2.2 OCR 规则复活（visible 优先 + 标题行不写完整） → E2E 7 错误（余额宝 + P2 totalAsset）
 - v2.5：余额类 holding_profit=null + always use top total_asset → 220/220 PASS + 19/19 + 7884.68 dedup 正确
 - **决定不再升 v2.6**：per-page P2 top-vs-visible sum 是 fixture/模型 设计问题，不是 prompt 能轻易解决的
-======= **1a.8.8 PASS**（220/220 单测通过 + 类归一化 + 双向 cache + last_seen_at + DELETE/reset/stale + 多用户债修复）
+======= **1a.8.8 v2.5 代码侧闭环 + 2 个已知债（1a.9 解决）**
+======= **1a.8.8 v2.5 代码侧闭环**：
+- mvn clean verify：**220/220 PASS**（含 1a.8.8 新增 34 用例）
+- Fixture v3.2 真实 E2E（v2.5 prompt）：**dedup 19/19 + 聚合总额 7884.68 ±0.01**（决策 8 全部 in-scope 项落地）
+- Schema：fund_category_map.holding_profit / cumulative_profit 改 NULL（余额类允许）
+- DedupEngine：余额类允许 holding_profit=null 也算 complete
+- prompt_versions v2.5 落地（id=7）：余额类 holding=null + cumulative=1.89 如实记录
+
+**已知债（1a.9 解决）**：
+1. **P2 totalAsset 口径不一致**：fixture 期望 7884.68（顶部"总资产"全账户），v2.5 prompt 让模型输出 2987.32（visible sum）。模型无法判断 P2 是"账户总览页"。修法：v2.6 prompt 加规则"总资产 = 顶部'总资产'字段"，并要求"per-page sum vs top total 差 > 5% 输出 DISCREPANCY warning"
+2. **per-page 流式浪费 tokens**：4 次 vision call = 4× tokens，但 4 页总资产/P2 同样的 7884.68。修法 1a.9 用差额法（首次 full + 后续仅新 fund）或单次多图
+
+**验收闭环（诚实记录）**：
+- 决策 8 全部 in-scope 项落地（v2.5 commit 811637d/4a84e65 已 push）
+- 单只基金精度 100%：19/19 fund name/amount/holding/cumulative 全部正确（含 余额类 holding=null + cumulative=1.89）
+- 聚合 dedup 精度 100%：unique=19/19, total=7884.68/7884.68
+- 5 段式验收：BUSINESS 220/220 PASS + CONTRACT 不破坏 + READ_SQL v2.5 落地 + PRODUCTION 19/19 dedup 正确 + COVERAGE 77.46%
+- per-page P2 totalAsset 字段（visible sum 2987.32）→ 留 1a.9 优化（差额法 + 顶部总资产优先）
+======= **1a.8.8 v2.5 代码侧闭环 + 2 个已知债（1a.9 解决）** (220/220 单测通过 + 类归一化 + 双向 cache + last_seen_at + DELETE/reset/stale + 多用户债修复）
 
 ---
 
