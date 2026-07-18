@@ -130,3 +130,25 @@ secrets.yml
 # 评审过程中产生的临时草稿（评审结束后应清理）
 drafts/
 scratch/
+
+# 工作区级临时调试区（scripts/ 才是稳定的，调试脚本请移过去）
+.tmp/
+
+# 1a.7 调试产物（按需清理）
+backend.log
+build.log
+compile.log
+.backend.pid
+fincontrol-backend/backend.log
+
+# 防御性：Docker 输出串到 CWD 时可能在根目录写的 0 字节脏文件
+/docker
+/eclipse-temurin
+/health
+/UP
+
+# 工具脚本临时输出（如 commit-and-push.sh 写出的 git-commit-msg.txt）
+git-commit-msg.txt
+
+# 1a.7 smoke 脚本产生的 API 响应输出
+docs/test-records/manual-tests/api-test-output/
