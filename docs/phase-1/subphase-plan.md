@@ -230,14 +230,53 @@
 
 详细报告见 [`2026-07-17_phase1a7-acceptance-report.md`](../test-records/manual-tests/2026-07-17_phase1a7-acceptance-report.md)。
 
-**Phase 1a 完成 ✅，可启动 Phase 1b（前端骨架）。**
+**遗留问题**：1a.7 验收发现 minimax vision API 限流导致 vision 仅 3/4 = 75% 通过（1 张 502 + 1 张 reparse 504），且成功 parse 的 3 张图都只识别 1 只基金。需 1a.8 补完。
+
+---
+
+### 1a.8 AI 服务韧性增强（0.5–1 天，1a 真正闭环的最后一块）
+
+> 1a.8 出现原因：1a.7 验收发现 vision 4/4 = 75%（minimax 限流 + “1 fund per image” 现象），需通过**豆包 primary + minimax fallback + retry/circuit breaker/cache** 补到 100%。
+
+**目标**：vision 端到端 4/4 = 100%；chat 5/5；多路 AI provider fallback 自动透明；同图 cache 幂等。
+
+**范围**：
+- `VisionModelClient` 加 `apiStyle` 枚举（OPENAI_CHAT / OPENAI_RESPONSES），支持豆包 doubao ARK
+- `TextAiClient` 加 DeepSeek baseUrl fallback（OpenAI 兼容，零代码改动）
+- `AiRouter`（新）：统一 chat/vision 入口，完整版 circuit breaker + retry + cache + 监控埋点
+- `application.yml` 加 `fincontrol.ai.fallback.{chat, vision}` 配置段
+- `chat_history` 加 `used_provider` + `fallback_triggered` 字段
+- resilience4j（已在 pom.xml）上  `@Retry` / `@CircuitBreaker` / `@TimeLimiter` 注解
+- caffeine（已在 pom.xml）作同图 cache（SHA-256(file) 为 key）
+- `scripts/1a8/` 端到端验证脚本（封装 1a.7 smoke + 故意断网验证 fallback）
+
+**验收目标（DoD）**：
+- [ ] **vision 4/4 = 100%** 真实 API parse（替代 1a.7 的 75%）— 完成日期：____
+- [ ] chat 5/5 不退步 — 完成日期：____
+- [ ] minimax 限流时豆包 fallback 自动接管（用脚本故意断网验证）— 完成日期：____
+- [ ] `chat_history` 新增 `used_provider` + `fallback_triggered` 字段 — 完成日期：____
+- [ ] 业务层单测仍 179/179 PASS（0 回归）— 完成日期：____
+- [ ] JaCoCo 覆盖率仍 ≥ 60% — 完成日期：____
+
+**前置依赖**：1a.7 闭环（业务层 179/179 + 真实 MySQL upsert 路径）。
+
+**模型主备关系**（Gate 0 冻结）：
+- **vision**：豆包 `doubao-seed-1-8-251228` primary + minimax M3 fallback（OpenAI Python SDK 的 `responses` API 形态）
+- **chat**：minimax M3 (text) primary + DeepSeek V3 fallback（OpenAI 兼容）
+
+**Fallback 触发**：HTTP 5xx / 网络超时 / HTTP 429 → 透明切换（HTTP 4xx = 参数错，不切换）。
+
+**API key 保管**：`DOUBAO_VISION_API_KEY` + `DEEPSEEK_CHAT_API_KEY` 走 env var 优先 + `application-local.yml` 占位（gitignored），**用户后填**。
+
+**实际进度**：🟡 **2026-07-18 启动**，work plan + acceptance plan 已写（[工作计划](../work-plans/2026-07-18_phase1a8-work-plan.md) + [验收计划](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md)），待 Step 0 根因调查后开始代码改造。
+
+> 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md)
+
+**Phase 1a 待 1a.8 验收通过后宣告真正闭环 → 可启动 Phase 1b（前端骨架）。**
 
 ---
 
 ## 3. Phase 1b 子阶段（前端，4 段，预估 3-4 天）
-
-> Phase 1b 启动条件：Phase 1a 全部 24 项 API + 8 项 P0 + 2 条冒烟完成。
-> 前端在 1a 期间可用 mock 数据并行开发骨架与首页，但不进入"端到端联调"。
 
 ### 1b.1 前端骨架 + 全局状态（0.5 天）
 
@@ -346,7 +385,8 @@
 | 1a.5 | 大类映射 API | 0.25d | ✅ 完成 | 2026-07-17 | 1a.16–1a.17 | P0-1.3 | 1a.3 |
 | 1a.6 | AI 顾问 API | 0.5–1d | ✅ 完成 | 2026-07-17 | 1a.18–1a.22 | P0-3.5, P0-3.6 | 1a.1（可与 1a.4 并行）|
 | 1a.7 | 冒烟 + 覆盖率 | 0.5d | ✅ 完成 | 2026-07-17 | 1a.24 + 冒烟 1/2 | — | 1a.2–1a.6 |
-| 1b.1 | 前端骨架 + 全局状态 | 0.5d | 1b.1–1b.5 | P0-3.1 | Phase 1a 全 |
+| 1a.8 | AI 韧性增强（豆包/DeepSeek fallback）| 0.5–1d | 🟡 进行中 | 2026-07-18 | 1a.5 真实 parse 4/4 + chat 5/5 | — | 1a.7 |
+| 1b.1 | 前端骨架 + 全局状态 | 0.5d | 1b.1–1b.5 | P0-3.1 | 1a 全闭环后 |
 | 1b.2 | 首页 + 全局联动 | 1d | 1b.6–1b.9, 1b.23 | P0-3.1, P0-4.1, P0-4.3 | 1b.1 + 1a.4 |
 | 1b.3 | 数据管理 + 确认面板 | 1.5d | 1b.10–1b.19 | P0-1.4, P0-1.5, P0-1.6, P0-3.2, P0-3.3, P0-3.4, P0-3.7 | 1b.1 + 1a.3 |
 | 1b.4 | AI 顾问页面 | 0.5d | 1b.20–1b.22 | P0-3.6 | 1b.1 + 1a.6 |

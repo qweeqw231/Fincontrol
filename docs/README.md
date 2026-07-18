@@ -103,8 +103,12 @@ docs/
 | 文档 | 用途 |
 |------|------|
 | **[phase-1/acceptance-criteria.md](./phase-1/acceptance-criteria.md)** | Phase 1 验收标准（47 项 + 18 项 P0）|
-| **[phase-1/checklists/phase-1a.md](./phase-1/checklists/phase-1a.md)** | Phase 1a 后端 24 项 API + 8 项 P0 实时验收 |
+| **[phase-1/subphase-plan.md](./phase-1/subphase-plan.md)** | Phase 1 子阶段划分 + DoD（含 1a.8 增补）|
+| **[phase-1/work-plans/2026-07-18_phase1a8-work-plan.md](./phase-1/work-plans/2026-07-18_phase1a8-work-plan.md)** | 1a.8 AI 韧性增强工作计划（豆包/DeepSeek fallback）|
+| **[phase-1/checklists/phase-1a.md](./phase-1/checklists/phase-1a.md)** | Phase 1a 后端 24 项 API + 8 项 P0 实时验收（含 1a.8 进度）|
 | **[phase-1/checklists/phase-1b.md](./phase-1/checklists/phase-1b.md)** | Phase 1b 前端 23 项 UI + 4 项 P0 实时验收 |
+
+**Phase 1 现状（2026-07-18）**：1a.1–1a.7 闭环，1a.8 进行中（补 vision 4/4 = 100%），1b 待启动。
 
 ### 测试记录（跨阶段）
 

@@ -22,10 +22,8 @@
 
 ### 快照入库 API（2 项）
 
-- [x] **1a.7** `POST /api/snapshot/confirm`（含 [P0-1.2] 事务、[P0-1.3] 映射 UPDATE、[P0-1.5] 日期校验、[P0-3.3] 余额类、[P0-3.4] 忽略按钮）— 业务逻辑验收：2026-07-16（`SnapShotConfirmServiceIT` 6/6 PASS）；⚠️ 真实 MySQL SQL、完整 P0 与前后端端到端待统一验收
-- [x] **1a.8** `DELETE /api/snapshot/confirm/{id}`（[P0-3.2] 撤销）— 业务逻辑验收：2026-07-16（10 秒内 rollback PASS）；⚠️ 真实表状态、超时 410 HTTP 验收待补
-
-> **1a.3 当前状态（2026-07-16）**：业务逻辑闭环已通过（confirm + rollback 6/6 PASS），真实 MySQL 持久化和前后端端到端验收待统一测试。详见 [`1a.3 补充性过程验收报告`](../test-records/manual-tests/2026-07-16_phase1a3-supplemental-acceptance.md)。这不阻塞下一阶段 1a.4，但不代表 Phase 1a 总体验收已完成。
+- [x] **1a.7** `POST /api/snapshot/confirm`（含 [P0-1.2] 事务、[P0-1.3] 映射 UPDATE、[P0-1.5] 日期校验、[P0-3.3] 余额类、[P0-3.4] 忽略按钮）— 业务逻辑验收：2026-07-16（`SnapShotConfirmServiceIT` 6/6 PASS）；✅ 真实 MySQL SQL、完整 P0 与前后端端到端 2026-07-17（1a.7 验收）已补
+- [x] **1a.8** `DELETE /api/snapshot/confirm/{id}`（[P0-3.2] 撤销）— 业务逻辑验收：2026-07-16（10 秒内 rollback PASS）；✅ 真实表状态、超时 410 HTTP 2026-07-17（1a.7 新增 RollbackServiceTest 6 用例：SNAPSHOT_NOT_FOUND、user 隔离、UNDO_TIMEOUT 410、空翻、无前版）
 
 ### 快照查询 API（4 项）
 
@@ -76,6 +74,7 @@
 ## 端到端冒烟测试（2 条主路径）
 
 - [x] **冒烟 1**：截图上传 → 解析 → 大类确认 → 入库 → 首页展示 — 完成日期：2026-07-17（run-1a7.bat 03-smoke-1 跑通：A7-S01 upload 4/4 → A7-S02 parse 3/4 + 1 张 minimax 限流 → A7-S03 confirm 4 张图写 3 表 → A7-S04 balance HTTP 200；1a.7-PRE dialect 修复后真实 MySQL upsert 生效）
+  - **⚠️ 1a.7 遗留**：vision 仅 3/4 = 75%（1 张 502 + 1 张 reparse 504）→ 1a.8 修复
 - [x] **冒烟 2**：AI 顾问基础对话多轮测试 — 完成日期：2026-07-17（run-1a7.bat 04-smoke-2 跑通：A7-S05 投资类 → main_loop + ai_assistant v1.0；A7-S06 同主题 → main_loop；A7-S07 闲聊 → garbage_loop；A7-S08 模型身份 → garbage_loop；A7-S09 空 message → HTTP 400 + code 1001；A7-S12 chat_history ≥ 6 行）
 
 ---
@@ -87,8 +86,25 @@
 - [x] 2 条冒烟测试通过
 - [x] 单元测试覆盖率 ≥ 60%
 - [x] Swagger UI 全部 API 可访问
+- [ ] **vision 4/4 = 100% 真实 API parse（1a.7 是 75% → 1a.8 必补）** ← **1a 真正闭环的最后一块**
 
-**Phase 1a 完成日期**：2026-07-17
+**Phase 1a 状态**：🟡 **4 段式 PASS + 1 段（PRODUCTION vision 4/4）待 1a.8 补完**
+- 完成日期候选：2026-07-18（1a.8 验收后）= 真正闭环
 
-**进入 Phase 1b 启动条件**：✅ **全部勾选，可启动 Phase 1b（前端骨架）**
-</content>
+**进入 Phase 1b 启动条件**：🟡 **等 1a.8 补完 vision 4/4 后再启动**
+
+---
+
+## Phase 1a.8 — AI 服务韧性增强（vision 4/4 必达）
+
+> 1a.8 出现原因：1a.7 验收发现 minimax vision API 限流导致 vision 仅 3/4 通过，且成功 parse 的 3 张图都只识别 1 只基金。1a.8 通过**豆包 primary + minimax fallback + retry/circuit breaker/cache** 实现 vision 4/4 = 100%。
+
+- [ ] **1a.8.1** work plan + acceptance plan 完成 — 完成日期：2026-07-18
+- [ ] **1a.8.2** Step 0 根因调查：debug 脚本跑 4 张图，输出 minimax M3 原始 JSON 全文 — 完成日期：____
+- [ ] **1a.8.3** Step 1：`VisionModelClient` 加 `apiStyle` 枚举（OPENAI_CHAT / OPENAI_RESPONSES），支持豆包 — 完成日期：____
+- [ ] **1a.8.4** Step 2：`TextAiClient` 加 DeepSeek baseUrl + resilience4j Retry/CircuitBreaker + caffeine cache — 完成日期：____
+- [ ] **1a.8.5** Step 3：`AiRouter`（chat/vision 两路由，完整版 retry+CB+cache+监控埋点）— 完成日期：____
+- [ ] **1a.8.6** Step 4：端到端 smoke 4/4 vision + 5/5 chat + fallback 故意断网验证 — 完成日期：____
+- [ ] **1a.8.7** Step 5：5 段式验收报告 + subphase-plan §2.8 + phase-1a.md 闭环勾选 — 完成日期：____
+
+> 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md)
