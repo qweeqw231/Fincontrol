@@ -86,8 +86,9 @@ for f in "${!FILE_IDS[@]}"; do
       cid=$(extract_json_field "$outfile" "conversationId")
       if [ -n "$cid" ] && [ "$cid" != "None" ]; then
         CONV_IDS[$f]="$cid"
-        fc=$(grep -c '"fundName"' "$outfile" 2>/dev/null || echo 0)
-        mark_ok "  parse $f → convId=$cid（$fc funds）"
+      fc=$(grep -o '"fundName"' "$outfile" 2>/dev/null | wc -l)
+      fc=${fc:-0}
+      mark_ok "  parse $f → convId=$cid（$fc funds）"
         parse_ok=1
         break
       fi
