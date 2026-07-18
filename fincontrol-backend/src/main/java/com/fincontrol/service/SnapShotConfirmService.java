@@ -168,6 +168,9 @@ public class SnapShotConfirmService {
 
     private int writeAssetRaw(SnapshotConfirmRequest req, DedupResult dedup) {
         int count = 0;
+        // 1a.9：从 dedup 结果获取 totalAssetSource（"top" 或 "visible_sum"）；所有行同值
+        String totalAssetSource = dedup.merged().getTotalAssetSource() != null
+                ? dedup.merged().getTotalAssetSource() : "top";
         for (CategoryBlock cat : dedup.merged().getCategories()) {
             for (FundLine fund : cat.getFunds()) {
                 AssetRaw row = new AssetRaw();
@@ -187,6 +190,7 @@ public class SnapShotConfirmService {
                 row.setHoldingProfit(holding);
                 row.setCumulativeProfit(cumulative);
                 row.setSource("screenshot_manual");
+                row.setTotalAssetSource(totalAssetSource);  // 1a.9：denormalized 写入
                 row.setIsLatest(true);
                 row.setConfirmedAt(LocalDateTime.now());
                 assetRawMapper.insert(row);
@@ -198,6 +202,9 @@ public class SnapShotConfirmService {
 
     private int writeAssetSnapshot(SnapshotConfirmRequest req, DedupResult dedup) {
         int count = 0;
+        // 1a.9：从 dedup 结果获取 totalAssetSource（“top” 或 “visible_sum”）；所有 category 行同值
+        String totalAssetSource = dedup.merged().getTotalAssetSource() != null
+                ? dedup.merged().getTotalAssetSource() : "top";
         for (CategoryBlock cat : dedup.merged().getCategories()) {
             AssetSnapshot snap = new AssetSnapshot();
             snap.setUserId(req.getUserId());
@@ -215,6 +222,8 @@ public class SnapShotConfirmService {
             } else {
                 snap.setBalanceFund(BigDecimal.ZERO);
             }
+            // 1a.9：写入 total_asset_source（与 asset_raw 同值）
+            snap.setTotalAssetSource(totalAssetSource);
             snap.setIsLatest(true);
             assetSnapshotMapper.upsertByCategory(snap);
             count++;

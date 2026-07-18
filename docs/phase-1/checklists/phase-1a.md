@@ -149,6 +149,25 @@
   - 详细见 [`2026-07-18_phase1a8-v3_2-real-data-check.md`](../test-records/manual-tests/2026-07-18_phase1a8-v3_2-real-data-check.md)
   - 配套：[`v3.2-work-plan.md`](../work-plans/2026-07-18_phase1a8-v3_2-work-plan.md) + [`v3.2-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-v3_2-acceptance-plan.md)
   - **未完成（待用户授权）**：prompt_versions v2.2 → v2.3 升级 SQL（MySQL UPDATE）；四图真实 OCR E2E 重跑（需 minimax API key）
+- [x] **1a.9** 总资产双轨 + DISCREPANCY 1% 报警 — 完成日期：2026-07-18
+  - **决策 8 增补**：total_asset 顶部优先 + visible sum 兜底 + 1% 阈值报警
+  - **prompt_versions v2.5 → v2.6**（id=8，3859 字节）：total_asset 字段 = 截图顶部"总资产"数字，禁止 visible sum 代替；余额类 holding=null + 7 canonical + 双字段沿用 v2.5
+  - **DedupEngine 双轨决策**：
+    - 4 页顶部一致 → 用 top（merged.totalAssetSource="top"）
+    - 4 页顶部不一致 / 全部 null → fallback deduped sum（totalAssetSource="visible_sum"） + TOP_INCONSISTENT warning
+    - top vs deduped sum 偏差 > 1% → DISCREPANCY warning（不阻塞）
+  - **schema 升级**：`asset_raw + asset_snapshot` 各 +1 列 `total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top'`；MySQL 8.0.46 已 ALTER + H2 CHECK 约束同步
+  - **DTO 升级**：`ParsedAsset + AssetRaw + AssetSnapshot` 都加 `totalAssetSource: String`
+  - **Java 升级**：`SnapShotConfirmService.writeAssetRaw` / `writeAssetSnapshot` 从 dedup 结果取 totalAssetSource，写入两张表（denormalized 同值）
+  - **Fixture v3.3**：每页 expectedTotalAsset=7884.68 + expectedTotalAssetSource="top" + expectedDedupedSum=7884.68 + expectedDiscrepancyThresholdPct=1.00
+  - **新增测试 5 个**：DedupEngineTest +4（topConsistent / topInconsistent / discrepancyOver / discrepancyWithin）+ Phase1a8RealFourPageFixtureTest +1（topConsistent_usesTop）
+  - 测试结果：`mvn clean verify` **225/225 PASS**（比 1a.8.8 多 5 用例）；JaCoCo ≥ 60%
+  - 详细见 [`2026-07-18_phase1a8-v3_3-real-data-check.md`](../test-records/manual-tests/2026-07-18_phase1a8-v3_3-real-data-check.md)
+  - v2.6 教程：[`2026-07-18_prompt-v2.6-upgrade-tutorial.md`](../test-records/manual-tests/2026-07-18_prompt-v2.6-upgrade-tutorial.md)
+  - **未完成**：真实 minimax API 四图 OCR 重跑（验证诺安误读率）；per-page 流式 tokens 浪费（1a.10+ 范畴）
+  - **架构就绪** vs **真实跑通** 区分：
+    - ✅ 架构就绪（代码 + schema + fixture + 单测 + H2 集成 + MySQL ALTER 全闭环）
+    - ⏳ 真实 minimax API 四图 OCR 重跑需 user 填 key + 跑 `scripts/1a8/01-real-four-page-e2e.ps1`（网络恢复后）
   - schema 升级：`asset_raw` +2 列（`holding_profit` / `cumulative_profit`），MySQL 已 ALTER + H2 同步
   - DTO 升级：`ParsedAsset.FundLine` / `AssetBalanceItem` / `SnapshotFundDetail` 三处都加 2 字段
   - Java 升级：`ScreenshotService` 解析 holding/cumulative；`SnapShotConfirmService` 三列同步写；`DedupEngine` MergedFund 内部双字段聚合；`AssetQueryService` / `SnapshotQueryService` 读取时优先 holding/cumulative

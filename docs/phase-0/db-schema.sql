@@ -40,6 +40,8 @@ CREATE TABLE asset_raw (
   holding_profit   DECIMAL(12,2)          NULL COMMENT '持有收益（元），严格=截图「持有收益」列（不含当日浮盈）；余额类允许 NULL',
   cumulative_profit DECIMAL(12,2)         NULL COMMENT '累计收益（元），含已实现盈亏（卖出后分母更新）；其他余额类允许 NULL',
   source        VARCHAR(30)  NOT NULL COMMENT '数据来源：screenshot_manual/screenshot_folder/manual_input/re_parse/manual_edit/import_csv/system_seed/data_correction',
+  -- 1a.9：该快照 total_asset 来源（denormalized，confirm 时 19 行同值）
+  total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top' COMMENT '1a.9：该快照总额来源（top=顶部总资产 / visible_sum=deduped fund 加总）',
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录首次写入时间',
   is_latest     BOOLEAN      NOT NULL DEFAULT TRUE COMMENT '是否为该快照日期的最新记录',
   confirmed_at  DATETIME     NULL COMMENT '用户确认入库时间（第一轮评审P0 1.3新增）',
@@ -61,6 +63,8 @@ CREATE TABLE asset_snapshot (
   actual_ratio   DECIMAL(5,2) NOT NULL DEFAULT 0 COMMENT '实际占比（%）',
   balance_fund   DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '余额类金额（冗余存储，便于查询；亦可通过SUM动态计算）',
   sub_detail     JSON         NULL COMMENT '大类内部子类金额明细（Phase 5 LQR预留）',
+  -- 1a.9：该快照总额来源（与 asset_raw.total_asset_source 语义一致）
+  total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top' COMMENT '1a.9：top=顶部总资产 / visible_sum=deduped fund 加总',
   is_latest      BOOLEAN      NOT NULL DEFAULT TRUE COMMENT '同日多次入库时唯一true',
   created_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '汇总写入时间',
   updated_at     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '汇总更新时间（第四轮P0新增）',
@@ -181,6 +185,15 @@ ALTER TABLE chat_history
 ALTER TABLE fund_category_map
   ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL COMMENT '1a.8.8：最近一次出现在截图中的时间',
   ADD INDEX IF NOT EXISTS idx_user_last_seen (user_id, last_seen_at);
+
+-- ============================================
+-- 1a.9 增量脚本：已建库兼容（asset_raw + asset_snapshot 加 total_asset_source）
+-- ============================================
+ALTER TABLE asset_raw
+  ADD COLUMN IF NOT EXISTS total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top' COMMENT '1a.9：该快照总额来源（top/visible_sum）';
+
+ALTER TABLE asset_snapshot
+  ADD COLUMN IF NOT EXISTS total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top' COMMENT '1a.9：top=顶部总资产 / visible_sum=deduped fund 加总';
 
 -- ============================================
 -- 初始化数据：用户默认配置

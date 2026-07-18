@@ -27,17 +27,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 class Phase1a8RealFourPageFixtureTest {
 
     @Test
-    @DisplayName("A8V3.1-S04 · fixture 自检：6/3/5/6、20 完整行、19 唯一、7884.68 总额、holding/cumulative 双字段")
+    @DisplayName("A8V3.3-S04 · fixture 自检：6/3/5/6、20 完整行、19 唯一、7884.68 总额、每页顶部 7884.68、holding/cumulative 双字段")
     void fixture_isInternallyConsistent() {
         Fixture fixture = Phase1a8RealFourPageFixture.load();
 
-        // 1a.8.8：fixture 升 v3.2（7 canonical 类别名 + isUserConfirmed 字段）
-        assertThat(fixture.fixtureVersion()).isEqualTo("1a.8-v3.2");
+        // 1a.9：fixture 升 v3.3（每页 expectedTotalAsset=7884.68 + expectedTotalAssetSource=top）
+        assertThat(fixture.fixtureVersion()).isEqualTo("1a.8-v3.3");
+        assertThat(fixture.expectedTotalAssetSource()).isEqualTo("top");
+        assertThat(fixture.expectedDedupedSum()).isEqualByComparingTo(new BigDecimal("7884.68"));
+        assertThat(fixture.expectedDiscrepancyThresholdPct()).isEqualByComparingTo(new BigDecimal("1.00"));
         assertThat(fixture.pages()).extracting(Page::expectedCompleteCount)
                 .containsExactly(6, 3, 5, 6);
         assertThat(fixture.pages()).extracting(Page::headerOnly)
                 .extracting(List::size)
                 .containsExactly(1, 0, 0, 1);
+
+        // 1a.9 v3.3：每页 expectedTotalAsset 都应 = 7884.68（v2.6 prompt 顶部总资产一致）
+        fixture.pages().forEach(page ->
+                assertThat(page.expectedTotalAsset())
+                        .as("页面 %s expectedTotalAsset", page.pageId())
+                        .isEqualByComparingTo(new BigDecimal("7884.68"))
+        );
 
         int completeCount = fixture.parsedAssets().stream()
                 .flatMap(asset -> asset.getCategories().stream())
@@ -75,8 +85,26 @@ class Phase1a8RealFourPageFixtureTest {
                 .map(ExpectedFund::amount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(total).isEqualByComparingTo(fixture.expectedUniqueTotalAmount());
+        // 1a.9 v3.3：P2 顶部总资产 = 7884.68（v2.6 prompt 修复后）
         assertThat(fixture.pages().get(1).parsedAsset().getTotalAsset())
                 .isEqualByComparingTo(new BigDecimal("7884.68"));
+    }
+
+    @Test
+    @DisplayName("A8V3.3-S06 · 1a.9 dual-track：4 页顶部一致 → merged totalAsset=top，totalAssetSource=top")
+    void dedup_totalAsset_topConsistentAcrossPages_usesTop() {
+        Fixture fixture = Phase1a8RealFourPageFixture.load();
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                fixture.parsedAssets(), Set.of(), LocalDate.parse(fixture.snapshotDate()), false));
+
+        // 1a.9 dual-track：4 页顶部 total_asset 都是 7884.68 → merged 用 top
+        assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("7884.68"));
+        assertThat(result.merged().getTotalAssetSource()).isEqualTo("top");
+        // 偏差 = 0（7884.68 vs 7884.68）→ 无 DISCREPANCY warning
+        assertThat(result.report().warnings())
+                .as("top vs dedupedSum 偏差 0% 阈值 1% → 无 DISCREPANCY warning")
+                .noneMatch(w -> "DISCREPANCY".equals(w.code()));
     }
 
     @Test

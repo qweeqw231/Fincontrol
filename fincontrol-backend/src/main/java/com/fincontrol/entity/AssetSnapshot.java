@@ -48,6 +48,12 @@ public class AssetSnapshot {
     @TableField("sub_detail")
     private String subDetail;
 
+    /**
+     * 1a.9：该快照 total_asset 来源（"top" 或 "visible_sum"）。
+     */
+    @TableField("total_asset_source")
+    private String totalAssetSource;
+
     @TableField("is_latest")
     private Boolean isLatest;
 

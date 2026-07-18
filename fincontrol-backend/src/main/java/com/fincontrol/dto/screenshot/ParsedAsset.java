@@ -26,6 +26,15 @@ public class ParsedAsset {
     private List<String> matchedFunds;
     private List<String> unmatchedFunds;
 
+    /**
+     * 1a.9：合并后 totalAsset 的来源标记。
+     * <ul>
+     *   <li>"top" — 4 页顶部"总资产"一致，使用顶部值（7884.68）</li>
+     *   <li>"visible_sum" — 4 页顶部不一致 / 全部为 null，fallback 到 deduped fund amount 加总</li>
+     * </ul>
+     */
+    private String totalAssetSource;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

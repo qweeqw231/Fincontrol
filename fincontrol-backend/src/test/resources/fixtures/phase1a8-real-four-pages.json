@@ -1,22 +1,26 @@
 {
-  "fixtureVersion": "1a.8-v3.2",
-  "fixtureNotes": "1a.8.8 类别归一化 + 双向 cache：类别名统一为 7 canonical；港股/大中华类 → 港股大中华类；19 项 expectedCategoryName + expectedIsUserConfirmed=true",
+  "fixtureVersion": "1a.8-v3.3",
+  "fixtureNotes": "1a.9 prompt v2.6 + total_asset 双轨：每页 expectedTotalAsset = 7884.68（顶部总资产一致）；expectedTotalAssetSource=top；DISCREPANCY 1% 报报警需测试验证",
   "snapshotDate": "2026-07-15",
   "expectedCompleteInputCount": 20,
   "expectedUniqueCount": 19,
   "expectedTotalAsset": 7884.68,
   "expectedUniqueTotalAmount": 7884.68,
+  "expectedTotalAssetSource": "top",
+  "expectedDedupedSum": 7884.68,
+  "expectedDiscrepancyThresholdPct": 1.00,
   "pages": [
     {
       "pageId": "P1",
       "fileName": "phase1a2-alipay-fund-list-20260715-2355-1.jpg",
       "expectedCompleteCount": 6,
       "headerOnly": ["天弘纳斯达克100指数(QDII)C"],
-      "expectedTotalAsset": 2954.91,
+      "expectedTotalAsset": 7884.68,
+      "expectedTotalAssetSource": "top",
       "parsedAsset": {
         "conversationId": "conv-fixture-p1",
         "snapshotDate": "2026-07-15",
-        "totalAsset": 2954.91,
+        "totalAsset": 7884.68,
         "categories": [
           {
             "categoryName": "海外权益类",
@@ -57,6 +61,7 @@
       "expectedCompleteCount": 3,
       "headerOnly": [],
       "expectedTotalAsset": 7884.68,
+      "expectedTotalAssetSource": "top",
       "parsedAsset": {
         "conversationId": "conv-fixture-p2",
         "snapshotDate": "2026-07-15",
@@ -91,11 +96,12 @@
       "fileName": "phase1a2-alipay-fund-list-20260715-2355-3.jpg",
       "expectedCompleteCount": 5,
       "headerOnly": [],
-      "expectedTotalAsset": 605.20,
+      "expectedTotalAsset": 7884.68,
+      "expectedTotalAssetSource": "top",
       "parsedAsset": {
         "conversationId": "conv-fixture-p3",
         "snapshotDate": "2026-07-15",
-        "totalAsset": 605.20,
+        "totalAsset": 7884.68,
         "categories": [
           {
             "categoryName": "商品类",
@@ -128,11 +134,12 @@
       "fileName": "phase1a2-alipay-fund-list-20260715-2356-1.jpg",
       "expectedCompleteCount": 6,
       "headerOnly": ["华安香港精选股票(QDII)"],
-      "expectedTotalAsset": 1493.73,
+      "expectedTotalAsset": 7884.68,
+      "expectedTotalAssetSource": "top",
       "parsedAsset": {
         "conversationId": "conv-fixture-p4",
         "snapshotDate": "2026-07-15",
-        "totalAsset": 1493.73,
+        "totalAsset": 7884.68,
         "categories": [
           {
             "categoryName": "海外权益类",

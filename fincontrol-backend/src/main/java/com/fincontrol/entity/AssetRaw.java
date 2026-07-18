@@ -59,6 +59,16 @@ public class AssetRaw {
     @TableField("source")
     private String source;
 
+    /**
+     * 1a.9：该快照 total_asset 来源（denormalized，每行同值）。
+     * <ul>
+     *   <li>"top" — 4 页顶部总资产一致</li>
+     *   <li>"visible_sum" — fallback 到 deduped fund 加总</li>
+     * </ul>
+     */
+    @TableField("total_asset_source")
+    private String totalAssetSource;
+
     @TableField("created_at")
     private LocalDateTime createdAt;
 

@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -202,11 +203,65 @@ public class DedupEngine {
         List<String> matched = mergedFunds.keySet().stream().sorted().collect(Collectors.toList());
         merged.setMatchedFunds(matched);
 
-        // 计算总资产（合并后）
-        BigDecimal totalAmount = mergedFunds.values().stream()
+        // ==========================================================
+        // 1a.9：total_asset 双轨决策 + DISCREPANCY 1% 报警
+        // ==========================================================
+        // 源 1 (top) — 4 页顶部"总资产"一致时用顶部（语义最准）
+        // 源 2 (visible_sum) — 顶部不可用 / 4 页不一致时 fallback 到 deduped fund 加总
+        // 报警：|top - dedupedSum| / top > 1% → DISCREPANCY warning
+        BigDecimal dedupedSum = mergedFunds.values().stream()
                 .map(mf -> mf.amount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        merged.setTotalAsset(totalAmount);
+        // 过滤 4 页 non-null topTotalAsset
+        List<BigDecimal> tops = dedupedHash.stream()
+                .map(ParsedAsset::getTotalAsset)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        BigDecimal finalTotal;
+        String totalSource;
+        if (!tops.isEmpty() && tops.stream().allMatch(t -> t.compareTo(tops.get(0)) == 0)) {
+            // 4 页 top 一致 → 用 top
+            finalTotal = tops.get(0);
+            totalSource = "top";
+        } else {
+            // 4 页 top 不一致 / 全部为 null → fallback deduped sum
+            finalTotal = dedupedSum;
+            totalSource = "visible_sum";
+            if (!tops.isEmpty()) {
+                Map<String, Object> ctx = new LinkedHashMap<>();
+                ctx.put("tops", tops);
+                ctx.put("dedupedSum", dedupedSum);
+                warnings.add(new DedupWarning(
+                        "TOP_INCONSISTENT",
+                        "4 页顶部 total_asset 不一致 (" + tops.stream().map(BigDecimal::toPlainString).collect(Collectors.joining(",")) + ")；fallback 到 deduped sum=" + dedupedSum,
+                        ctx
+                ));
+            }
+        }
+        merged.setTotalAsset(finalTotal);
+        merged.setTotalAssetSource(totalSource);
+
+        // 校验：top vs dedupedSum 偏差 > 1% → DISCREPANCY warning（不阻塞）
+        if (!tops.isEmpty()) {
+            BigDecimal refTop = tops.get(0);
+            BigDecimal diff = refTop.subtract(dedupedSum).abs();
+            if (refTop.compareTo(BigDecimal.ZERO) != 0
+                    && diff.divide(refTop, 4, RoundingMode.HALF_UP)
+                            .compareTo(new BigDecimal("0.01")) > 0) {
+                BigDecimal diffPct = diff.multiply(BigDecimal.valueOf(100))
+                        .divide(refTop, 2, RoundingMode.HALF_UP);
+                Map<String, Object> ctx = new LinkedHashMap<>();
+                ctx.put("top", refTop);
+                ctx.put("dedupedSum", dedupedSum);
+                ctx.put("diffRatio", diffPct);
+                warnings.add(new DedupWarning(
+                        "DISCREPANCY",
+                        "顶部总资产 " + refTop + " 与 deduped sum " + dedupedSum
+                                + " 偏差 " + diffPct + "% > 1%阈值",
+                        ctx
+                ));
+            }
+        }
 
         // matchedFunds 已经在前面设置
         merged.setUnmatchedFunds(Collections.emptyList());

@@ -351,4 +351,128 @@ class DedupEngineTest {
         assertThat(result.merged().getCategories()).isEmpty();
         assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(BigDecimal.ZERO);
     }
+
+    // ========================================================================
+    // 1a.9 dual-track + DISCREPANCY 1% 报警
+    // ========================================================================
+
+    /**
+     * 构造 1 张含指定 totalAsset + amount 的 ParsedAsset（助手）。
+     * <p>amount 默认等于 totalAsset，使 deduped sum 与 top 完全一致 → 无 DISCREPANCY。
+     */
+    private static ParsedAsset pageWithTotal(String conversationId, String totalAsset) {
+        ParsedAsset a = singleFundAsset(conversationId, "2026-07-16", "权益类",
+                "天弘纳指A", totalAsset == null ? "100.00" : totalAsset, "30.00");
+        a.setTotalAsset(totalAsset == null ? null : new BigDecimal(totalAsset));
+        return a;
+    }
+
+    @Test
+    @DisplayName("1a.9 · 4 页顶部一致且 dedupedSum 偏差 <=1% → merged totalAsset=top，totalAssetSource=top，无 DISCREPANCY")
+    void dedup_totalAsset_topConsistentAcrossPages_usesTop() {
+        // 4 页顶部都是 7884.68，且每页唯一基金 amount=7884.68 → deduped sum=7884.68 偏差 =0
+        List<ParsedAsset> input = List.of(
+                pageWithTotal("img1", "7884.68"),
+                pageWithTotal("img2", "7884.68"),
+                pageWithTotal("img3", "7884.68"),
+                pageWithTotal("img4", "7884.68")
+        );
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                input, new HashSet<>(), LocalDate.of(2026, 7, 16), false));
+
+        assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("7884.68"));
+        assertThat(result.merged().getTotalAssetSource()).isEqualTo("top");
+        // top vs dedupedSum 偏差 = 0 → 无 DISCREPANCY
+        assertThat(result.report().warnings())
+                .noneMatch(w -> "DISCREPANCY".equals(w.code()));
+    }
+
+    @Test
+    @DisplayName("1a.9 · 4 页顶部不一致 → fallback deduped sum + TOP_INCONSISTENT warning")
+    void dedup_totalAsset_topInconsistentAcrossPages_fallsBackToDedupedSum() {
+        // 4 页顶部 3 个不一致，amount 不同：img1/2=7884.68，img3/4=不同值 → deduped sum=img1 (1880)
+        ParsedAsset img1 = pageWithTotal("img1", "7884.68");   // amount=7884.68
+        ParsedAsset img2 = pageWithTotal("img2", "2987.32");   // amount=2987.32 (同名不冲突，以图片名区分)
+        // img3 + img4 同名 = "摩根纳指A" 以验证 dedup 行为
+        ParsedAsset img3 = singleFundAsset("img3", "2026-07-16", "权益类",
+                "摩根纳指A", "3000.00", "100.00");
+        img3.setTotalAsset(new BigDecimal("2987.32"));
+        ParsedAsset img4 = singleFundAsset("img4", "2026-07-16", "权益类",
+                "易方达纳指A", "2000.00", "50.00");
+        img4.setTotalAsset(new BigDecimal("1493.73"));
+
+        List<ParsedAsset> input = new ArrayList<>();
+        input.add(img1);
+        input.add(img2);
+        input.add(img3);
+        input.add(img4);
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                input, new HashSet<>(), LocalDate.of(2026, 7, 16), false));
+
+        // 报警：4 页顶部不一致
+        assertThat(result.report().warnings())
+                .anyMatch(w -> "TOP_INCONSISTENT".equals(w.code()));
+        // fallback 到 deduped sum (4 只 unique fund = 7884.68 + 2987.32 + 3000 + 2000 = 15872)
+        // tops[0]=7884.68, deduped=15872 → 偏差 101% > 1% → DISCREPANCY
+        assertThat(result.report().warnings())
+                .anyMatch(w -> "DISCREPANCY".equals(w.code()));
+    }
+
+    @Test
+    @DisplayName("1a.9 · top vs deduped sum 偏差 > 1% → DISCREPANCY warning（不阻塞）")
+    void dedup_totalAsset_topVsDedupedSumDiscrepancyOver1Percent_emitsWarning() {
+        // 4 页顶部都是 1000，但每页不同基金，amount 很小 → deduped sum 很小
+        // 4 页都是 1000，dedup 后 4 只不同 fund 总和 = 4×250 = 1000 → 偏差 0% 边界测试
+        // 改为 top=1000 vs deduped sum=600 (偏差 40%)
+        List<ParsedAsset> input = new ArrayList<>();
+        // img0: 顶部 1000，单只 fund amount=200 (合计 200，偏差 80%)
+        input.add(singleFundAsset("img0", "2026-07-16", "权益类", "天弘纳指A", "200.00", "10.00"));
+        input.get(0).setTotalAsset(new BigDecimal("1000.00"));
+        // img1: 顶部 1000，单只 fund amount=200 (合计 200)
+        input.add(singleFundAsset("img1", "2026-07-16", "权益类", "摩根纳指A", "200.00", "10.00"));
+        input.get(1).setTotalAsset(new BigDecimal("1000.00"));
+        // img2: 顶部 1000，单只 fund amount=200 (合计 200)
+        input.add(singleFundAsset("img2", "2026-07-16", "权益类", "易方达纳指A", "200.00", "10.00"));
+        input.get(2).setTotalAsset(new BigDecimal("1000.00"));
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                input, new HashSet<>(), LocalDate.of(2026, 7, 16), false));
+
+        // top=1000 (4 页一致)，deduped=600 (3 只 unique 200) → 偏差 40% > 1%
+        assertThat(result.report().warnings())
+                .anyMatch(w -> "DISCREPANCY".equals(w.code()));
+        // merged.totalAsset = top (1000)
+        assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("1000.00"));
+        assertThat(result.merged().getTotalAssetSource()).isEqualTo("top");
+    }
+
+    @Test
+    @DisplayName("1a.9 · top vs deduped sum 偏差 <= 1% → 无 DISCREPANCY warning")
+    void dedup_totalAsset_topVsDedupedSumDiscrepancyWithin1Percent_noWarning() {
+        // 4 页顶部都是 1000，dedup 后 990 (偏差 1%)
+        // 不能直接用 pageWithTotal，需要 amount=990 的 fund
+        ParsedAsset page = new ParsedAsset();
+        page.setConversationId("img1");
+        page.setSnapshotDate("2026-07-16");
+        page.setTotalAsset(new BigDecimal("1000.00"));
+        CategoryBlock cat = new CategoryBlock();
+        cat.setCategoryName("权益类");
+        FundLine fund = new FundLine();
+        fund.setFundName("天弘纳指A");
+        fund.setAmount(new BigDecimal("990.00"));
+        fund.setHoldingProfit(new BigDecimal("10.00"));
+        cat.setFunds(List.of(fund));
+        page.setCategories(List.of(cat));
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                List.of(page), new HashSet<>(), LocalDate.of(2026, 7, 16), false));
+
+        // top=1000, deduped=990 → 偏差 1% (恰好阈值，不报)
+        assertThat(result.report().warnings())
+                .as("偏差 1% 不超过阈值 → 无 DISCREPANCY warning")
+                .noneMatch(w -> "DISCREPANCY".equals(w.code()));
+        assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("1000.00"));
+    }
 }

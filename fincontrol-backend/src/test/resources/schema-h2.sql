@@ -1,6 +1,7 @@
 -- H2 测试 schema（兼容 MySQL 8.0）
 -- 仅 1a.3 confirm 涉及的三张表
 -- 索引按 db-schema.sql 完整建；唯一键 H2 用 ALTER TABLE 单独添加
+-- 1a.9：asset_raw + asset_snapshot 加 total_asset_source（H2 CHECK 模拟 MySQL ENUM）
 
 CREATE TABLE IF NOT EXISTS asset_raw (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -15,12 +16,17 @@ CREATE TABLE IF NOT EXISTS asset_raw (
     holding_profit DECIMAL(12,2)          NULL,
     cumulative_profit DECIMAL(12,2)         NULL,
     source VARCHAR(30) NOT NULL,
+    -- 1a.9：该快照 total_asset 来源（denormalized，confirm 时 19 行同值）
+    total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_latest BOOLEAN NOT NULL DEFAULT TRUE,
     confirmed_at TIMESTAMP NULL
 );
 CREATE INDEX IF NOT EXISTS idx_raw_user_date_latest ON asset_raw(user_id, snapshot_date, is_latest);
 CREATE INDEX IF NOT EXISTS idx_raw_user_fund ON asset_raw(user_id, fund_name);
+-- 1a.9：H2 CHECK constraint 模拟 MySQL ENUM('top','visible_sum')
+ALTER TABLE asset_raw ADD CONSTRAINT IF NOT EXISTS chk_asset_raw_total_asset_source
+    CHECK (total_asset_source IN ('top', 'visible_sum'));
 
 CREATE TABLE IF NOT EXISTS asset_snapshot (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -32,12 +38,17 @@ CREATE TABLE IF NOT EXISTS asset_snapshot (
     actual_ratio DECIMAL(5,2) NOT NULL DEFAULT 0,
     balance_fund DECIMAL(12,2) NOT NULL DEFAULT 0,
     sub_detail VARCHAR(2000),
+    -- 1a.9：该快照总额来源（与 asset_raw.total_asset_source 语义一致）
+    total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top',
     is_latest BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_snap_user_date ON asset_snapshot(user_id, snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_snap_user_date_latest ON asset_snapshot(user_id, snapshot_date, is_latest);
+-- 1a.9：H2 CHECK constraint 模拟 MySQL ENUM('top','visible_sum')
+ALTER TABLE asset_snapshot ADD CONSTRAINT IF NOT EXISTS chk_asset_snapshot_total_asset_source
+    CHECK (total_asset_source IN ('top', 'visible_sum'));
 
 CREATE TABLE IF NOT EXISTS fund_category_map (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

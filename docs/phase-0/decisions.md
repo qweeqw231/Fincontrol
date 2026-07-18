@@ -351,3 +351,52 @@
 - 若未来需要 CRUD 类别名（增/删/改 7 canonical），属 1a.9+ 范畴（master table 模式）
 - 若前端 confirm UI 需要绕过 user_correct 状态显式提示"未确认"，1a.9 可加 `confirmedAt` 字段
 - multi-user RBAC 隔离完整版属 1b.x / Phase 5b
+
+---
+
+### 1a.9 增补（2026-07-18）：总资产双轨 + DISCREPANCY 1% 报警
+
+**背景**：
+- 1a.8.8 v2.5 真实 E2E 暴露 P2 totalAsset 口径不一致：fixture 期望顶部"总资产"全账户 7884.68，v2.5 prompt 让模型输出 P2 页 visible sum 2987.32
+- 单字段 `total_asset` 无法表达"顶部 vs visible sum"差异，backend DedupEngine 原逻辑只用 merged fund sum，丢失顶部语义
+
+**决策**：
+
+1. **prompt v2.6（id=8，3859 字节）**：
+   - `total_asset` 字段 = 截图顶部"总资产"数字（无论第几页都应一致）
+   - 顶部不可见时输出 null（不要凭空估算）
+   - **禁止**：将当前页可见基金的 amount 加总作为 total_asset
+2. **DedupEngine 双轨决策**：
+   - 源 1 (top)：4 页顶部"总资产"一致时用顶部值（语义最准）
+   - 源 2 (visible_sum)：顶部不可用 / 4 页不一致时 fallback 到 deduped fund 加总
+   - `merged.totalAssetSource` 字段标 `"top"` 或 `"visible_sum"`
+3. **DISCREPANCY 报警（1% 阈值）**：
+   - `|top - dedupedSum| / top > 1%` → `DedupWarning(code=DISCREPANCY)`（不阻塞，落地供前端显示）
+   - 4 页顶部不一致 → `DedupWarning(code=TOP_INCONSISTENT)` + fallback visible_sum
+4. **Schema 升级**：
+   - `asset_raw.total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top'`（denormalized，每行 19 条同值）
+   - `asset_snapshot.total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top'`
+   - MySQL 8.0.46 已 ALTER + H2 CHECK 约束同步（`CHECK (total_asset_source IN ('top','visible_sum'))`）
+5. **DTO 升级**：`ParsedAsset` / `AssetRaw` / `AssetSnapshot` 都加 `totalAssetSource: String` 字段
+
+**Prompt 走样实证（v3.2 之前）**：
+- fixture v3.3：每页 `expectedTotalAsset=7884.68`（v2.6 prompt 顶部一致）
+- v2.5 fixture：P2 visible sum=2987.32 → 偏差 62% → 验证 DISCREPANCY 报警能正确检测此类问题
+
+**理由**：
+- top 优先：Alipay 顶部"总资产"是全账户权威值，per-page visible sum 是部分页面统计，语义本就不同
+- visible_sum 兜底：部分页面顶部被截断/遮挡时仍能给出一个合理值
+- 1% 阈值：敏感但不过敏，P2/P3 visible sum 天然会偏差大能立即发现
+- total_asset_source denormalized：前端明细表展示需要每行都有 source，便于溯源
+
+**回退条件**：
+- 如果 v2.6 prompt 触发更多错误 → `DELETE FROM prompt_versions WHERE id=8` 让 v2.5 复活（PromptLoader `ORDER BY id DESC`）
+- 如果 DISCREPANCY 阈值 1% 太敏感 → 改 `DedupEngine.DISCREPANCY_THRESHOLD_PCT` 常量（待加）
+- 如果未来想明确区分多用户资产总额 → 引入 user_id-scope 的 top 优先（Phase 5b）
+
+**测试覆盖（5 个新增）**：
+- `DedupEngineTest.dedup_totalAsset_topConsistentAcrossPages_usesTop`：4 页 top 一致 → totalAssetSource=top
+- `DedupEngineTest.dedup_totalAsset_topInconsistentAcrossPages_fallsBackToDedupedSum`：4 页不一致 → TOP_INCONSISTENT warning + fallback
+- `DedupEngineTest.dedup_totalAsset_topVsDedupedSumDiscrepancyOver1Percent_emitsWarning`：偏差 > 1% → DISCREPANCY warning
+- `DedupEngineTest.dedup_totalAsset_topVsDedupedSumDiscrepancyWithin1Percent_noWarning`：偏差 <= 1% → 无 warning
+- `Phase1a8RealFourPageFixtureTest.dedup_totalAsset_topConsistentAcrossPages_usesTop`：fixture v3.3 4 页 → 7884.68 + top

@@ -16,19 +16,23 @@
     -->
 
     <!-- 1a7-PRE 双方言统一：upsertByCategory 改为 MySQL `ON DUPLICATE KEY UPDATE` -->
+    <!-- 1a.9：total_asset_source 字段加写（与 asset_raw 总资产来源保持一致） -->
     <insert id="upsertByCategory" parameterType="com.fincontrol.entity.AssetSnapshot">
         INSERT INTO asset_snapshot
             (user_id, snapshot_date, category, total_amount, target_ratio, actual_ratio,
-             balance_fund, sub_detail, is_latest, created_at, updated_at)
+             balance_fund, sub_detail, total_asset_source, is_latest, created_at, updated_at)
         VALUES
             (#{userId}, #{snapshotDate}, #{category}, #{totalAmount}, #{targetRatio},
-             #{actualRatio}, #{balanceFund}, #{subDetail}, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+             #{actualRatio}, #{balanceFund}, #{subDetail},
+             COALESCE(#{totalAssetSource}, 'top'),
+             true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON DUPLICATE KEY UPDATE
             total_amount  = VALUES(total_amount),
             target_ratio  = VALUES(target_ratio),
             actual_ratio  = VALUES(actual_ratio),
             balance_fund  = VALUES(balance_fund),
             sub_detail    = VALUES(sub_detail),
+            total_asset_source = VALUES(total_asset_source),
             is_latest     = true,
             updated_at    = CURRENT_TIMESTAMP
     </insert>
