@@ -1,12 +1,12 @@
 -- ============================================
--- FinControl 数据库 Schema v1.0
+-- FinControl 数据库 Schema v1.0（1a.8 增 used_provider + fallback_triggered）
 -- ============================================
 -- 配套文档：docs/api-contract.md, docs/phase-0-decisions.md
 -- 数据库：MySQL 8.0+
 -- 字符集：utf8mb4 / utf8mb4_unicode_ci
 -- 时区：UTC+8（Asia/Shanghai）
 -- 引擎：InnoDB
--- 包含：四轮评审 + Phase 0 决策的所有 P0 修复
+-- 包含：四轮评审 + Phase 0 决策的所有 P0 修复 + 1a.8 AI 韧性增强
 -- ============================================
 
 -- 字符集与时区设置
@@ -79,16 +79,18 @@ CREATE TABLE fund_category_map (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金-大类映射表';
 
 -- ============================================
--- 4. chat_history（对话历史表）
+-- 4. chat_history（对话历史表，1a.8 增监控字段）
 -- ============================================
 CREATE TABLE chat_history (
-  id                BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
-  user_id           BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
-  conversation_id   VARCHAR(50)  NOT NULL COMMENT '对话ID（UUID）',
-  role              VARCHAR(20)  NOT NULL COMMENT 'user/assistant',
-  content           TEXT         NOT NULL COMMENT '消息内容',
-  created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
-  conversation_type VARCHAR(30)  NOT NULL DEFAULT 'ai_assistant' COMMENT '对话类型：ai_assistant/screenshot_parse',
+  id                  BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  user_id             BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
+  conversation_id     VARCHAR(50)  NOT NULL COMMENT '对话ID（UUID）',
+  role                VARCHAR(20)  NOT NULL COMMENT 'user/assistant',
+  content             TEXT         NOT NULL COMMENT '消息内容',
+  created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
+  conversation_type   VARCHAR(30)  NOT NULL DEFAULT 'ai_assistant' COMMENT '对话类型：ai_assistant/screenshot_parse',
+  used_provider       VARCHAR(20)  NULL COMMENT '1a.8：本响应实际使用的 provider：minimax/doubao/deepseek（user 行 / 失败行为空）',
+  fallback_triggered  TINYINT(1)   NOT NULL DEFAULT 0 COMMENT '1a.8：本响应是否走了 fallback（0=主路径 / 1=已 fallback）',
   INDEX idx_user_conv_created (user_id, conversation_id, created_at),
   INDEX idx_user_type_created (user_id, conversation_type, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='对话历史表';
@@ -156,6 +158,15 @@ CREATE TABLE operation_log (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作日志表（月度/季度校正流水）';
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- ============================================
+-- 1a.8 增量脚本：已建库兼容（chat_history 加 used_provider + fallback_triggered）
+-- ============================================
+-- 上面 CREATE TABLE 已含新字段；下面这段用于已存在 chat_history 表的库补字段
+-- MySQL 8.0+ 支持 IF NOT EXISTS（ADD COLUMN IF NOT EXISTS）
+ALTER TABLE chat_history
+  ADD COLUMN IF NOT EXISTS used_provider VARCHAR(20) NULL COMMENT '1a.8：本响应实际使用的 provider',
+  ADD COLUMN IF NOT EXISTS fallback_triggered TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1a.8：本响应是否走了 fallback';
 
 -- ============================================
 -- 初始化数据：用户默认配置

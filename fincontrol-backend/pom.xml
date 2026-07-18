@@ -23,6 +23,7 @@
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <springdoc.version>2.6.0</springdoc.version>
         <okhttp.version>4.12.0</okhttp.version>
+        <resilience4j.version>2.2.0</resilience4j.version>
     </properties>
 
     <dependencies>
@@ -88,6 +89,19 @@
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
             <version>${okhttp.version}</version>
+        </dependency>
+
+        <!-- 1a.8：resilience4j（retry + circuitBreaker） -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+
+        <!-- 1a.8：caffeine（vision 同图 SHA-256 cache） -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
         </dependency>
 
         <!-- springdoc-openapi（Swagger UI 自动生成）-->

@@ -1,5 +1,5 @@
 # ============================================
-# FinControl 后端主配置（Phase 1a.5+）
+# FinControl 后端主配置（Phase 1a.5+，1a.8 重构）
 # ============================================
 # 适用场景：所有 profile 共用此文件
 # 覆盖规则：application-{profile}.yml > application.yml
@@ -77,8 +77,6 @@ springdoc:
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
-  packages-to-scan: com.fincontrol.controller
-  default-produces-media-type: application/json
 
 # ============================================
 # Spring Boot Actuator（1a.1 验收：/actuator/health）
@@ -98,7 +96,7 @@ management:
       enabled: true
 
 # ============================================
-# 视觉模型配置（Phase 1a.5 替代旧 DeepSeek 配置）
+# FinControl 应用配置（统一 fincontrol. 顶层，1a.8 重构）
 # ============================================
 fincontrol:
   default-user-id: 1
@@ -113,30 +111,28 @@ fincontrol:
       path: ${UPLOAD_SCREENSHOT_PATH:./uploads/screenshots/}
       max-size-mb: 20
 
-  # 视觉模型（minimax M3 系列，原生多模态图像 + 视频）
-  # 真实公开 API endpoint（注意是 .com 不是 .chat，.chat 给的是 SaaS 集成渠道）：
-  #   OpenAI 兼容：https://api.minimaxi.com/v1
-  #   Anthropic 兼容（推荐，但需改 VisionModelClient headers）：https://api.minimaxi.com/anthropic
-  # 当前用 OpenAI 兼容 schema。
-  # API Key 加载优先级：
-  #   1. 环境变量 VISION_API_KEY
-  #   2. application-local.yml 中的 fincontrol.vision.api-key
-  #   3. 本占位符（REPLACE_ME_VISION_API_KEY，启动时会抛 5001 强制填）
-  # timeout-seconds: 60 -> 300（minimax M3 thinking 块 + 高分辦率图 + 多模态需要 1-3 分钟）
+  # 视觉模型配置（Phase 1a.5+，1a.8 保留兼容段 + 新增 fincontrol.ai.vision）
+  # ============================================
+  # 1a.8 兼容性说明：
+  #   - fincontrol.vision.* 段：1a.5-1a.7 VisionModelClient @Value 注入使用
+  #   - fincontrol.ai.* 段：1a.8 起 AiProperties @ConfigurationProperties 注入使用
+  #   - 两段当前并存；Commit B 重构 VisionModelClient 后 fincontrol.vision.* 段可弃用
+  # ============================================
   vision:
     base-url: https://api.minimaxi.com/v1
     model: MiniMax-M3
     timeout-seconds: 300
     api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
 
-  # 文本 AI 模型（Phase 1a.6 起，与 vision 端完全隔离 [ai-client-split.md](#)）
-  # 独立 OkHttpClient / 独立 temperature / 独立 model。
-  # API Key 默认与 VISION_API_KEY 同源（minimax M3 文本/视觉复用 key），但允许独立覆盖。
-  # 加载优先级：
-  #   1. 环境变量 TEXT_AI_API_KEY
-  #   2. application-local.yml 中的 fincontrol.ai.text.api-key
-  #   3. 本占位符（REPLACE_ME_TEXT_AI_KEY，启动时 TextAiClient 抛 5001 强制填）
+  # ============================================
+  # AI 客户端配置（1a.8 统一根段 fincontrol.ai.*）
+  # ============================================
+  # API Key 加载优先级（任意 provider 都适用）：
+  #   1. 环境变量（VISION_API_KEY / DOUBAO_VISION_API_KEY / TEXT_AI_API_KEY / DEEPSEEK_CHAT_API_KEY）
+  #   2. application-local.yml（gitignored，本机覆盖）
+  #   3. REPLACE_ME_*_KEY 占位符（首调抛 5001/5002）
   ai:
+    # 文本 AI primary（minimax M3，1a.6 沿用）
     text:
       base-url: https://api.minimaxi.com/v1
       model: MiniMax-Text-01
@@ -144,6 +140,42 @@ fincontrol:
       max-tokens: 1024
       timeout-seconds: 60
       api-key: ${TEXT_AI_API_KEY:REPLACE_ME_TEXT_AI_KEY}
+
+      # 1a.8：文本端 DeepSeek V3 fallback（OpenAI 兼容，零代码改动，仅切 baseUrl/apiKey/model）
+      # Commit C（1a.8.5）TextAiClient 切 provider 入口时启用
+      fallback:
+        base-url: https://api.deepseek.com/v1
+        model: deepseek-chat
+        temperature: 0.7
+        max-tokens: 1024
+        timeout-seconds: 60
+        api-key: ${DEEPSEEK_CHAT_API_KEY:REPLACE_ME_DEEPSEEK_CHAT_API_KEY}
+
+    # 1a.8 视觉模型双 provider 配置
+    # 1-2 张图：minimax primary（OpenAI chat completions）；3+ 张图：豆包 primary（OpenAI Responses API）
+    # 互为 fallback：minimax 失败 → 豆包；豆包失败 → minimax
+    vision:
+      minimax:
+        base-url: https://api.minimaxi.com/v1
+        model: MiniMax-M3
+        timeout-seconds: 300
+        api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
+      doubao:
+        # 豆包 ARK / OpenAI Responses 端点
+        base-url: https://ark.cn-beijing.volces.com/api/v3
+        model: doubao-seed-1-8-251228
+        timeout-seconds: 300
+        api-key: ${DOUBAO_VISION_API_KEY:REPLACE_ME_DOUBAO_VISION_API_KEY}
+
+    # 1a.8 AiRouter 策略（imageCount 阈值 + cache + retry/CB）
+    # 默认与 work plan §Gate 0 决策一致；可按场景调整
+    router:
+      image-count-threshold: 2
+      cache-max-size: 1024
+      cache-ttl-hours: 24
+      vision-retry-attempts: 2
+      vision-circuit-breaker-sliding-window: 10
+      vision-circuit-breaker-failure-rate: 50.0
 
 # ============================================
 # 服务端口
