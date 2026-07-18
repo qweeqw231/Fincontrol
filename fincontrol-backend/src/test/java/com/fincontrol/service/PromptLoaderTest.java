@@ -67,6 +67,22 @@ class PromptLoaderTest {
     }
 
     @Test
+    @DisplayName("A8V3: warmUp 同名多版本按 id DESC 只保留最新版本")
+    void warmUp_samePromptMultipleVersions_keepsNewestRow() {
+        when(jdbc.queryForList(anyString())).thenReturn(List.of(
+                Map.of("prompt_name", "screenshot_parser", "prompt_content", "v2 newest"),
+                Map.of("prompt_name", "screenshot_parser", "prompt_content", "v1 old"),
+                Map.of("prompt_name", "ai_assistant", "prompt_content", "assistant newest"),
+                Map.of("prompt_name", "ai_assistant", "prompt_content", "assistant old")
+        ));
+
+        service.warmUp();
+
+        assertThat(service.get("screenshot_parser")).isEqualTo("v2 newest");
+        assertThat(service.get("ai_assistant")).isEqualTo("assistant newest");
+    }
+
+    @Test
     @DisplayName("A7-T08: get() 命中缓存 → 不查 DB")
     void get_cacheHit_doesNotQueryDb() {
         // 预填缓存（不走 warmUp）

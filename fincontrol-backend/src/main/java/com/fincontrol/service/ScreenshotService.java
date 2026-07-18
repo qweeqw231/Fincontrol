@@ -1,8 +1,8 @@
 package com.fincontrol.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fincontrol.ai.AiRouter;
-import com.fincontrol.ai.ApiStyle;
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
 import com.fincontrol.dto.screenshot.*;
@@ -10,12 +10,18 @@ import com.fincontrol.entity.ChatHistory;
 import com.fincontrol.mapper.ChatHistoryMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
@@ -25,6 +31,7 @@ import java.util.*;
  *   <li>upload —— 文件存到磁盘 + 返回 fileId + URL</li>
  *   <li>parse / reparse —— 通过 {@link AiRouter} 调用 vision 模型（minimax primary + 豆包 fallback / cache / retry / CB）
  *       — 1a.8 起统一入口，{@code usedProvider} + {@code fallbackTriggered} 写入 chat_history 审计</li>
+ *   <li>1a.8 v3：parse 成功后写 OCR 真实数据日志到 {@code docs/test-records/ocr-results/{date}/}（gitignored）</li>
  *   <li>失败时写 assistant 错误记录（含 provider 字段）</li>
  * </ul>
  *
@@ -34,12 +41,17 @@ import java.util.*;
 public class ScreenshotService {
 
     private static final Logger log = LoggerFactory.getLogger(ScreenshotService.class);
+    private static final DateTimeFormatter FILE_TS_FMT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS");
+    private static final DateTimeFormatter ISO_FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
+    private static final String DEFAULT_OCR_LOG_PATH = "docs/test-records/ocr-results";
 
     private final FileStorageService storage;
     private final VisionModelClient visionModelClient; // 用于 extractFirstJsonObject 抽 JSON
     private final AiRouter aiRouter;                    // 1a.8 vision 入口
     private final PromptLoaderService promptLoader;
     private final ChatHistoryMapper chatHistoryMapper;
+    private final ObjectMapper objectMapper;            // 1a.8 v3: OCR 写盘
+    private final Path ocrLogRoot;
 
     /** 1a.8 路由 imageCount 上下文：1 张图 parse → imageCount=1；批量 4 张 → imageCount=4。 */
     private static final int DEFAULT_IMAGE_COUNT = 1;
@@ -48,12 +60,16 @@ public class ScreenshotService {
                              VisionModelClient visionModelClient,
                              AiRouter aiRouter,
                              PromptLoaderService promptLoader,
-                             ChatHistoryMapper chatHistoryMapper) {
+                             ChatHistoryMapper chatHistoryMapper,
+                             ObjectMapper objectMapper,
+                             @Value("${fincontrol.ocr.log-path:" + DEFAULT_OCR_LOG_PATH + "}") String ocrLogPath) {
         this.storage = storage;
         this.visionModelClient = visionModelClient;
         this.aiRouter = aiRouter;
         this.promptLoader = promptLoader;
         this.chatHistoryMapper = chatHistoryMapper;
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.ocrLogRoot = resolveOcrLogRoot(ocrLogPath);
     }
 
     // 1a.4 upload
@@ -114,11 +130,15 @@ public class ScreenshotService {
         try {
             json = visionModelClient.extractFirstJsonObject(raw);
         } catch (BusinessException e) {
+            writeOcrLog(req.getFileId(), usedProvider, fallbackTriggered, raw, null, e);
             persistAssistantError(conversationId, req.getUserId(), e, raw, usedProvider, fallbackTriggered);
             throw e;
         }
 
         ParsedAsset asset = mapToParsedAsset(conversationId, raw, json);
+
+        // 1a.8 v3: OCR 真实数据日志写盘
+        writeOcrLog(req.getFileId(), usedProvider, fallbackTriggered, raw, asset, null);
 
         // 4) 0 基金
         boolean zeroFunds = asset.getCategories() == null
@@ -184,11 +204,15 @@ public class ScreenshotService {
         try {
             json = visionModelClient.extractFirstJsonObject(raw);
         } catch (BusinessException e) {
+            writeOcrLog(fileId, usedProvider, fallbackTriggered, raw, null, e);
             persistAssistantError(req.getConversationId(), userMsg.getUserId(), e, raw, usedProvider, fallbackTriggered);
             throw e;
         }
 
         ParsedAsset asset = mapToParsedAsset(req.getConversationId(), raw, json);
+
+        // 1a.8 v3: OCR 真实数据日志写盘
+        writeOcrLog(fileId, usedProvider, fallbackTriggered, raw, asset, null);
 
         boolean zeroFunds = asset.getCategories() == null
                 || asset.getCategories().isEmpty()
@@ -212,6 +236,79 @@ public class ScreenshotService {
         chatHistoryMapper.insert(assistantMsg);
 
         return asset;
+    }
+
+    // ===================================================================
+    // 1a.8 v3: OCR 真实数据日志写盘
+    // ===================================================================
+
+    /**
+     * OCR 写盘：保存每次 parse 的 raw response + parsed JSON + timestamp + usedProvider 到
+     * {@code docs/test-records/ocr-results/{date}/}（gitignored）。
+     * <p>用于人工对照 standard 真实数据 + 后续 v3 prompt 改进。
+     */
+    private void writeOcrLog(String fileId, String usedProvider, boolean fallbackTriggered,
+                             String raw, ParsedAsset asset, BusinessException error) {
+        try {
+            LocalDateTime now = LocalDateTime.now();
+            Path ocrDir = ocrLogRoot.resolve(LocalDate.now().toString());
+            Files.createDirectories(ocrDir);
+
+            String prefix = now.format(FILE_TS_FMT)
+                    + "_" + safeFileNamePart(fileId)
+                    + "_" + safeFileNamePart(usedProvider) + "_";
+            Path ocrFile = Files.createTempFile(ocrDir, prefix, ".json");
+
+            Map<String, Object> ocr = new LinkedHashMap<>();
+            ocr.put("timestamp", now.format(ISO_FMT));
+            ocr.put("file_id", fileId);
+            ocr.put("used_provider", usedProvider);
+            ocr.put("fallback_triggered", fallbackTriggered);
+            ocr.put("raw_response", raw);
+            if (asset != null) {
+                Map<String, Object> parsedMap = new LinkedHashMap<>();
+                parsedMap.put("conversation_id", asset.getConversationId());
+                parsedMap.put("snapshot_date", asset.getSnapshotDate());
+                parsedMap.put("total_asset", asset.getTotalAsset());
+                parsedMap.put("categories", asset.getCategories());
+                parsedMap.put("matched_funds", asset.getMatchedFunds());
+                ocr.put("parsed", parsedMap);
+            } else if (error != null) {
+                ocr.put("error_code", error.getErrorCode().getCode());
+                ocr.put("error_message", error.getMessage());
+            }
+            Files.write(ocrFile, objectMapper.writeValueAsBytes(ocr));
+            log.info("OCR 日志已写入: {}", ocrFile);
+        } catch (Exception ex) {
+            log.warn("OCR 日志写盘失败（不阻塞主流程）: {}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 相对配置路径以仓库根（包含 .git 的最近父目录）为基准；部署环境没有 .git 时回退到 JVM CWD。
+     * 绝对路径保持不变，便于通过 FINCONTROL_OCR_LOG_PATH 显式覆盖。
+     */
+    static Path resolveOcrLogRoot(String configuredPath) {
+        String value = configuredPath == null || configuredPath.isBlank()
+                ? DEFAULT_OCR_LOG_PATH
+                : configuredPath.trim();
+        Path configured = Paths.get(value);
+        if (configured.isAbsolute()) {
+            return configured.normalize();
+        }
+
+        Path cwd = Paths.get("").toAbsolutePath().normalize();
+        for (Path candidate = cwd; candidate != null; candidate = candidate.getParent()) {
+            if (Files.isDirectory(candidate.resolve(".git"))) {
+                return candidate.resolve(configured).normalize();
+            }
+        }
+        return cwd.resolve(configured).normalize();
+    }
+
+    private static String safeFileNamePart(String value) {
+        if (value == null || value.isBlank()) return "unknown";
+        return value.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 
     // ===================================================================
@@ -253,7 +350,7 @@ public class ScreenshotService {
     private ParsedAsset mapToParsedAsset(String conversationId, String raw, JsonNode json) {
         ParsedAsset out = new ParsedAsset();
         out.setConversationId(conversationId);
-        out.setSnapshotDate(textOrNull(json, "snapshot_date"));
+        out.setSnapshotDate(firstText(json, "snapshot_date", "date"));
         out.setTotalAsset(decimalOrNull(json, "total_asset"));
         out.setSixCategoriesTotal(decimalOrNull(json, "six_categories_total"));
         out.setBalanceFund(decimalOrNull(json, "balance_fund"));
@@ -291,7 +388,9 @@ public class ScreenshotService {
             if (holdings.isArray() && holdings.size() > 0) {
                 Map<String, List<JsonNode>> byCategory = new LinkedHashMap<>();
                 for (JsonNode h : holdings) {
-                    String cat = textOrNull(h, "category");
+                    // 兼容历史 minimax schema（name/category/holding_pnl）与 v2 prompt 实际 schema
+                    // （fund_name/category_name/profit）。
+                    String cat = firstText(h, "category", "category_name");
                     if (cat == null || cat.isBlank()) cat = "其他";
                     byCategory.computeIfAbsent(cat, k -> new ArrayList<>()).add(h);
                 }
@@ -302,9 +401,9 @@ public class ScreenshotService {
                     List<ParsedAsset.FundLine> lines = new ArrayList<>();
                     for (JsonNode h : entry.getValue()) {
                         ParsedAsset.FundLine line = new ParsedAsset.FundLine();
-                        line.setFundName(textOrNull(h, "name"));
+                        line.setFundName(firstText(h, "name", "fund_name"));
                         line.setAmount(decimalOrNull(h, "amount"));
-                        line.setProfit(decimalOrNull(h, "holding_pnl"));
+                        line.setProfit(firstDecimal(h, "holding_pnl", "profit"));
                         lines.add(line);
                     }
                     block.setFunds(lines);
@@ -339,9 +438,25 @@ public class ScreenshotService {
         return v.isMissingNode() || v.isNull() ? null : v.asText();
     }
 
+    private static String firstText(JsonNode node, String... fields) {
+        for (String field : fields) {
+            String value = textOrNull(node, field);
+            if (value != null && !value.isBlank()) return value;
+        }
+        return null;
+    }
+
     private static BigDecimal decimalOrNull(JsonNode node, String field) {
         JsonNode v = node.path(field);
         if (v.isMissingNode() || v.isNull() || !v.isNumber()) return null;
         return new BigDecimal(v.asText());
+    }
+
+    private static BigDecimal firstDecimal(JsonNode node, String... fields) {
+        for (String field : fields) {
+            BigDecimal value = decimalOrNull(node, field);
+            if (value != null) return value;
+        }
+        return null;
     }
 }

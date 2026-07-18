@@ -36,11 +36,13 @@ public class PromptLoaderService {
     public void warmUp() {
         try {
             List<Map<String, Object>> rows = jdbc.queryForList(
-                    "SELECT prompt_name, prompt_content FROM prompt_versions ORDER BY prompt_name, version DESC");
+                    "SELECT prompt_name, prompt_content FROM prompt_versions ORDER BY prompt_name, id DESC");
+            cache.clear();
             for (Map<String, Object> row : rows) {
                 String name = (String) row.get("prompt_name");
                 String content = (String) row.get("prompt_content");
-                cache.put(name, content);
+                // 结果按同名 prompt 的 id DESC 排序；第一条才是最新版本，旧版本不得反向覆盖。
+                cache.putIfAbsent(name, content);
             }
             log.info("PromptLoader 预热完成：加载 {} 个 prompt（screenshot_parser / ai_assistant / intent_classifier 等）", cache.size());
         } catch (Exception e) {
@@ -53,7 +55,7 @@ public class PromptLoaderService {
         if (cached != null) return cached;
         try {
             List<String> rows = jdbc.queryForList(
-                    "SELECT prompt_content FROM prompt_versions WHERE prompt_name = ? ORDER BY version DESC LIMIT 1",
+                    "SELECT prompt_content FROM prompt_versions WHERE prompt_name = ? ORDER BY id DESC LIMIT 1",
                     String.class, promptName);
             if (rows.isEmpty()) {
                 throw new BusinessException(ErrorCode.INTERNAL_ERROR, "prompt_versions 表无此 prompt: " + promptName);

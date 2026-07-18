@@ -117,7 +117,21 @@
 - [x] **1a.8.3** AiProperties 加 Fallback inner class（commit b7a515b）— 完成日期：2026-07-18
 - [x] **1a.8.4** Step 1：`VisionModelClient` 加 `apiStyle` 枚举（commit e276618）— 完成日期：2026-07-18
 - [x] **1a.8.5** Step 2：豆包 `/api/v3/responses` 实现（commit 9437979）— 完成日期：2026-07-18
+- [x] **1a.8.6** v3 真实四图闭环（corrects v2 的“4 张错图 + 仅 code=0”误报）— 完成日期：2026-07-18
+  - 改 .gitignore：恢复 `**/uploads/` `**/tmp/` `api-test-output/`，新增 `/docs/test-records/ocr-results/`
+  - ScreenshotService：加入 `ObjectMapper` OCR 写盘（timestamp+fileId+provider+fallback+raw+parsed/error）；路径用 `fincontrol.ocr.log-path` 解析到仓库根
+  - ScreenshotService：同时支持 v2 prompt `categories[].funds[].fund_name/category_name/profit` 嵌套（测试覆盖）
+  - DedupEngine：完整记录优先 + 唯一不完整记录 `DATA_INCOMPLETE` warning；同名完整记录两条后入优先；同名跨类仍报 `INTERNAL_ERROR`
+  - PromptLoaderService：SQL `ORDER BY id DESC` + `putIfAbsent` 保证同名多版本取最新
+  - prompt_versions v2.1：强制 `categories[].funds[]` 嵌套结构、禁止估算 total、要求“每一只/不能只写标题”
+  - 4 页 fixture `src/test/resources/fixtures/phase1a8-real-four-pages.json`（20→19，4 页完整记录 6/3/5/6）
+  - 新增 3 个测试：Phase1a8RealFourPageFixtureTest（3），SnapShotConfirmRealFourPageH2Test（1 H2 集成），PromptLoaderTest warmUp 多版本，ScreenshotServiceTest OCR 写盘+v2 嵌套
+  - 新增 `scripts/1a8/01-real-four-page-e2e.ps1`（PS + curl + JObject 构造 JSON，逐页健康/upload/parse/对账）
+  - 验证结果：4/4 upload+parse code=0，**19/19 唯一标的 + 总额 7,884.68 ±0.01**；184/184 业务测试 PASS + H2 镜像 PASS；JaCoCo 77.46% 行覆盖
+  - 唯一偏差：`国泰黄金ETF联接C` 实际 -40.24 vs 期望 -45.25（金额完全一致，利润语义差异，OCR 原始 raw 已落盘可人工复核）
+  - 详细见 [`2026-07-18_phase1a8-v2-real-data-check.md`](../test-records/manual-tests/2026-07-18_phase1a8-v2-real-data-check.md)
 
 ---
+
 
 > 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md) 与 [`2026-07-18_phase1a8-acceptance-report.md`](../test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md)

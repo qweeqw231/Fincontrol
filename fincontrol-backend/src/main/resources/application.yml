@@ -111,6 +111,11 @@ fincontrol:
       path: ${UPLOAD_SCREENSHOT_PATH:./uploads/screenshots/}
       max-size-mb: 20
 
+  # 1a.8 v3：真实 OCR 审计日志。相对路径由 ScreenshotService 解析到仓库根；
+  # 部署时可用绝对 FINCONTROL_OCR_LOG_PATH 覆盖。
+  ocr:
+    log-path: ${FINCONTROL_OCR_LOG_PATH:docs/test-records/ocr-results}
+
   # 视觉模型配置（Phase 1a.5+，1a.8 保留兼容段 + 新增 fincontrol.ai.vision）
   # ============================================
   # 1a.8 兼容性说明：

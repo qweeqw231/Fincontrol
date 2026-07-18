@@ -82,9 +82,12 @@ public class DedupEngine {
             );
         }
 
+        List<DedupWarning> warnings = new ArrayList<>();
+
         // 维度 A：按 fileId 去重，保留最后入
         Map<String, ParsedAsset> byFileId = new LinkedHashMap<>();
         for (ParsedAsset a : input.parsedAssets()) {
+            if (a == null) continue;
             byFileId.put(a.getConversationId(), a);
         }
         List<ParsedAsset> dedupedFileId = new ArrayList<>(byFileId.values());
@@ -98,29 +101,46 @@ public class DedupEngine {
         //                                (a, b) -> a.amount() >= b.amount() ? a : b));
         List<ParsedAsset> dedupedHash = dedupedFileId;
 
-        // 维度 C + D：按 fund_name + snapshot_date 合并（同名 fund 保留最后入；按 category 累加）
+        // 维度 C + D：按 fund_name + snapshot_date 合并（同名完整记录后入优先；按 category 累加）
+        // 1a.8 v3：跨页只有标题的行缺少 amount/profit，不能覆盖另一页的完整记录。
         Map<String, MergedFund> mergedFunds = new LinkedHashMap<>();
         for (ParsedAsset a : dedupedHash) {
+            if (a.getCategories() == null) continue;
             for (CategoryBlock cat : a.getCategories()) {
+                if (cat == null || cat.getFunds() == null) continue;
+                String categoryName = trimToNull(cat.getCategoryName());
                 for (FundLine fund : cat.getFunds()) {
-                    if (fund.getFundName() == null) continue;
-                    String key = fund.getFundName();
+                    if (fund == null) continue;
+                    String key = trimToNull(fund.getFundName());
+                    if (key == null) {
+                        addIncompleteWarning(warnings, a, categoryName, null,
+                                missingFields(categoryName, fund));
+                        continue;
+                    }
+
+                    boolean complete = categoryName != null
+                            && fund.getAmount() != null
+                            && fund.getProfit() != null;
                     MergedFund existing = mergedFunds.get(key);
+                    if (!complete) {
+                        addIncompleteWarning(warnings, a, categoryName, key,
+                                missingFields(categoryName, fund));
+                        // 标题行无论先后都不写入 mergedFunds；已有完整记录保持不变。
+                        continue;
+                    }
+
                     if (existing == null) {
                         mergedFunds.put(key, new MergedFund(
-                                key, cat.getCategoryName(),
-                                fund.getAmount(), fund.getProfit(),
-                                fund.getFundName(), cat.getCategoryName()
-                        ));
+                                key, categoryName, fund.getAmount(), fund.getProfit()));
                     } else {
-                        // 维度 D 检查：同 fund_name 但不同 category → 数据冲突
-                        if (!Objects.equals(existing.categoryName, cat.getCategoryName())) {
+                        // 维度 D 检查：同 fund_name 的两条完整记录若 category 不同，数据冲突。
+                        if (!Objects.equals(existing.categoryName, categoryName)) {
                             throw new BusinessException(
                                     ErrorCode.INTERNAL_ERROR,
-                                    "fund '" + key + "' 在 " + existing.categoryName + " 与 " + cat.getCategoryName() + " 之间冲突"
+                                    "fund '" + key + "' 在 " + existing.categoryName + " 与 " + categoryName + " 之间冲突"
                             );
                         }
-                        // 维度 C：后入优先（覆盖 amount / profit）
+                        // 维度 C：两条都完整时后入优先（覆盖 amount / profit）。
                         existing.amount = fund.getAmount();
                         existing.profit = fund.getProfit();
                     }
@@ -190,7 +210,6 @@ public class DedupEngine {
         }
 
         // 维度 E：同 snapshot_date 已存在 → 警告（除非 confirmedOverwrite=true）
-        List<DedupWarning> warnings = new ArrayList<>();
         if (input.existingFundNamesForSnapshot() != null && !input.existingFundNamesForSnapshot().isEmpty()) {
             if (!input.confirmedOverwrite()) {
                 Map<String, Object> ctx = new HashMap<>();
@@ -207,8 +226,10 @@ public class DedupEngine {
 
         // 构造报告
         int inputCount = input.parsedAssets().stream()
+                .filter(Objects::nonNull)
                 .mapToInt(a -> a.getCategories() == null ? 0 :
                         a.getCategories().stream()
+                                .filter(Objects::nonNull)
                                 .mapToInt(c -> c.getFunds() == null ? 0 : c.getFunds().size())
                                 .sum())
                 .sum();
@@ -229,6 +250,38 @@ public class DedupEngine {
     // ========================================================================
     // 内部辅助
     // ========================================================================
+
+    private static void addIncompleteWarning(List<DedupWarning> warnings,
+                                             ParsedAsset asset,
+                                             String categoryName,
+                                             String fundName,
+                                             List<String> missingFields) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("conversationId", asset == null ? null : asset.getConversationId());
+        context.put("fundName", fundName);
+        context.put("categoryName", categoryName);
+        context.put("missingFields", missingFields);
+        warnings.add(new DedupWarning(
+                "DATA_INCOMPLETE",
+                "忽略不完整基金记录 fund='" + (fundName == null ? "<missing>" : fundName)
+                        + "' missing=" + missingFields,
+                context));
+    }
+
+    private static List<String> missingFields(String categoryName, FundLine fund) {
+        List<String> missing = new ArrayList<>();
+        if (fund == null || trimToNull(fund.getFundName()) == null) missing.add("fundName");
+        if (categoryName == null) missing.add("categoryName");
+        if (fund == null || fund.getAmount() == null) missing.add("amount");
+        if (fund == null || fund.getProfit() == null) missing.add("profit");
+        return missing;
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
 
     /**
      * 空 ParsedAsset（用于 0 record 输入场景）。
@@ -255,12 +308,11 @@ public class DedupEngine {
         BigDecimal amount;
         BigDecimal profit;
 
-        MergedFund(String key, String firstCategory, BigDecimal firstAmount, BigDecimal firstProfit,
-                    String fundName, String categoryName) {
+        MergedFund(String fundName, String categoryName, BigDecimal amount, BigDecimal profit) {
             this.fundName = fundName;
-            this.categoryName = firstCategory;
-            this.amount = firstAmount;
-            this.profit = firstProfit;
+            this.categoryName = categoryName;
+            this.amount = amount;
+            this.profit = profit;
         }
     }
 

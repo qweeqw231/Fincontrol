@@ -14,7 +14,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -23,7 +22,9 @@ import org.mockito.quality.Strictness;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.util.Collections;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,11 +56,12 @@ class ScreenshotServiceTest {
     @Mock PromptLoaderService promptLoader;
     @Mock ChatHistoryMapper chatHistoryMapper;
 
-    @InjectMocks ScreenshotService service;
+    private ScreenshotService service;
 
     @TempDir Path tmp;
 
     private final ObjectMapper mapper = new ObjectMapper();
+    private Path ocrRoot;
     private File fakeImage;
     private static final String FILE_ID = "test-file-id-001";
     private static final String CONVERSATION_ID = "conv-" + FILE_ID;
@@ -68,6 +70,9 @@ class ScreenshotServiceTest {
     void setUp() throws Exception {
         fakeImage = tmp.resolve("img.png").toFile();
         Files.write(fakeImage.toPath(), new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47});
+        ocrRoot = tmp.resolve("ocr-results");
+        service = new ScreenshotService(
+                storage, visionModelClient, aiRouter, promptLoader, chatHistoryMapper, mapper, ocrRoot.toString());
         when(storage.resolveByFileId(FILE_ID)).thenReturn(fakeImage.toPath());
         when(promptLoader.get("screenshot_parser")).thenReturn("SYS_PROMPT");
     }
@@ -86,8 +91,16 @@ class ScreenshotServiceTest {
         }
     }
 
+    private List<Path> ocrFiles() throws Exception {
+        Path dateDir = ocrRoot.resolve(LocalDate.now().toString());
+        if (!Files.isDirectory(dateDir)) return List.of();
+        try (var stream = Files.list(dateDir)) {
+            return stream.filter(Files::isRegularFile).sorted().toList();
+        }
+    }
+
     @Test
-    void parse_validJson_returnsParsedAsset() {
+    void parse_validJson_returnsParsedAsset() throws Exception {
         String raw = "{" +
                 "\"snapshot_date\":\"2026-07-09\"," +
                 "\"total_asset\":100.00," +
@@ -119,11 +132,45 @@ class ScreenshotServiceTest {
         assertThat(asset.getCategories().get(0).getFunds().get(0).getFundName()).isEqualTo("中加货币E");
         assertThat(asset.getMatchedFunds()).containsExactly("中加货币E");
 
+        List<Path> logs = ocrFiles();
+        assertThat(logs).hasSize(1);
+        JsonNode audit = mapper.readTree(logs.get(0).toFile());
+        assertThat(audit.path("file_id").asText()).isEqualTo(FILE_ID);
+        assertThat(audit.path("used_provider").asText()).isEqualTo(ChatHistory.PROVIDER_MINIMAX);
+        assertThat(audit.path("fallback_triggered").asBoolean()).isFalse();
+        assertThat(audit.path("raw_response").asText()).isEqualTo(raw);
+        assertThat(audit.path("parsed").path("matched_funds").get(0).asText()).isEqualTo("中加货币E");
+
         verify(chatHistoryMapper, times(2)).insert(any(ChatHistory.class));
     }
 
     @Test
-    void parse_visionNonJson_throwsBusinessException3001() {
+    void parse_successiveCalls_writeUniqueOcrFiles() throws Exception {
+        String raw = "{\"snapshot_date\":\"2026-07-15\",\"total_asset\":100.00," +
+                "\"categories\":[{\"category_name\":\"货币类\",\"funds\":[" +
+                "{\"fund_name\":\"中加货币E\",\"amount\":100.00,\"profit\":1.50}]," +
+                "\"category_total\":100.00}]}";
+        stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
+        stubExtractJson(raw);
+        when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+        ScreenshotParseRequest req = new ScreenshotParseRequest();
+        req.setFileId(FILE_ID);
+        req.setUserId(1L);
+
+        service.parse(req);
+        service.parse(req);
+
+        List<Path> logs = ocrFiles();
+        assertThat(logs).hasSize(2);
+        assertThat(logs.get(0).getFileName().toString()).contains(FILE_ID).contains("minimax");
+        assertThat(logs.get(1).getFileName().toString()).contains(FILE_ID).contains("minimax");
+        assertThat(logs.get(0)).isNotEqualTo(logs.get(1));
+        verify(chatHistoryMapper, times(4)).insert(any(ChatHistory.class));
+    }
+
+    @Test
+    void parse_visionNonJson_throwsBusinessException3001() throws Exception {
         String rawText = "### 这是 Markdown 表格  \n| 基金 | 金额 |\n| --- | --- |\n";
         stubVisionSuccess(rawText, ChatHistory.PROVIDER_MINIMAX, false);
         when(visionModelClient.extractFirstJsonObject(rawText))
@@ -142,6 +189,16 @@ class ScreenshotServiceTest {
                     assertThat(be.getErrorCode()).isEqualTo(ErrorCode.VISION_INVALID_JSON);
                     assertThat(be.getErrorCode().getCode()).isEqualTo(3001);
                 });
+
+        List<Path> logs = ocrFiles();
+        assertThat(logs).hasSize(1);
+        JsonNode audit = mapper.readTree(logs.get(0).toFile());
+        assertThat(audit.path("file_id").asText()).isEqualTo(FILE_ID);
+        assertThat(audit.path("used_provider").asText()).isEqualTo(ChatHistory.PROVIDER_MINIMAX);
+        assertThat(audit.path("raw_response").asText()).isEqualTo(rawText);
+        assertThat(audit.path("error_code").asInt()).isEqualTo(3001);
+        assertThat(audit.path("error_message").asText()).contains("未找到 JSON");
+
         verify(chatHistoryMapper, times(2)).insert(any(ChatHistory.class));
     }
 
@@ -202,6 +259,41 @@ class ScreenshotServiceTest {
                     BusinessException be = (BusinessException) ex;
                     assertThat(be.getErrorCode().getCode()).isEqualTo(2001);
                 });
+    }
+
+    @Test
+    void parse_v2PromptJsonStyle_returnsParsedAsset() {
+        // 1a.8 v3: v2 prompt 输出 snake_case 嵌套结构（fund_name/category_name/profit），
+        // 与历史 minimax 默认 holdings schema（name/category/holding_pnl）不同。
+        String raw = "{" +
+                "\"snapshot_date\":\"2026-07-15\"," +
+                "\"total_asset\":7884.68," +
+                "\"categories\":[" +
+                "  {\"category_name\":\"货币类\",\"category_total\":796.32," +
+                "   \"funds\":[{\"fund_name\":\"中加货币E\",\"amount\":796.32,\"profit\":2.32}]}," +
+                "  {\"category_name\":\"商品类\",\"category_total\":1644.50," +
+                "   \"funds\":[{\"fund_name\":\"国泰黄金ETF联接C\",\"amount\":564.86,\"profit\":-45.25}," +
+                "           {\"fund_name\":\"国泰黄金ETF联接A\",\"amount\":923.16,\"profit\":-129.84}," +
+                "           {\"fund_name\":\"华安黄金ETF联接C\",\"amount\":156.48,\"profit\":-26.27}]}" +
+                "]}";
+        stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
+        stubExtractJson(raw);
+        when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+        ScreenshotParseRequest req = new ScreenshotParseRequest();
+        req.setFileId(FILE_ID);
+        req.setUserId(1L);
+
+        ParsedAsset asset = service.parse(req);
+
+        assertThat(asset.getTotalAsset()).isEqualByComparingTo(new java.math.BigDecimal("7884.68"));
+        assertThat(asset.getCategories()).hasSize(2);
+        ParsedAsset.CategoryBlock goods = asset.getCategories().stream()
+                .filter(b -> "商品类".equals(b.getCategoryName())).findFirst().orElseThrow();
+        assertThat(goods.getFunds()).hasSize(3);
+        assertThat(goods.getFunds().get(0).getFundName()).isEqualTo("国泰黄金ETF联接C");
+        assertThat(goods.getFunds().get(0).getAmount()).isEqualByComparingTo(new java.math.BigDecimal("564.86"));
+        assertThat(goods.getFunds().get(0).getProfit()).isEqualByComparingTo(new java.math.BigDecimal("-45.25"));
     }
 
     @Test

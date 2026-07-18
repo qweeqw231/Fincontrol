@@ -150,8 +150,11 @@ fincontrol-backend/backend.log
 # 工具脚本临时输出（如 commit-and-push.sh 写出的 git-commit-msg.txt）
 git-commit-msg.txt
 
-# 1a.7 smoke 脚本产生的 API 响应输出（按阶段子目录）
+# 1a.7+ smoke 脚本产生的 API 响应输出（按阶段子目录）
 docs/test-records/automated-smoke/**/api-test-output/
+
+# 1a.8 v3 真实 OCR 原始响应（可能含用户资产数据，不入仓）
+/docs/test-records/ocr-results/
 
 # 豁免：自动化 smoke log 本身要 commit（历史回溯价值）
 # 默认 `*.log` 忽略工作区根的随机 log，但 smoke log 走精确路径匹配
