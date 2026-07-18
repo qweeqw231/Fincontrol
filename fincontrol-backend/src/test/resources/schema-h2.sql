@@ -11,8 +11,9 @@ CREATE TABLE IF NOT EXISTS asset_raw (
     category VARCHAR(50) NOT NULL,
     amount DECIMAL(12,2) NOT NULL,
     profit DECIMAL(12,2) NOT NULL DEFAULT 0,
-    holding_profit DECIMAL(12,2) NOT NULL DEFAULT 0,
-    cumulative_profit DECIMAL(12,2) NOT NULL DEFAULT 0,
+    -- 1a.8.8 v3.2：余额类（余额宝等）截图不显示 holding 列 → 允许 NULL；其他余额类累计也允许 NULL
+    holding_profit DECIMAL(12,2)          NULL,
+    cumulative_profit DECIMAL(12,2)         NULL,
     source VARCHAR(30) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     is_latest BOOLEAN NOT NULL DEFAULT TRUE,

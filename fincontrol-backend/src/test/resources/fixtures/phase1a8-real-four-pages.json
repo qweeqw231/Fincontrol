@@ -45,7 +45,7 @@
             "categoryName": "余额类",
             "categoryTotal": 320.85,
             "funds": [
-              {"fundName": "余额宝", "amount": 320.85, "holdingProfit": 1.89, "cumulativeProfit": 1.89}
+              {"fundName": "余额宝", "amount": 320.85, "holdingProfit": null, "cumulativeProfit": 1.89}
             ]
           }
         ]
@@ -193,6 +193,6 @@
     {"categoryName": "海外权益类", "fundName": "招商纳斯达克100ETF联接(QDII)C", "amount": 184.69, "holdingProfit": 24.69, "cumulativeProfit": 24.69},
     {"categoryName": "港股大中华类", "fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "holdingProfit": -8.58, "cumulativeProfit": -8.58},
     {"categoryName": "港股大中华类", "fundName": "华安香港精选股票(QDII)", "amount": 121.11, "holdingProfit": 1.11, "cumulativeProfit": 1.11},
-    {"categoryName": "余额类", "fundName": "余额宝", "amount": 320.85, "holdingProfit": 1.89, "cumulativeProfit": 1.89}
+    {"categoryName": "余额类", "fundName": "余额宝", "amount": 320.85, "holdingProfit": null, "cumulativeProfit": 1.89}
   ]
 }

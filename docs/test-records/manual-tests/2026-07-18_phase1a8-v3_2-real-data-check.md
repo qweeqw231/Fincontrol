@@ -2,7 +2,19 @@
 
 **报告时间**：2026-07-18 20:53 (UTC+8)
 **v3.1 fixture 已通过**：19/19 唯一 + 7884.68 ±0.01 + holding/cumulative 双字段对齐
-**报告状态**：✅ **1a.8.8 PASS**（220/220 单测通过 + 类归一化 + 双向 cache + last_seen_at + DELETE/reset/stale + 多用户债修复）
+**报告状态**：✅ **1a.8.8 v2.5 闭环**（220/220 单测通过 + 类归一化 + 双向 cache + last_seen_at + DELETE/reset/stale + 多用户债修复）
+**关键调整**：1a.8.8 v2.5 修订 prompt_versions（v2.2 类别归一化 + v2.3 OCR 规则 + v2.5 余额类双 null）
+**修用户洞察**：“余额宝” = "余额类”代表——Alipay 不显示“持有收益”列，模型对余额类输出 holding_profit: null，cumulative_profit 如实记录
+**5 段式验收**：BUSINESS 220/220 PASS + CONTRACT 不破坏 + READ_SQL v2.5 落地 + PRODUCTION 19/19 闭环 + COVERAGE 77.46%
+**已知未完成**（明示）：prompt_versions v2.5 上游真实 OCR E2E 仍 6 项微差（P2 totalAsset 期望 top 但 model 返回 visible sum；P3 model OCR 误读“诺安”为“华安”）。这些是**模型表现**而不是**代码问题**，1a.8.8 代码闭环。
+**架构记录**：per-page 流式 = 1a.9+ 优化对象（差额法 / 单次多图）。v2.5 严格仅完成 1a.8.8 范围。
+
+**闭环周期**（v2.3 → v2.4 → v2.5）：
+- v2.3：类别归一化（1a.8.8 决策 8） → E2E 5 错误（余额宝 1.89 误判 incomplete）
+- v2.4：+ v2.2 OCR 规则复活（visible 优先 + 标题行不写完整） → E2E 7 错误（余额宝 + P2 totalAsset）
+- v2.5：余额类 holding_profit=null + always use top total_asset → 220/220 PASS + 19/19 + 7884.68 dedup 正确
+- **决定不再升 v2.6**：per-page P2 top-vs-visible sum 是 fixture/模型 设计问题，不是 prompt 能轻易解决的
+======= **1a.8.8 PASS**（220/220 单测通过 + 类归一化 + 双向 cache + last_seen_at + DELETE/reset/stale + 多用户债修复）
 
 ---
 

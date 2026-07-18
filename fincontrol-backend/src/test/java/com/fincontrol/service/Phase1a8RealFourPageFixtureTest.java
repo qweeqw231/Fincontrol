@@ -45,17 +45,26 @@ class Phase1a8RealFourPageFixtureTest {
                 .sum();
         assertThat(completeCount).isEqualTo(fixture.expectedCompleteInputCount()).isEqualTo(20);
 
-        // holding_profit + cumulative_profit 双字段都存在
+        // 1a.8.7 双字段：非余额类必填 holding_profit + cumulative_profit
+        //       余额类（包含 余额宝）：holding_profit=null（Alipay 不显示），
+        //                            cumulative_profit 可能非 null（如 余额宝 1.89 真实）或 null（其他无累计）
         fixture.parsedAssets().forEach(asset -> {
             assertThat(asset.getCategories()).isNotEmpty();
             for (CategoryBlock cat : asset.getCategories()) {
+                boolean isBalance = "余额类".equals(cat.getCategoryName());
                 for (FundLine fund : cat.getFunds()) {
-                    assertThat(fund.getHoldingProfit())
-                            .as("fund %s 缺少 holding_profit", fund.getFundName())
-                            .isNotNull();
-                    assertThat(fund.getCumulativeProfit())
-                            .as("fund %s 缺少 cumulative_profit", fund.getFundName())
-                            .isNotNull();
+                    if (isBalance) {
+                        assertThat(fund.getHoldingProfit())
+                                .as("余额类 %s holding_profit 必为 null（Alipay 不显示）", fund.getFundName())
+                                .isNull();
+                    } else {
+                        assertThat(fund.getHoldingProfit())
+                                .as("非余额类 %s 缺少 holding_profit", fund.getFundName())
+                                .isNotNull();
+                        assertThat(fund.getCumulativeProfit())
+                                .as("非余额类 %s 缺少 cumulative_profit", fund.getFundName())
+                                .isNotNull();
+                    }
                 }
             }
         });
@@ -92,10 +101,19 @@ class Phase1a8RealFourPageFixtureTest {
             assertThat(line).as("缺少标的 %s", name).isNotNull();
             assertThat(line.categoryName()).as("%s category", name).isEqualTo(expected.categoryName());
             assertThat(line.amount()).as("%s amount", name).isEqualByComparingTo(expected.amount());
-            assertThat(line.holdingProfit()).as("%s holding_profit", name)
-                    .isEqualByComparingTo(expected.holdingProfit());
-            assertThat(line.cumulativeProfit()).as("%s cumulative_profit", name)
-                    .isEqualByComparingTo(expected.cumulativeProfit());
+            // 1a.8.8：holding/cumulative 允许 null（余额类 Alipay 不显示）→ 单独 isNull 判断 + isEqualByComparingTo
+            if (expected.holdingProfit() == null) {
+                assertThat(line.holdingProfit()).as("%s holding_profit 必为 null", name).isNull();
+            } else {
+                assertThat(line.holdingProfit()).as("%s holding_profit", name)
+                        .isEqualByComparingTo(expected.holdingProfit());
+            }
+            if (expected.cumulativeProfit() == null) {
+                assertThat(line.cumulativeProfit()).as("%s cumulative_profit 必为 null", name).isNull();
+            } else {
+                assertThat(line.cumulativeProfit()).as("%s cumulative_profit", name)
+                        .isEqualByComparingTo(expected.cumulativeProfit());
+            }
         });
     }
 
@@ -173,10 +191,10 @@ class Phase1a8RealFourPageFixtureTest {
         Map<String, MergedActual> byName = new LinkedHashMap<>();
         for (CategoryBlock category : asset.getCategories()) {
             for (FundLine line : category.getFunds()) {
+                // 1a.8.8：fund 字段允许 null（余额类 holding 不显示）
+                // 保留 null 透传；测试断言 expected.holdingProfit=null 时 isEqualByComparingTo 也能匹配
                 byName.put(line.getFundName(), new MergedActual(
-                        category.getCategoryName(), line.getAmount(),
-                        Objects.requireNonNullElse(line.getHoldingProfit(), line.getProfit()),
-                        Objects.requireNonNullElse(line.getCumulativeProfit(), line.getHoldingProfit())));
+                        category.getCategoryName(), line.getAmount(), line.getHoldingProfit(), line.getCumulativeProfit()));
             }
         }
         return byName;

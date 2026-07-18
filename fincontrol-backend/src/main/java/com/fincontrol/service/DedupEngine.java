@@ -121,9 +121,11 @@ public class DedupEngine {
 
                     BigDecimal holding = effectiveHolding(fund);
                     BigDecimal cumulative = effectiveCumulative(fund, holding);
+                    // 1a.8.8：余额类（余额宝/活期/货币基金等）允许 holding_profit=null（Alipay 不显示此列）
+                    boolean isBalanceCategory = "余额类".equals(categoryName);
                     boolean complete = categoryName != null
                             && fund.getAmount() != null
-                            && holding != null;
+                            && (holding != null || isBalanceCategory);
                     MergedFund existing = mergedFunds.get(key);
                     if (!complete) {
                         addIncompleteWarning(warnings, a, categoryName, key,
