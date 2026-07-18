@@ -150,5 +150,5 @@ fincontrol-backend/backend.log
 # 工具脚本临时输出（如 commit-and-push.sh 写出的 git-commit-msg.txt）
 git-commit-msg.txt
 
-# 1a.7 smoke 脚本产生的 API 响应输出
-docs/test-records/manual-tests/api-test-output/
+# 1a.7 smoke 脚本产生的 API 响应输出（按阶段子目录）
+docs/test-records/automated-smoke/**/api-test-output/

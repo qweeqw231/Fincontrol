@@ -16,7 +16,9 @@
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPTS_DIR/../../.." && pwd)"
 BACKEND_ROOT="$(cd "$SCRIPTS_DIR/../.." && pwd)"
-LOG_DIR="$PROJECT_ROOT/docs/test-records/manual-tests"
+# 自动化 smoke 输出与 manual-tests/ 严格分离
+# 详见 docs/test-records/README.md 与 docs/test-records/automated-smoke/README.md
+LOG_DIR="$PROJECT_ROOT/docs/test-records/automated-smoke/1a7"
 API_OUT_DIR="$LOG_DIR/api-test-output"
 LOG_FILE="$LOG_DIR/2026-07-17_phase1a7-smoke.log"
 BACKEND_LOG="$BACKEND_ROOT/backend.log"

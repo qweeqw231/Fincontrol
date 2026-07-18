@@ -1,6 +1,10 @@
 # FinControl 测试记录目录
 
-> Phase 0 产出。本目录存放 FinControl 项目的测试相关记录，包括验收清单、手动测试记录、API 测试输出。
+> 本目录存放 FinControl 项目的测试相关记录。
+> **重要划分**：
+> - `manual-tests/`     ← 人手写：验收计划 / 验收报告 / 手测结果
+> - `automated-smoke/`  ← 脚本写：自动化 smoke 输出（log + API 响应）
+> 严格区分，不互相混淆。
 
 ---
 
@@ -17,13 +21,16 @@ docs/
 │       └── phase-1b.md                                ← Phase 1b 总体进度清单
 └── test-records/
     ├── README.md                                      ← 本说明
-    ├── manual-tests/                                  ← 验收计划、验收报告、手动测试记录
+    ├── manual-tests/                                  ← ★ 人手写（验收计划 / 报告 / 手测记录）
     │   ├── 2026-07-16_phase1a4-acceptance-plan.md
     │   ├── 2026-07-16_phase1a3-supplemental-acceptance.md
     │   └── ...
-    └── api-test-output/                               ← API 测试输出（curl/HTTP Client 结果）
-        ├── 2026-07-09_screenshot_parse.json
-        └── ...
+    ├── automated-smoke/                               ← ★ 脚本写（自动化 smoke 输出）
+    │   ├── README.md
+    │   └── 1a7/                                      ← 按阶段分子目录
+    │       ├── 2026-07-17_phase1a7-smoke.log         ← smoke log（commit）
+    │       └── api-test-output/                      ← curl 响应（gitignored）
+    └── screenshots/                                   ← UI 截图（asset，不是 log）
 ```
 
 > 注意：实时验收清单已移至 `docs/phase-1/checklists/` 下，与 phase-1 交付物同目录。
@@ -38,8 +45,9 @@ docs/
 | 验收清单 | `phase-<n>-<a>.md`（在 phase-N/checklists/ 下）| `phase-1/checklists/phase-1a.md` |
 | 验收计划 | `<日期>_<phase>-acceptance-plan.md`（在 `manual-tests/` 下） | `2026-07-16_phase1a4-acceptance-plan.md` |
 | 验收报告 | `<日期>_<scope>-acceptance.md`（在 `manual-tests/` 下） | `2026-07-16_phase1a3-supplemental-acceptance.md` |
-| 手动测试 | `<日期>_<测试名>.md` | `2026-07-09_smoke-test.md` |
-| API 输出 | `<日期>_<api-name>.json` | `2026-07-09_screenshot_parse.json` |
+| 手动测试 | `<日期>_<测试名>.md`（在 `manual-tests/` 下） | `2026-07-09_smoke-test.md` |
+| **自动化 smoke log** | `<日期>_<phase>-smoke.log`（在 `automated-smoke/<phase>/` 下）| `2026-07-17_phase1a7-smoke.log` |
+| **自动化 API 输出** | `api-test-output/<日期>_<api-name>.json`（在 `automated-smoke/<phase>/` 下，gitignored） | `api-test-output/2026-07-09_screenshot_parse.json` |
 
 ---
 
@@ -48,8 +56,9 @@ docs/
 ### Phase 1a 编码期间
 
 1. 每完成一个 API 实现 → 在 `docs/phase-1/checklists/phase-1a.md` 中勾选对应项
-2. 关键测试 → curl 测试并保存响应到 `test-records/api-test-output/`
-3. 端到端冒烟测试 → 完成后写 `test-records/manual-tests/<日期>_smoke-test.md`
+2. 关键测试 → curl 测试并保存响应到 `automated-smoke/<phase>/api-test-output/`
+3. 端到端冒烟测试 → 完成后写 `manual-tests/<日期>_smoke-test.md`（手写总结）
+4. 自动化 smoke 跑完后 → 脚本自动写 `automated-smoke/<phase>/<日期>_<phase>-smoke.log`
 
 ### Phase 1a.4 起：计划、实现、验收三步闭环
 
@@ -65,7 +74,7 @@ docs/
 ### Phase 1b 编码期间
 
 1. 每完成一个 UI 验收项 → 在 `docs/phase-1/checklists/phase-1b.md` 中勾选
-2. 浏览器手动测试 → 截图或记录到 `test-records/manual-tests/`
+2. 浏览器手动测试 → 截图或记录到 `manual-tests/`
 
 ### Phase 1 结束
 
@@ -165,4 +174,7 @@ docs/
 5. **手动测试**：Phase 1a 关键路径必须手动跑通，不只依赖单元测试
 6. **API 输出**：curl 结果保存为 JSON 便于后续回溯
 7. **路径引用**：跨目录引用使用相对路径（如 `../phase-1/checklists/phase-1a.md`）
-</content>
+8. **manual-tests vs automated-smoke 严格区分**：
+   - `manual-tests/` 放人写的 markdown（计划/报告/手测结果）
+   - `automated-smoke/` 放脚本写的 log + JSON（smoke 输出）
+   - 混放会导致后人读 git log 时不知道是脚本写的还是手写的
