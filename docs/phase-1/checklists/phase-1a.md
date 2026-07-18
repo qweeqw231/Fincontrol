@@ -117,11 +117,6 @@
 - [x] **1a.8.3** AiProperties 加 Fallback inner class（commit b7a515b）— 完成日期：2026-07-18
 - [x] **1a.8.4** Step 1：`VisionModelClient` 加 `apiStyle` 枚举（commit e276618）— 完成日期：2026-07-18
 - [x] **1a.8.5** Step 2：豆包 `/api/v3/responses` 实现（commit 9437979）— 完成日期：2026-07-18
-- [x] **1a.8.6** Step 3：AiRouter 路由逻辑 + Caffeine cache + resilience4j retry/CB（commit c33997e）— 完成日期：2026-07-18
-- [x] **1a.8.7** Step 4：chat_history 加 `used_provider` + `fallback_triggered` 字段 + ScreenshotService/ChatService 埋点（commit 96b6062 + f21b402）— 完成日期：2026-07-18
-- [x] **1a.8.8** Step 5：端到端 smoke 脚本（scripts/1a8/03-e2e-smoke.{sh,bat}，commit 51c5e18）— 完成日期：2026-07-18
-- [x] **1a.8.9** Step 6：5 段式验收报告 + phase-1a.md + subphase-plan.md 收尾（本 commit）— 完成日期：2026-07-18
-- [ ] **1a.8.10** Step 7（1a.9 再做）：`TextAiClient` 加 DeepSeek fallback 调用实现（架构已就位 + DeepSeek key 占位等用户填）— 完成日期：____
 
 ---
 

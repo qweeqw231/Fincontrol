@@ -145,6 +145,29 @@ FROM chat_history WHERE created_at > '2026-07-18 16:08:00' ORDER BY id;
 
 | commit | 文件 | 内容 |
 |---|---|---|
-| `01ce076` | `AiProperties.java` + 2 docs | 加 `setMinimax(Provider)` + `setDoubao(Provider)` + 真实 e2e 报告 + 验收报告 PRODUCTION 段更新 |
+
+---
+
+## 4. 5 段式验收判定（更新版）
+
+```
+- BUSINESS:       ✅ 204/204 PASS（mock 单元测试）+ 6 个真实 assistant 行写入 chat_history
+- CONTRACT:       ✅ 15 endpoints 沿用 1a.7
+- READ_SQL:       ✅ 1a.7 dialect + 1a.8 chat_history 增量（ALTER 已应用）
+- PRODUCTION:     ✅ 真实 PASS 1/1 vision + 5/5 chat（minimax 全程成功，豆包 fallback 架构就绪未触发）
+- COVERAGE:       ✅ JaCoCo ≥ 60%
+- PASS:           ✅ 5 段全过
+
+Phase 1a 闭环：✅ 真实 1a.8 PRODUCTION 段通过 — 架构 + 真实调用 + 监控字段都验证
+```
+
+---
+
+## 5. 修复 BUG commit（待 push）
+
+| commit | 文件 | 内容 |
+|---|---|---|
+| `<bug-1>` | `AiProperties.java` | 加 `setMinimax(Provider)` + `setDoubao(Provider)` |
+| `<bug-2>` | `application-local.yml` | 删 TAB 字符 + 删 placeholder 注释 + 统一真实 key 段（gitignored，不入仓） |
 
 注：application-local.yml 本来 gitignored，不入仓；只 commit Java fix。

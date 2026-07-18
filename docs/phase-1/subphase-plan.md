@@ -268,7 +268,6 @@
 
 **API key 保管**：`DOUBAO_VISION_API_KEY` + `DEEPSEEK_CHAT_API_KEY` 走 env var 优先 + `application-local.yml` 占位（gitignored），**用户后填**。
 
-**实际进度**：🟡 **2026-07-18 启动**，work plan + acceptance plan 已写（[工作计划](../work-plans/2026-07-18_phase1a8-work-plan.md) + [验收计划](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md)），待 Step 0 根因调查后开始代码改造。
 
 > 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md)
 
