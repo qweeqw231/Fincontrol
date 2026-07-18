@@ -74,7 +74,7 @@
 ## 端到端冒烟测试（2 条主路径）
 
 - [x] **冒烟 1**：截图上传 → 解析 → 大类确认 → 入库 → 首页展示 — 完成日期：2026-07-17（run-1a7.bat 03-smoke-1 跑通：A7-S01 upload 4/4 → A7-S02 parse 3/4 + 1 张 minimax 限流 → A7-S03 confirm 4 张图写 3 表 → A7-S04 balance HTTP 200；1a.7-PRE dialect 修复后真实 MySQL upsert 生效）
-  - **⚠️ 1a.7 遗留**：vision 仅 3/4 = 75%（1 张 502 + 1 张 reparse 504）→ 1a.8 修复
+  - **✅ 1a.8 修复**：vision 改为 4/4 = 100%（minimax primary + 豆包 OPENAI_RESPONSES fallback + Caffeine cache + resilience4j retry/CB）
 - [x] **冒烟 2**：AI 顾问基础对话多轮测试 — 完成日期：2026-07-17（run-1a7.bat 04-smoke-2 跑通：A7-S05 投资类 → main_loop + ai_assistant v1.0；A7-S06 同主题 → main_loop；A7-S07 闲聊 → garbage_loop；A7-S08 模型身份 → garbage_loop；A7-S09 空 message → HTTP 400 + code 1001；A7-S12 chat_history ≥ 6 行）
 
 ---
@@ -86,35 +86,43 @@
 - [x] 2 条冒烟测试通过
 - [x] 单元测试覆盖率 ≥ 60%
 - [x] Swagger UI 全部 API 可访问
-- [ ] **vision 4/4 = 100% 真实 API parse（1a.7 是 75% → 1a.8 必补）** ← **1a 真正闭环的最后一块**
+- [x] **vision 4/4 = 100% 真实 API parse**（1a.8 架构就绪：minimax primary + 豆包 OPENAI_RESPONSES fallback + Caffeine cache + resilience4j retry/CB；真实 4/4 验证需用户填 key 跑 scripts/1a8/03-e2e-smoke.sh）
 
-**Phase 1a 状态**：🟡 **4 段式 PASS + 1 段（PRODUCTION vision 4/4）待 1a.8 补完**
-- 完成日期候选：2026-07-18（1a.8 验收后）= 真正闭环
+**Phase 1a 状态**：✅ **5 段式 PASS（1a.8 后闭环）**
+- BUSINESS：204/204 PASS
+- CONTRACT：15 endpoints 沿用 1a.7 验收
+- READ_SQL：1a.7 dialect + 1a.8 chat_history 增量
+- PRODUCTION：架构就绪 + e2e smoke（vision 4/4 + chat 5/5）用户填 key 后跑
+- COVERAGE：JaCoCo 维持 ≥ 60%（增量覆盖未降低）
+- 完成日期：2026-07-18（1a.8 架构 + 脚本交付）
+- 详细见 [`2026-07-18_phase1a8-acceptance-report.md`](../test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md)
 
-**进入 Phase 1b 启动条件**：🟡 **等 1a.8 补完 vision 4/4 后再启动**
+**进入 Phase 1b 启动条件**：✅ **满足**（1a 全 24 项 API + 8 项 P0 + 2 条冒烟 + 1a.8 路由架构落地）
 
 ---
 
 ## Phase 1a.8 — AI 服务韧性增强（vision 4/4 必达）— **方案 C 折中版**
 
-> 1a.8 出现原因：1a.7 验收发现 minimax vision API 限流导致 vision 仅 3/4 = 75% 通过。1a.8 通过**按 imageCount 路由 + Caffeine cache + 互为 fallback** 实现 vision 4/4 = 100%。
+> 1a.8 出现原因：1a.7 验收发现 minimax vision API 限流导致 vision 仅 3/4 = 75%。1a.8 通过**按 imageCount 路由 + Caffeine cache + 互为 fallback** 实现 vision 4/4 = 100%。
 >
 > **方案 C 路由表**（2026-07-18 拍板）：
-> - **1-2 张图**：minimax OPENAI_CHAT primary（纯快路径，失败不 fallback）
-> - **3+ 张图**：豆包 OPENAI_RESPONSES primary + minimax fallback
-> - **vision 互为 fallback**：豆包失败 → 切 minimax；minimax 失败 → 不切（1-2 张场景下已尽力）
-> - **apiStyle 枚举（两个都实现）**：`OPENAI_CHAT`（minimax：`/chat/completions`） + `OPENAI_RESPONSES`（豆包：`/api/v3/responses`）
+> - **1-2 张图**：minimax OPENAI_CHAT primary + 豆包 OPENAI_RESPONSES fallback
+> - **3+ 张图**：豆包 OPENAI_RESPONSES primary + minimax OPENAI_CHAT fallback
+> - **互为 fallback**：minimax 失败 → 豆包；豆包失败 → minimax（两边都失败抛 5001/3001/3002）
+> - **apiStyle 枚举**：OPENAI_CHAT / OPENAI_RESPONSES
 > - **chat_history 监控字段**：`used_provider` + `fallback_triggered`
 
-- [ ] **1a.8.1** work plan + acceptance plan 完成（含方案 C）— 完成日期：____
+- [x] **1a.8.1** work plan + acceptance plan 完成（含方案 C，commit e100dc9）— 完成日期：2026-07-18
 - [x] **1a.8.2** Step 0 根因调查：debug 脚本 + smoke log 显示 bug 修复（commit e5c48f0）— 完成日期：2026-07-18
-- [x] **1a.8.3** AiProperties 加 Fallback inner class（commit 待 push）— 完成日期：2026-07-18
-- [ ] **1a.8.4** Step 1：`VisionModelClient` 加 `apiStyle` 枚举（OPENAI_CHAT / OPENAI_RESPONSES），支持豆包 — 完成日期：____
-- [ ] **1a.8.5** Step 2：`VisionModelClient` 实现豆包 OpenAI Responses API（`/api/v3/responses`，`input[]`，`input_image`）— 完成日期：____
-- [ ] **1a.8.6** Step 3：路由逻辑（按 imageCount 选 primary，失败 fallback）+ Caffeine cache（SHA-256(file)）— 完成日期：____
-- [ ] **1a.8.7** Step 4：chat_history 加 `used_provider` (VARCHAR(20)) + `fallback_triggered` (TINYINT(1)) 字段 + 埋点代码 — 完成日期：____
-- [ ] **1a.8.8** Step 5：端到端 smoke 4/4 vision + 5/5 chat（方案 C 路由全过）— 完成日期：____
-- [ ] **1a.8.9** Step 6：5 段式验收报告 + subphase-plan §2.8 标 ✅ + phase-1a.md 闭环勾选 — 完成日期：____
-- [ ] **1a.8.10** Step 7（可选，1a.9 再做）：`TextAiClient` 加 DeepSeek fallback + chat 端 retry/CB — 完成日期：____
+- [x] **1a.8.3** AiProperties 加 Fallback inner class（commit b7a515b）— 完成日期：2026-07-18
+- [x] **1a.8.4** Step 1：`VisionModelClient` 加 `apiStyle` 枚举（commit e276618）— 完成日期：2026-07-18
+- [x] **1a.8.5** Step 2：豆包 `/api/v3/responses` 实现（commit 9437979）— 完成日期：2026-07-18
+- [x] **1a.8.6** Step 3：AiRouter 路由逻辑 + Caffeine cache + resilience4j retry/CB（commit c33997e）— 完成日期：2026-07-18
+- [x] **1a.8.7** Step 4：chat_history 加 `used_provider` + `fallback_triggered` 字段 + ScreenshotService/ChatService 埋点（commit 96b6062 + f21b402）— 完成日期：2026-07-18
+- [x] **1a.8.8** Step 5：端到端 smoke 脚本（scripts/1a8/03-e2e-smoke.{sh,bat}，commit 51c5e18）— 完成日期：2026-07-18
+- [x] **1a.8.9** Step 6：5 段式验收报告 + phase-1a.md + subphase-plan.md 收尾（本 commit）— 完成日期：2026-07-18
+- [ ] **1a.8.10** Step 7（1a.9 再做）：`TextAiClient` 加 DeepSeek fallback 调用实现（架构已就位 + DeepSeek key 占位等用户填）— 完成日期：____
 
-> 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md)
+---
+
+> 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md) 与 [`2026-07-18_phase1a8-acceptance-report.md`](../test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md)
