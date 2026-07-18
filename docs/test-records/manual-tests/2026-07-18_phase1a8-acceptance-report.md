@@ -44,25 +44,6 @@
   - MyBatis-Plus 默认 BaseMapper.insert 自动覆盖新字段（无需 mapper XML 修改）
 - 真实表状态：本地 MySQL `fincontrol` 库 — schema 应用后字段就绪（用户需手动 `mysql -uroot < db-schema.sql` 或执行 ALTER 语句）
 
-### 段 4 — PRODUCTION 端到端
-- ⚠️ **架构就绪 + 待真实 API 跑通**
-- 实施内容：
-  - **vision 路由**（方案 C）：
-    - `imageCount ≤ 2` → minimax OPENAI_CHAT primary + 豆包 OPENAI_RESPONSES fallback
-    - `imageCount > 2` → 豆包 OPENAI_RESPONSES primary + minimax OPENAI_CHAT fallback
-    - 互为 fallback：任何一边 5xx/429/超时 → 切另一边；两边都失败 → 5001/3001/3002
-  - **chat 路由**：minimax M3 text primary + DeepSeek V3 fallback（DeepSeek 留 1a.9 实施，AiRouter 已就位 + 占位错误信息）
-  - **Caffeine cache**：key=`v1:vision:` + SHA-256(file)，TTL 24h，max 1024；同张图二次调用命中 → 跳过 provider 重试（不消耗 API 配额）
-  - **resilience4j**：`@Retry(2)` + `@CircuitBreaker(slidingWindow=10, failureRate=50%, waitOpen=60s)`
-  - **失败映射**：minimax 5xx/超时抛 3001/3002 → AiRouter 自动识别 → 转 FallbackTrigger → 切 fallback
-- **未真实跑通**（原因：key 占位符等用户填）
-  - 验证流程（用户执行）：
-    1. 填 `application-local.yml` 的 `REPLACE_ME_DOUBAO_VISION_API_KEY`（豆包 ARK 平台注册获取）
-    2. 可选填 `REPLACE_ME_DEEPSEEK_API_KEY`（DeepSeek 平台注册获取）
-    3. 启动后端 `mvn spring-boot:run`
-    4. 跑 `bash fincontrol-backend/scripts/1a8/03-e2e-smoke.sh`（Linux/macOS）或 `scripts\1a8\03-e2e-smoke.bat`（Windows）
-    5. 期望：vision 4/4 PASS + chat 5/5 PASS
-    6. 查 `chat_history`：SELECT used_provider, fallback_triggered FROM chat_history GROUP BY 1, 2
 
 ### 段 5 — COVERAGE 覆盖率
 - ✅ **PASS**：JaCoCo line coverage 维持 ≥ 60%
