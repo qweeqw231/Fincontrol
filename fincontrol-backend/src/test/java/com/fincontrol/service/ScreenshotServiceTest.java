@@ -2,6 +2,7 @@ package com.fincontrol.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fincontrol.ai.AiRouter;
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
 import com.fincontrol.dto.screenshot.ParsedAsset;
@@ -27,28 +28,30 @@ import java.util.Collections;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 /**
- * Phase 1a.2 业务单元测试（Phase 1a.5 已切换视觉模型客户端）。
+ * Phase 1a.2 业务单元测试（Phase 1a.5 视觉模型切换，1a.8 AI 韧性增强）。
  *
- * <p>覆盖 ScreenshotService 的 4 类关键路径：
+ * <p>1a.8：ScreenshotService 改用 {@link AiRouter} 统一入口，本 test mock {@code aiRouter.callVision}
+ * 返回 {@link AiRouter.VisionResult}（含 {@code usedProvider} + {@code fallbackTriggered}）。
+ *
  * <ul>
  *   <li>正常：上游视觉模型返回合法 JSON → 返回 ParsedAsset + 写 chat_history</li>
  *   <li>[P0-1.4] [3001]：上游返回非 JSON → BusinessException(VISION_INVALID_JSON) + assistant 错误记录</li>
  *   <li>[P0-1.4] [3002]：上游调用超时 → BusinessException(VISION_TIMEOUT) + assistant 错误记录</li>
  *   <li>[P0-1.4] [3003]：上游返回 0 只基金 → BusinessException(VISION_ZERO_FUNDS) + assistant 错误记录</li>
  * </ul>
- *
- * <p>纯 Mockito 单测。所有 stub 设置为 LENIENT 以兼容同 setUp 中部分用例不调用某些 collaborator。
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ScreenshotServiceTest {
 
     @Mock FileStorageService storage;
-    @Mock VisionModelClient visionModelClient;
+    @Mock AiRouter aiRouter;
+    @Mock VisionModelClient visionModelClient; // 仍需 mock 用于 extractFirstJsonObject
     @Mock PromptLoaderService promptLoader;
     @Mock ChatHistoryMapper chatHistoryMapper;
 
@@ -67,6 +70,11 @@ class ScreenshotServiceTest {
         Files.write(fakeImage.toPath(), new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47});
         when(storage.resolveByFileId(FILE_ID)).thenReturn(fakeImage.toPath());
         when(promptLoader.get("screenshot_parser")).thenReturn("SYS_PROMPT");
+    }
+
+    private void stubVisionSuccess(String raw, String provider, boolean fallback) {
+        when(aiRouter.callVision(any(File.class), anyString(), anyString(), anyInt()))
+                .thenReturn(AiRouter.VisionResult.success(provider, fallback, raw));
     }
 
     private void stubExtractJson(String raw) {
@@ -93,7 +101,7 @@ class ScreenshotServiceTest {
                 "  \"target_ratio\":10," +
                 "  \"deviation\":0" +
                 "}]}";
-        when(visionModelClient.callRaw(any(File.class), anyString(), anyString())).thenReturn(raw);
+        stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
         stubExtractJson(raw);
         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
 
@@ -117,7 +125,7 @@ class ScreenshotServiceTest {
     @Test
     void parse_visionNonJson_throwsBusinessException3001() {
         String rawText = "### 这是 Markdown 表格  \n| 基金 | 金额 |\n| --- | --- |\n";
-        when(visionModelClient.callRaw(any(File.class), anyString(), anyString())).thenReturn(rawText);
+        stubVisionSuccess(rawText, ChatHistory.PROVIDER_MINIMAX, false);
         when(visionModelClient.extractFirstJsonObject(rawText))
                 .thenThrow(new BusinessException(ErrorCode.VISION_INVALID_JSON,
                         "视觉模型响应中未找到 JSON 对象"));
@@ -139,8 +147,9 @@ class ScreenshotServiceTest {
 
     @Test
     void parse_visionTimeout_throwsBusinessException3002() {
-        when(visionModelClient.callRaw(any(File.class), anyString(), anyString()))
-                .thenThrow(new BusinessException(ErrorCode.VISION_TIMEOUT, "视觉模型调用超时 (>60s)"));
+        // 1a.8：超时由 AiRouter 模拟抛 3002（AiRouter 内部不再 retry/fallback 时由 ScreenshotService 抛给用户）
+        when(aiRouter.callVision(any(File.class), anyString(), anyString(), anyInt()))
+                .thenThrow(new BusinessException(ErrorCode.VISION_TIMEOUT, "视觉模型调用超时 (>300s)"));
         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
 
         ScreenshotParseRequest req = new ScreenshotParseRequest();
@@ -160,7 +169,7 @@ class ScreenshotServiceTest {
     void parse_zeroFunds_throwsBusinessException3003() {
         String raw = "{\"snapshot_date\":\"2026-07-09\",\"total_asset\":0," +
                 "\"categories\":[{\"category_name\":\"货币类\",\"funds\":[]}]}";
-        when(visionModelClient.callRaw(any(File.class), anyString(), anyString())).thenReturn(raw);
+        stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
         stubExtractJson(raw);
         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
 
@@ -197,8 +206,6 @@ class ScreenshotServiceTest {
 
     @Test
     void parse_minimaxJsonStyle_returnsParsedAsset() {
-        // minimax M3 默认输出格式：顶层 holdings[] + 顶层 category_summary{}
-        // 而不是 api-contract.md 设计的嵌套 categories[].funds[]
         String raw = "{" +
                 "\"data_source\":\"alipay\"," +
                 "\"date\":\"2026-07-15\"," +
@@ -212,7 +219,7 @@ class ScreenshotServiceTest {
                 "  \"黄金类\":{\"total_amount\":564.86,\"total_ratio\":0.0716,\"total_holding_pnl\":-45.25,\"count\":1}," +
                 "  \"余额类\":{\"total_amount\":320.85,\"total_ratio\":0.0407,\"total_holding_pnl\":1.89,\"count\":1}" +
                 "}}";
-        when(visionModelClient.callRaw(any(File.class), anyString(), anyString())).thenReturn(raw);
+        stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
         stubExtractJson(raw);
         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
 
@@ -222,12 +229,10 @@ class ScreenshotServiceTest {
 
         ParsedAsset asset = service.parse(req);
 
-        // Strategy B 验证：3 个类别 + 3 只基金
         assertThat(asset.getCategories()).hasSize(3);
         assertThat(asset.getMatchedFunds()).containsExactlyInAnyOrder(
                 "天弘纳斯达克100指数(QDII)A", "国泰黄金ETF联接C", "余额宝");
 
-        // 验证权益类的 category_total 从 category_summary 提取
         ParsedAsset.CategoryBlock equity = asset.getCategories().stream()
                 .filter(b -> "权益类".equals(b.getCategoryName())).findFirst().orElseThrow();
         assertThat(equity.getFunds()).hasSize(1);

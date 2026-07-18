@@ -1,7 +1,7 @@
 package com.fincontrol.service;
 
+import com.fincontrol.ai.AiRouter;
 import com.fincontrol.ai.IntentClassifier;
-import com.fincontrol.ai.TextAiClient;
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
 import com.fincontrol.dto.chat.ChatMessageDto;
@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * 1a.18 /api/chat/send 业务编排（[api-contract.md §8.1](#)，[P0-3.5] [P0-3.6]）。
+ * 1a.18 /api/chat/send 业务编排（[api-contract.md §8.1](#)，[P0-3.5] [P0-3.6]，1a.8 AI 韧性增强）。
  *
  * <p>流程：
  * <ol>
@@ -26,20 +26,11 @@ import java.util.UUID;
  *   <li>若 {@code conversationId} 为空，生成 UUID（新对话）</li>
  *   <li>写 user 消息到 {@code chat_history}（{@code conversation_type='ai_assistant'}）</li>
  *   <li>调 {@link IntentClassifier#isInvestmentRelated}（记 latency）</li>
- *   <li>路由：
- *       <ul>
- *         <li>投资类 → 加载 {@code ai_assistant} prompt → 调 {@link TextAiClient#chat}（main_loop）</li>
- *         <li>非投资类 → systemPrompt=null → 调 {@link TextAiClient#chat}（garbage_loop）</li>
- *       </ul>
- *   </li>
- *   <li>写 assistant 消息（成功）或 assistant 错误记录（失败）</li>
+ *   <li>路由：投资类 → ai_assistant prompt → minimax primary；非投资类 → garbage_loop（system=null）</li>
+ *   <li>1a.8：通过 {@link AiRouter#callChat} 统一调用（minimax primary，DeepSeek fallback 1a.9 实施）</li>
+ *   <li>写 assistant 消息，含 1a.8 审计字段 {@code usedProvider} + {@code fallbackTriggered}（[P0-3.6 + 1a.8.7]）</li>
  *   <li>返回 {@link ChatSendResponse}</li>
  * </ol>
- *
- * <p>错误码：[api-contract.md §11](#)。
- *
- * <p>非事务（参考 1a.2 {@code ScreenshotService.parse} 的设计）：user 消息先落库，
- * 失败时仅写 assistant 错误记录；避免 3001/3002 抛错时把已写 user 消息回滚。
  */
 @Service
 public class ChatService {
@@ -52,26 +43,19 @@ public class ChatService {
 
     private final ChatHistoryMapper chatHistoryMapper;
     private final IntentClassifier intentClassifier;
-    private final TextAiClient textAiClient;
+    private final AiRouter aiRouter;
     private final PromptLoaderService promptLoader;
 
     public ChatService(ChatHistoryMapper chatHistoryMapper,
                        IntentClassifier intentClassifier,
-                       TextAiClient textAiClient,
+                       AiRouter aiRouter,
                        PromptLoaderService promptLoader) {
         this.chatHistoryMapper = chatHistoryMapper;
         this.intentClassifier = intentClassifier;
-        this.textAiClient = textAiClient;
+        this.aiRouter = aiRouter;
         this.promptLoader = promptLoader;
     }
 
-    /**
-     * 1a.18 主入口。
-     *
-     * @param userId 用户 ID（来自 X-User-Id header 或 body）
-     * @param req    请求体
-     * @return 响应（conversationId + userMessage + assistantMessage + intentClassification）
-     */
     public ChatSendResponse send(Long userId, ChatSendRequest req) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
@@ -84,14 +68,13 @@ public class ChatService {
             throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "message 必填且非空");
         }
 
-        // 1) conversationId
         String conversationId = (req.getConversationId() == null || req.getConversationId().isBlank())
                 ? "conv-" + UUID.randomUUID()
                 : req.getConversationId();
-        log.info("1a.6 chat.send: userId={} conversationId={} message.len={}",
+        log.info("1a.8 chat.send: userId={} conversationId={} message.len={}",
                 userId, conversationId, message.length());
 
-        // 2) 写 user 消息
+        // 1) 写 user 消息
         LocalDateTime userCreatedAt = LocalDateTime.now();
         ChatHistory userMsg = new ChatHistory();
         userMsg.setUserId(userId);
@@ -102,17 +85,15 @@ public class ChatService {
         userMsg.setCreatedAt(userCreatedAt);
         chatHistoryMapper.insert(userMsg);
 
-        // 3) 意图分类
+        // 2) 意图分类
         long startMs = System.currentTimeMillis();
         boolean isInvestment;
         try {
             isInvestment = intentClassifier.isInvestmentRelated(message);
         } catch (BusinessException e) {
-            // AI 调用失败：不抛给用户（破坏对话），写 assistant 错误记录后用垃圾回路兜底
-            log.warn("1a.6 intent classifier failed, fallback to garbage_loop: code={} msg={}",
+            log.warn("1a.8 intent classifier failed, fallback to garbage_loop: code={} msg={}",
                     e.getErrorCode().getCode(), e.getMessage());
-            persistAssistantError(conversationId, userId, e);
-            // 构造最小响应（fallback）
+            persistAssistantError(conversationId, userId, e, null, false);
             return ChatSendResponse.builder()
                     .conversationId(conversationId)
                     .userMessage(toDto(userMsg))
@@ -130,7 +111,7 @@ public class ChatService {
         }
         long latencyMs = System.currentTimeMillis() - startMs;
 
-        // 4) 路由 + 调 TextAiClient
+        // 3) 路由
         String systemPrompt;
         String routedTo;
         String promptVersion;
@@ -144,16 +125,20 @@ public class ChatService {
             promptVersion = null;
         }
 
-        String aiContent;
+        // 4) 通过 AiRouter 调 chat（minimax primary + DeepSeek fallback 1a.9）
+        AiRouter.ChatResult chatResult;
         try {
-            aiContent = textAiClient.chat(systemPrompt, message);
+            chatResult = aiRouter.callChat(systemPrompt, message);
         } catch (BusinessException e) {
-            // AI 调用失败：写 assistant 错误记录，抛给用户
-            persistAssistantError(conversationId, userId, e);
+            persistAssistantError(conversationId, userId, e, null, false);
             throw e;
         }
 
-        // 5) 写 assistant 消息
+        String aiContent = chatResult.content();
+        String usedProvider = chatResult.usedProvider();
+        boolean fallbackTriggered = chatResult.fallbackTriggered();
+
+        // 5) 写 assistant 消息（1a.8 含监控字段）
         LocalDateTime assistantCreatedAt = LocalDateTime.now();
         ChatHistory assistantMsg = new ChatHistory();
         assistantMsg.setUserId(userId);
@@ -162,9 +147,13 @@ public class ChatService {
         assistantMsg.setContent(aiContent);
         assistantMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_AI_ASSISTANT);
         assistantMsg.setCreatedAt(assistantCreatedAt);
+        assistantMsg.setUsedProvider(usedProvider);
+        assistantMsg.setFallbackTriggered(fallbackTriggered);
         chatHistoryMapper.insert(assistantMsg);
 
-        // 6) 构造响应
+        log.info("1a.8 chat.send: conversationId={} routedTo={} usedProvider={} fallbackTriggered={}",
+                conversationId, routedTo, usedProvider, fallbackTriggered);
+
         return ChatSendResponse.builder()
                 .conversationId(conversationId)
                 .userMessage(toDto(userMsg))
@@ -190,18 +179,15 @@ public class ChatService {
                 .build();
     }
 
-    /**
-     * 写 assistant 错误记录（参考 1a.2 ScreenshotService.persistAssistantError 模式）。
-     * <br>不影响主流程：失败仅 log warn。
-     */
-    private void persistAssistantError(String conversationId, Long userId, BusinessException e) {
+    private void persistAssistantError(String conversationId, Long userId, BusinessException e,
+                                       String raw, boolean fallbackTriggered) {
         ChatHistory errMsg = new ChatHistory();
         errMsg.setUserId(userId);
         errMsg.setConversationId(conversationId);
         errMsg.setRole(ChatHistory.ROLE_ASSISTANT);
         errMsg.setContent("[error code=" + e.getErrorCode().getCode() + "] " + e.getMessage());
         errMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_AI_ASSISTANT);
-        errMsg.setCreatedAt(LocalDateTime.now());
+        errMsg.setFallbackTriggered(fallbackTriggered);
         try {
             chatHistoryMapper.insert(errMsg);
         } catch (Exception ex) {

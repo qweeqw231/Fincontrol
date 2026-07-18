@@ -1,6 +1,8 @@
 package com.fincontrol.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fincontrol.ai.AiRouter;
+import com.fincontrol.ai.ApiStyle;
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
 import com.fincontrol.dto.screenshot.*;
@@ -17,15 +19,16 @@ import java.nio.file.Path;
 import java.util.*;
 
 /**
- * 截图 / 解析 / 重新解析 业务编排（Phase 1a.2）。
+ * 截图 / 解析 / 重新解析 业务编排（Phase 1a.2，1a.8 升级）。
  *
  * <ul>
- *   <li>upload —— 文件存到磁盘 + 返回 fileId + URL。</li>
- *   <li>parse  —— 调用视觉模型 → 抽 JSON → 写 chat_history（user + assistant）。失败时也写 assistant 错误记录。</li>
- *   <li>reparse —— 从历史 user 消息找回 fileId → 重新解析（[P0-4.4](#)）。</li>
+ *   <li>upload —— 文件存到磁盘 + 返回 fileId + URL</li>
+ *   <li>parse / reparse —— 通过 {@link AiRouter} 调用 vision 模型（minimax primary + 豆包 fallback / cache / retry / CB）
+ *       — 1a.8 起统一入口，{@code usedProvider} + {@code fallbackTriggered} 写入 chat_history 审计</li>
+ *   <li>失败时写 assistant 错误记录（含 provider 字段）</li>
  * </ul>
  *
- * 错误码映射：[api-contract.md §11](#)。
+ * <p>错误码：[api-contract.md §11](#)
  */
 @Service
 public class ScreenshotService {
@@ -33,33 +36,34 @@ public class ScreenshotService {
     private static final Logger log = LoggerFactory.getLogger(ScreenshotService.class);
 
     private final FileStorageService storage;
-    private final VisionModelClient visionModelClient;
+    private final VisionModelClient visionModelClient; // 用于 extractFirstJsonObject 抽 JSON
+    private final AiRouter aiRouter;                    // 1a.8 vision 入口
     private final PromptLoaderService promptLoader;
     private final ChatHistoryMapper chatHistoryMapper;
 
+    /** 1a.8 路由 imageCount 上下文：1 张图 parse → imageCount=1；批量 4 张 → imageCount=4。 */
+    private static final int DEFAULT_IMAGE_COUNT = 1;
+
     public ScreenshotService(FileStorageService storage,
                              VisionModelClient visionModelClient,
+                             AiRouter aiRouter,
                              PromptLoaderService promptLoader,
                              ChatHistoryMapper chatHistoryMapper) {
         this.storage = storage;
         this.visionModelClient = visionModelClient;
+        this.aiRouter = aiRouter;
         this.promptLoader = promptLoader;
         this.chatHistoryMapper = chatHistoryMapper;
     }
 
-    // ===================================================================
-    // 1a.4 POST /api/screenshot/upload
-    // ===================================================================
-
-    // 1a.4 upload 不写库，不需要事务管理。
+    // 1a.4 upload
     public ScreenshotUploadResponse upload(MultipartFile file) {
         try {
             FileStorageService.StoredFile stored = storage.store(file);
             return new ScreenshotUploadResponse(
                     stored.fileId(),
                     stored.fileUrl(),
-                    new Date().toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
-            );
+                    new Date().toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime());
         } catch (IOException e) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "文件保存失败: " + e.getMessage());
         } catch (IllegalArgumentException e) {
@@ -67,19 +71,7 @@ public class ScreenshotService {
         }
     }
 
-    // ===================================================================
-    // 1a.5 POST /api/screenshot/parse
-    // ===================================================================
-
-    /**
-     * 主入口。返回 ParsedAsset（成功）或抛 BusinessException（3001/3002/3003）。
-     *
-     * <p>写 chat_history 的两条记录（user + assistant）；失败时仅写 assistant 错误记录。
-     *
-     * <p>注意：本方法未使用 {@code @Transactional}——避免 parse 失败抛 3001/3002/3003 时把
-     * 已写入的 user 消息也回滚。chat_history 单条 insert 走 MyBatis-Plus 默认 auto-commit，
-     * 足够稳；1a.3 三表事务时由业务上下文统一管理。
-     */
+    // 1a.5 parse
     public ParsedAsset parse(ScreenshotParseRequest req) {
         if (req.getFileId() == null || req.getFileId().isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileId 必填");
@@ -90,7 +82,8 @@ public class ScreenshotService {
         }
 
         String conversationId = "conv-" + req.getFileId();
-        // 1) 写 user 消息
+
+        // 1) user 消息
         ChatHistory userMsg = new ChatHistory();
         userMsg.setUserId(req.getUserId());
         userMsg.setConversationId(conversationId);
@@ -99,29 +92,35 @@ public class ScreenshotService {
         userMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
         chatHistoryMapper.insert(userMsg);
 
-        // 2) 调视觉模型（minimax M3 系列，原生多模态）
+        // 2) 通过 AiRouter 调 vision（minimax primary + 豆包 fallback / cache / retry / CB）
         String systemPrompt = promptLoader.get("screenshot_parser");
-        String raw;
+        AiRouter.VisionResult visionResult;
         try {
-            raw = visionModelClient.callRaw(imagePath.toFile(), systemPrompt,
-                    "请解析以下支付宝资产截图");
-        } catch (BusinessException e) {
-            persistAssistantError(conversationId, req.getUserId(), e);
-            throw e;
+            visionResult = aiRouter.callVision(imagePath.toFile(), systemPrompt,
+                    "请解析以下支付宝资产截图", DEFAULT_IMAGE_COUNT);
+        } catch (BusinessException be) {
+            persistAssistantError(conversationId, req.getUserId(), be, null);
+            throw be;
         }
+
+        String raw = visionResult.content();
+        String usedProvider = visionResult.usedProvider();
+        boolean fallbackTriggered = visionResult.fallbackTriggered();
+        log.info("1a.8 vision 调用结束：usedProvider={} fallback={} cacheHit={}",
+                usedProvider, fallbackTriggered, visionResult.cacheHit());
 
         // 3) 抽 JSON
         JsonNode json;
         try {
             json = visionModelClient.extractFirstJsonObject(raw);
         } catch (BusinessException e) {
-            persistAssistantError(conversationId, req.getUserId(), e, raw);
+            persistAssistantError(conversationId, req.getUserId(), e, raw, usedProvider, fallbackTriggered);
             throw e;
         }
 
         ParsedAsset asset = mapToParsedAsset(conversationId, raw, json);
 
-        // 4) 0 基金检查
+        // 4) 0 基金
         boolean zeroFunds = asset.getCategories() == null
                 || asset.getCategories().isEmpty()
                 || asset.getCategories().stream().allMatch(c -> c.getFunds() == null || c.getFunds().isEmpty());
@@ -129,28 +128,25 @@ public class ScreenshotService {
             BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
                     "视觉模型返回 0 只基金（conversationId=" + conversationId + "）",
                     new VisionErrorData(conversationId, "zero_funds", raw));
-            persistAssistantError(conversationId, req.getUserId(), e);
+            persistAssistantError(conversationId, req.getUserId(), e, raw, usedProvider, fallbackTriggered);
             throw e;
         }
 
-        // 5) 成功：写 assistant JSON
+        // 5) 写 assistant 成功记录（含 1a.8 监控字段）
         ChatHistory assistantMsg = new ChatHistory();
         assistantMsg.setUserId(req.getUserId());
         assistantMsg.setConversationId(conversationId);
         assistantMsg.setRole(ChatHistory.ROLE_ASSISTANT);
         assistantMsg.setContent(raw);
         assistantMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
+        assistantMsg.setUsedProvider(usedProvider);
+        assistantMsg.setFallbackTriggered(fallbackTriggered);
         chatHistoryMapper.insert(assistantMsg);
 
         return asset;
     }
 
-    // ===================================================================
-    // 1a.6 POST /api/screenshot/reparse（[P0-4.4](#)）
-    // ===================================================================
-
-    // 1a.6 reparse 同 parse，不加 @Transactional，避免 reparse 失败抛 3001/3002/3003 时
-    // 把已写入的 user 消息及上一轮成功的 assistant 记录也回滚。
+    // 1a.6 reparse
     public ParsedAsset reparse(ScreenshotReparseRequest req) {
         if (req.getConversationId() == null || req.getConversationId().isBlank()) {
             throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "conversationId 必填");
@@ -171,20 +167,24 @@ public class ScreenshotService {
         }
 
         String systemPrompt = promptLoader.get("screenshot_parser");
-        String raw;
+        AiRouter.VisionResult visionResult;
         try {
-            raw = visionModelClient.callRaw(imagePath.toFile(), systemPrompt,
-                    "请重新解析以下支付宝资产截图");
-        } catch (BusinessException e) {
-            persistAssistantError(req.getConversationId(), userMsg.getUserId(), e);
-            throw e;
+            visionResult = aiRouter.callVision(imagePath.toFile(), systemPrompt,
+                    "请重新解析以下支付宝资产截图", DEFAULT_IMAGE_COUNT);
+        } catch (BusinessException be) {
+            persistAssistantError(req.getConversationId(), userMsg.getUserId(), be, null);
+            throw be;
         }
+
+        String raw = visionResult.content();
+        String usedProvider = visionResult.usedProvider();
+        boolean fallbackTriggered = visionResult.fallbackTriggered();
 
         JsonNode json;
         try {
             json = visionModelClient.extractFirstJsonObject(raw);
         } catch (BusinessException e) {
-            persistAssistantError(req.getConversationId(), userMsg.getUserId(), e, raw);
+            persistAssistantError(req.getConversationId(), userMsg.getUserId(), e, raw, usedProvider, fallbackTriggered);
             throw e;
         }
 
@@ -197,7 +197,7 @@ public class ScreenshotService {
             BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
                     "视觉模型返回 0 只基金（reparse conversationId=" + req.getConversationId() + "）",
                     new VisionErrorData(req.getConversationId(), "zero_funds", raw));
-            persistAssistantError(req.getConversationId(), userMsg.getUserId(), e);
+            persistAssistantError(req.getConversationId(), userMsg.getUserId(), e, raw, usedProvider, fallbackTriggered);
             throw e;
         }
 
@@ -207,6 +207,8 @@ public class ScreenshotService {
         assistantMsg.setRole(ChatHistory.ROLE_ASSISTANT);
         assistantMsg.setContent(raw);
         assistantMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
+        assistantMsg.setUsedProvider(usedProvider);
+        assistantMsg.setFallbackTriggered(fallbackTriggered);
         chatHistoryMapper.insert(assistantMsg);
 
         return asset;
@@ -221,6 +223,12 @@ public class ScreenshotService {
     }
 
     private void persistAssistantError(String conversationId, Long userId, BusinessException e, String raw) {
+        persistAssistantError(conversationId, userId, e, raw, null, false);
+    }
+
+    /** 1a.8：失败记录也携带 provider 信息（即便失败，primary 已知）。 */
+    private void persistAssistantError(String conversationId, Long userId, BusinessException e,
+                                       String raw, String usedProvider, boolean fallbackTriggered) {
         ChatHistory errMsg = new ChatHistory();
         errMsg.setUserId(userId);
         errMsg.setConversationId(conversationId);
@@ -233,6 +241,8 @@ public class ScreenshotService {
         }
         errMsg.setContent(content);
         errMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
+        errMsg.setUsedProvider(usedProvider);
+        errMsg.setFallbackTriggered(fallbackTriggered);
         try {
             chatHistoryMapper.insert(errMsg);
         } catch (Exception ex) {
@@ -250,7 +260,7 @@ public class ScreenshotService {
 
         List<ParsedAsset.CategoryBlock> blocks = new ArrayList<>();
 
-        // Strategy A：api-contract.md 嵌套 categories[].funds[]
+        // Strategy A
         JsonNode categories = json.path("categories");
         if (categories.isArray() && categories.size() > 0) {
             for (JsonNode c : categories) {
@@ -275,18 +285,16 @@ public class ScreenshotService {
                 blocks.add(block);
             }
         }
-        // Strategy B：minimax M3 默认格式 — 顶层 holdings[] + category_summary{}
+        // Strategy B：minimax 默认 holdings + category_summary
         else {
             JsonNode holdings = json.path("holdings");
             if (holdings.isArray() && holdings.size() > 0) {
-                // 按 category 字段分组
                 Map<String, List<JsonNode>> byCategory = new LinkedHashMap<>();
                 for (JsonNode h : holdings) {
                     String cat = textOrNull(h, "category");
                     if (cat == null || cat.isBlank()) cat = "其他";
                     byCategory.computeIfAbsent(cat, k -> new ArrayList<>()).add(h);
                 }
-                // 顶层统计
                 JsonNode summary = json.path("category_summary");
                 for (Map.Entry<String, List<JsonNode>> entry : byCategory.entrySet()) {
                     ParsedAsset.CategoryBlock block = new ParsedAsset.CategoryBlock();
@@ -300,7 +308,6 @@ public class ScreenshotService {
                         lines.add(line);
                     }
                     block.setFunds(lines);
-                    // 从 category_summary 提取统计（按 key 匹配）
                     JsonNode s = summary.path(entry.getKey());
                     if (s.isObject()) {
                         block.setCategoryTotal(decimalOrNull(s, "total_amount"));
