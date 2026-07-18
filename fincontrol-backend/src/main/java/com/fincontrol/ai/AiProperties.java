@@ -41,23 +41,24 @@ public class AiProperties {
         private int maxTokens = 1024;
         private int timeoutSeconds = 60;
         private String apiKey;
+        private Fallback fallback;
 
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
-
         public String getModel() { return model; }
         public void setModel(String model) { this.model = model; }
-
         public double getTemperature() { return temperature; }
         public void setTemperature(double temperature) { this.temperature = temperature; }
-
         public int getMaxTokens() { return maxTokens; }
         public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }
-
         public int getTimeoutSeconds() { return timeoutSeconds; }
         public void setTimeoutSeconds(int timeoutSeconds) { this.timeoutSeconds = timeoutSeconds; }
-
         public String getApiKey() { return apiKey; }
         public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+        public Fallback getFallback() { return fallback; }
+        public void setFallback(Fallback fallback) { this.fallback = fallback; }
     }
-}
+
+    /**
+     * Fallback config（1a.8 增补）。
+     * <p>当
