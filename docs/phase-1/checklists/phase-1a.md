@@ -95,16 +95,26 @@
 
 ---
 
-## Phase 1a.8 — AI 服务韧性增强（vision 4/4 必达）
+## Phase 1a.8 — AI 服务韧性增强（vision 4/4 必达）— **方案 C 折中版**
 
-> 1a.8 出现原因：1a.7 验收发现 minimax vision API 限流导致 vision 仅 3/4 通过，且成功 parse 的 3 张图都只识别 1 只基金。1a.8 通过**豆包 primary + minimax fallback + retry/circuit breaker/cache** 实现 vision 4/4 = 100%。
+> 1a.8 出现原因：1a.7 验收发现 minimax vision API 限流导致 vision 仅 3/4 = 75% 通过。1a.8 通过**按 imageCount 路由 + Caffeine cache + 互为 fallback** 实现 vision 4/4 = 100%。
+>
+> **方案 C 路由表**（2026-07-18 拍板）：
+> - **1-2 张图**：minimax OPENAI_CHAT primary（纯快路径，失败不 fallback）
+> - **3+ 张图**：豆包 OPENAI_RESPONSES primary + minimax fallback
+> - **vision 互为 fallback**：豆包失败 → 切 minimax；minimax 失败 → 不切（1-2 张场景下已尽力）
+> - **apiStyle 枚举（两个都实现）**：`OPENAI_CHAT`（minimax：`/chat/completions`） + `OPENAI_RESPONSES`（豆包：`/api/v3/responses`）
+> - **chat_history 监控字段**：`used_provider` + `fallback_triggered`
 
-- [ ] **1a.8.1** work plan + acceptance plan 完成 — 完成日期：2026-07-18
-- [ ] **1a.8.2** Step 0 根因调查：debug 脚本跑 4 张图，输出 minimax M3 原始 JSON 全文 — 完成日期：____
-- [ ] **1a.8.3** Step 1：`VisionModelClient` 加 `apiStyle` 枚举（OPENAI_CHAT / OPENAI_RESPONSES），支持豆包 — 完成日期：____
-- [ ] **1a.8.4** Step 2：`TextAiClient` 加 DeepSeek baseUrl + resilience4j Retry/CircuitBreaker + caffeine cache — 完成日期：____
-- [ ] **1a.8.5** Step 3：`AiRouter`（chat/vision 两路由，完整版 retry+CB+cache+监控埋点）— 完成日期：____
-- [ ] **1a.8.6** Step 4：端到端 smoke 4/4 vision + 5/5 chat + fallback 故意断网验证 — 完成日期：____
-- [ ] **1a.8.7** Step 5：5 段式验收报告 + subphase-plan §2.8 + phase-1a.md 闭环勾选 — 完成日期：____
+- [ ] **1a.8.1** work plan + acceptance plan 完成（含方案 C）— 完成日期：____
+- [x] **1a.8.2** Step 0 根因调查：debug 脚本 + smoke log 显示 bug 修复（commit e5c48f0）— 完成日期：2026-07-18
+- [x] **1a.8.3** AiProperties 加 Fallback inner class（commit 待 push）— 完成日期：2026-07-18
+- [ ] **1a.8.4** Step 1：`VisionModelClient` 加 `apiStyle` 枚举（OPENAI_CHAT / OPENAI_RESPONSES），支持豆包 — 完成日期：____
+- [ ] **1a.8.5** Step 2：`VisionModelClient` 实现豆包 OpenAI Responses API（`/api/v3/responses`，`input[]`，`input_image`）— 完成日期：____
+- [ ] **1a.8.6** Step 3：路由逻辑（按 imageCount 选 primary，失败 fallback）+ Caffeine cache（SHA-256(file)）— 完成日期：____
+- [ ] **1a.8.7** Step 4：chat_history 加 `used_provider` (VARCHAR(20)) + `fallback_triggered` (TINYINT(1)) 字段 + 埋点代码 — 完成日期：____
+- [ ] **1a.8.8** Step 5：端到端 smoke 4/4 vision + 5/5 chat（方案 C 路由全过）— 完成日期：____
+- [ ] **1a.8.9** Step 6：5 段式验收报告 + subphase-plan §2.8 标 ✅ + phase-1a.md 闭环勾选 — 完成日期：____
+- [ ] **1a.8.10** Step 7（可选，1a.9 再做）：`TextAiClient` 加 DeepSeek fallback + chat 端 retry/CB — 完成日期：____
 
 > 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md)

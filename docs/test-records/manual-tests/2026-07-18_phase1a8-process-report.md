@@ -35,13 +35,19 @@
 | **小计** | **11+推测 ≈ 19** | — |
 
 ### 🟡 已完成（待 commit）
-- `AiProperties.java` 加 `Fallback` inner class（chat fallback config 字段）
+- `AiProperties.java` 加了 `Fallback` inner class（chat fallback config 字段）
 
-### 🟡 解决方案已拍板（待实施）
-- **方案 F：豆包 primary + Caffeine cache**（放弃 fallback 复杂度）
-- 模型主备关系：
-  - **vision**：豆包 doubao-seed-1-8-251228 primary（**新**）
-  - chat：minimax M3 text primary（保持，DeepSeek 后备暂缓）
+### 🟡 解决方案已拍板（待实施）— **更新为方案 C**（折中版）
+- **方案 C：按 imageCount 路由**
+  - **1-2 张图：minimax OPENAI_CHAT primary（纯快路径，失败不 fallback）** — 80% 日常场景
+  - **3+ 张图：豆包 OPENAI_RESPONSES primary + minimax fallback** — 1-2 张场景下豆包限流概率上升，保命路径
+  - **vision 互为 fallback**：豆包失败 → 切 minimax；minimax 失败 → 不切（已尽力）
+- **apiStyle 枚举（两个都实现）**：
+  - `OPENAI_CHAT`（minimax：`/chat/completions`，`messages[]`，`image_url`）
+  - `OPENAI_RESPONSES`（豆包：`/api/v3/responses`，`input[]`，`input_image`）
+- **chat_history 监控字段**：`used_provider` (VARCHAR(20)) + `fallback_triggered` (TINYINT(1))
+- **路由阈值配置**：`imageCountThreshold`（默认 2）
+- **chat 端**：minimax M3 text primary（保持），DeepSeek V3 fallback（1a.8 暂不实现）
 
 ---
 

@@ -23,19 +23,21 @@
 | 决策 | 结论 |
 |---|---|
 | **必做的根因调查** | 1a.8 启动后**第一件事**调 minimax M3 看 4 张图的**原始响应**，确认 "1 fund" 是模型能力问题还是代码 JSON 抽取 bug |
-| Vision 主备关系 | **豆包 doubao-seed-1-8-251228 primary** + minimax M3 fallback（用户判断豆包更准 + minimax 限流频繁） |
-| Chat 主备关系 | **minimax M3 (text) primary** + DeepSeek V3 fallback（minimax 当前可用，DeepSeek 兜底） |
-| Fallback 触发条件 | **HTTP 5xx / 网络超时 / HTTP 429** → 自动透明切换（HTTP 4xx = 参数错，不切换） |
-| AiRouter 深度 | **完整版**：circuit breaker（连续失败切 fallback）+ retry（重试 N 次再切）+ cache（同张图不重复调用） |
-| 豆包 API 形态 | 使用 **OpenAI Python SDK 的 `responses` API**（`/api/v3/responses`，input 而非 messages）— 与 minimax 的 OpenAI `chat/completions` 不同，需要 `apiStyle` 字段分支 |
-| DeepSeek API 形态 | **OpenAI 完全兼容**（`/v1/chat/completions`），只需 baseUrl 切换 |
-| 替身策略 | 真实豆包 + 真实 DeepSeek（minimax 已验证过） |
-| 失败处理 | primary 失败 → fallback 成功 = 业务侧无感；primary + fallback 都失败 = 抛 5001/5002 错误码 |
-| 监控埋点 | chat_history 中记录 `used_provider` 和 `fallback_triggered` |
-| API key 保管 | **不入仓**；`DOUBAO_VISION_API_KEY` 和 `DEEPSEEK_CHAT_API_KEY` 走 env var 优先 + application-local.yml 占位（gitignored） |
-| 是否新增 ErrorCode | **不新增**（沿用 1001/2001/3001/3002/5001/5002 + 3003） |
-| 输出 | 脚本 `fincontrol-backend/scripts/1a8/*.sh` + 报告 `docs/test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md` |
-| 1a 闭环判据 | **vision 4/4 = 100%** + chat 5/5 + minimax 限流自动 fallback 成功（**必须** 4/4 才算 1a 闭环） |
+| **Vision 路由策略（方案 C：折中版）** | **1-2 张图：minimax OPENAI_CHAT primary（纯快路径，失败不 fallback）** + **3+ 张图：豆包 OPENAI_RESPONSES primary + minimax fallback** |  |
+| **Chat 路由策略** | minimax M3 (text) primary + DeepSeek V3 fallback（1a.8 暂不实现 DeepSeek） |  |
+| **Fallback 触发** | **HTTP 5xx / 网络超时 / HTTP 429** → 透明切换（HTTP 4xx = 参数错，不切换） |  |
+| **Vision 互为 fallback** | 豆包失败 → 切 minimax；minimax 失败 → **不切**（1-2 张场景下已"尽力"，失败用户自己重传） |  |
+| **AiRouter 深度** | 完整版：retry + circuit breaker + Caffeine cache（SHA-256(file) 为 key） |  |
+| **apiStyle 枚举（两个都实现）** | `OPENAI_CHAT`（minimax：`/chat/completions`，`messages[]`，`image_url`） + `OPENAI_RESPONSES`（豆包：`/api/v3/responses`，`input[]`，`input_image`） |  |
+| **DeepSeek API 形态** | OpenAI 完全兼容（`/v1/chat/completions`），只需 baseUrl 切换 |  |
+| **替身策略** | 真实豆包 + minimax + DeepSeek（用户填 key） |  |
+| **失败处理** | primary 失败 → fallback 成功 = 业务侧无感；primary + fallback 都失败 = 抛 5001/5002 错误码 |  |
+| **监控埋点（chat_history）** | 新增 `used_provider` (VARCHAR(20)) + `fallback_triggered` (TINYINT(1)) 字段，记录每次调用实际用的 provider 和是否触发 fallback |  |
+| **API key 保管** | **不入仓**；`DOUBAO_VISION_API_KEY` + `DEEPSEEK_CHAT_API_KEY` 走 env var 优先 + `application-local.yml` 占位（gitignored） |  |
+| 是否新增 ErrorCode | **不新增**（沿用 1001/2001/3001/3002/5001/5002 + 3003） |  |
+| 路由阈值 | `imageCount ≤ 2` → minimax；`imageCount ≥ 3` → 豆包（配置项 `imageCountThreshold`，默认 2） |  |
+| 输出 | 脚本 `fincontrol-backend/scripts/1a8/*.sh` + 报告 `docs/test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md` |  |
+| 1a 闭环判据 | **vision 4/4 = 100%** + chat 5/5 + 路由切换正确（监控字段记录 `used_provider`） |  |
 
 ### 切片切分
 

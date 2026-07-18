@@ -89,13 +89,20 @@
 
 ## 3. 5 段式判定
 
-| 段 | 1a.7 状态 | 1a.8 目标 |
+| 段 | 1a.7 状态 | 1a.8 目标（方案 C）|
 |---|---|---|
 | **BUSINESS** | ✅ 179/179 PASS | ✅ 仍 179/179（0 回归）|
 | **CONTRACT** | ✅ MockMvc 全过 | ✅ 仍全过 |
 | **READ_SQL** | ✅ dialect 修复 | ✅ 仍过 |
-| **PRODUCTION** | 🟡 75% (3/4 vision) | ✅ **100% (4/4 vision + 5/5 chat)** |
+| **PRODUCTION** | 🟡 75% (3/4 vision) | ✅ **100% (4/4 vision + 5/5 chat)** — **方案 C 路由** |
 | **COVERAGE** | ✅ 76.5% | ✅ 仍 ≥ 60% |
+
+**1a.8 方案 C 路由判定**（PRODUCTION 段细项）：
+- ✅ **1-2 张图** → minimax OPENAI_CHAT 纯快路径（不 fallback）
+- ✅ **3+ 张图** → 豆包 OPENAI_RESPONSES primary + minimax fallback
+- ✅ **豆包失败** → 切 minimax（互为 fallback）
+- ✅ **minimax 失败（1-2 张场景）** → 报错 5001（不切）
+- ✅ **chat_history 记录** `used_provider`（minimax/doubao/deepseek）
 
 ## 4. 验收结论格式
 
