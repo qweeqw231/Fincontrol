@@ -23,10 +23,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -86,7 +88,8 @@ class CategoryMapControllerTest {
         CategoryMapMatchResponse resp = CategoryMapMatchResponse.builder()
                 .matchedFunds(List.of(
                         item("中加货币E", "货币类", "ai_guess"),
-                        item("长城短债债券A", "债券类", "user_correct")))
+                        // 1a.8.8：原"债券类" → canonical "固收类"
+                        item("长城短债债券A", "固收类", "user_correct")))
                 .unmatchedFunds(List.of("未知基金"))
                 .build();
         when(categoryMapService.match(anyLong(), any())).thenReturn(resp);
@@ -152,14 +155,15 @@ class CategoryMapControllerTest {
         CategoryMapUpdateResponse resp = CategoryMapUpdateResponse.builder()
                 .mappingId(50L)
                 .fundName("易方达蓝筹精选")
-                .category("混合类")
+                // 1a.8.8：原"混合类" → canonical "A股权益类"
+                .category("A股权益类")
                 .source("user_correct")
                 .confirmedAt(LocalDateTime.of(2026, 7, 17, 10, 30))
                 .updated(true)
                 .build();
         when(categoryMapService.update(anyLong(), any(), any())).thenReturn(resp);
 
-        String body = "{\"fundName\":\"易方达蓝筹精选\",\"category\":\"混合类\"}";
+        String body = "{\"fundName\":\"易方达蓝筹精选\",\"category\":\"A股权益类\"}";
         mockMvc.perform(post("/api/category-map/update")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -167,10 +171,10 @@ class CategoryMapControllerTest {
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.mappingId").value(50))
                 .andExpect(jsonPath("$.data.fundName").value("易方达蓝筹精选"))
-                .andExpect(jsonPath("$.data.category").value("混合类"))
+                .andExpect(jsonPath("$.data.category").value("A股权益类"))
                 .andExpect(jsonPath("$.data.source").value("user_correct"))
                 .andExpect(jsonPath("$.data.updated").value(true));
-        verify(categoryMapService).update(eq(1L), eq("易方达蓝筹精选"), eq("混合类"));
+        verify(categoryMapService).update(eq(1L), eq("易方达蓝筹精选"), eq("A股权益类"));
     }
 
     @Test
@@ -274,5 +278,85 @@ class CategoryMapControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.category").value("余额类"));
         verify(categoryMapService).update(eq(1L), eq("余额宝"), eq("余额类"));
+    }
+
+    // ========================================================================
+    // 1a.8.8 T-V3.2-06: match 多用户隔离（userId 显式参数）
+    // ========================================================================
+
+    @Test
+    void match_queryUserIdOverridesHeader() throws Exception {
+        when(categoryMapService.match(anyLong(), any()))
+                .thenReturn(CategoryMapMatchResponse.builder().matchedFunds(List.of()).unmatchedFunds(List.of()).build());
+
+        // header 是 1，但 query 指定 userId=42
+        mockMvc.perform(get("/api/category-map/match?userId=42&funds=A")
+                        .header("X-User-Id", "1"))
+                .andExpect(status().isOk());
+        // query 的 userId 优先
+        verify(categoryMapService).match(eq(42L), eq("A"));
+    }
+
+    // ========================================================================
+    // 1a.8.8 T-V3.2-07: DELETE 跨用户隔离
+    // ========================================================================
+
+    @Test
+    void delete_urlUserIdTakesPrecedence() throws Exception {
+        when(categoryMapService.delete(anyLong(), any())).thenReturn(1);
+        mockMvc.perform(delete("/api/category-map/7/国泰黄金ETF联接A")
+                        .header("X-User-Id", "1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.userId").value(7))
+                .andExpect(jsonPath("$.data.fundName").value("国泰黄金ETF联接A"))
+                .andExpect(jsonPath("$.data.affected").value(1));
+        // URL 中的 userId 优先（不被 header 覆盖）
+        verify(categoryMapService).delete(eq(7L), eq("国泰黄金ETF联接A"));
+    }
+
+    @Test
+    void delete_crossUserReturnsAffectedZero() throws Exception {
+        when(categoryMapService.delete(eq(2L), any())).thenReturn(0);
+        mockMvc.perform(delete("/api/category-map/2/不存在的基金"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.affected").value(0));
+    }
+
+    // ========================================================================
+    // 1a.8.8 T-V3.2-08: reset + stale
+    // ========================================================================
+
+    @Test
+    void reset_callsServiceReset() throws Exception {
+        when(categoryMapService.reset(anyLong(), any())).thenReturn(1);
+        mockMvc.perform(post("/api/category-map/reset?fundName=国泰黄金ETF联接A")
+                        .header("X-User-Id", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.affected").value(1))
+                .andExpect(jsonPath("$.data.source").value("ai_guess"));
+        verify(categoryMapService).reset(eq(5L), eq("国泰黄金ETF联接A"));
+    }
+
+    @Test
+    void stale_defaultDays90() throws Exception {
+        java.util.List<com.fincontrol.entity.FundCategoryMap> rows = List.of();
+        when(categoryMapService.listStale(anyLong(), anyInt())).thenReturn(rows);
+
+        mockMvc.perform(get("/api/category-map/stale")
+                        .header("X-User-Id", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+        // 不传 days 应使用默认 90
+        verify(categoryMapService).listStale(eq(3L), eq(90));
+    }
+
+    @Test
+    void stale_customDays() throws Exception {
+        when(categoryMapService.listStale(anyLong(), anyInt())).thenReturn(List.of());
+        mockMvc.perform(get("/api/category-map/stale?days=7")
+                        .header("X-User-Id", "3"))
+                .andExpect(status().isOk());
+        verify(categoryMapService).listStale(eq(3L), eq(7));
     }
 }

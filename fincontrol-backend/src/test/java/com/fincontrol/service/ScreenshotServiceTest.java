@@ -10,6 +10,7 @@ import com.fincontrol.dto.screenshot.ScreenshotParseRequest;
 import com.fincontrol.dto.screenshot.ScreenshotReparseRequest;
 import com.fincontrol.entity.ChatHistory;
 import com.fincontrol.mapper.ChatHistoryMapper;
+import com.fincontrol.mapper.FundCategoryMapMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,6 +56,7 @@ class ScreenshotServiceTest {
     @Mock VisionModelClient visionModelClient; // 仍需 mock 用于 extractFirstJsonObject
     @Mock PromptLoaderService promptLoader;
     @Mock ChatHistoryMapper chatHistoryMapper;
+    @Mock FundCategoryMapMapper fundCategoryMapMapper; // 1a.8.8：resolver 依赖
 
     private ScreenshotService service;
 
@@ -71,10 +73,15 @@ class ScreenshotServiceTest {
         fakeImage = tmp.resolve("img.png").toFile();
         Files.write(fakeImage.toPath(), new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47});
         ocrRoot = tmp.resolve("ocr-results");
+        // 1a.8.8：注入 FundCategoryResolver（via FundCategoryMapMapper mock）
         service = new ScreenshotService(
-                storage, visionModelClient, aiRouter, promptLoader, chatHistoryMapper, mapper, ocrRoot.toString());
+                storage, visionModelClient, aiRouter, promptLoader, chatHistoryMapper, mapper,
+                new FundCategoryResolver(fundCategoryMapMapper), ocrRoot.toString());
         when(storage.resolveByFileId(FILE_ID)).thenReturn(fakeImage.toPath());
         when(promptLoader.get("screenshot_parser")).thenReturn("SYS_PROMPT");
+        // resolver 默认返 null（无 mapping）→ 调用 CategoryEnum.fromAlias 归一化
+        when(fundCategoryMapMapper.selectByUserCorrect(any(), any())).thenReturn(null);
+        when(fundCategoryMapMapper.selectByUserAndFundName(any(), any())).thenReturn(null);
     }
 
     private void stubVisionSuccess(String raw, String provider, boolean fallback) {

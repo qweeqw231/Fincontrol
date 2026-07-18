@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fincontrol.ai.AiRouter;
 import com.fincontrol.common.BusinessException;
+import com.fincontrol.common.CategoryEnum;
 import com.fincontrol.common.ErrorCode;
 import com.fincontrol.dto.screenshot.*;
 import com.fincontrol.entity.ChatHistory;
@@ -51,6 +52,7 @@ public class ScreenshotService {
     private final PromptLoaderService promptLoader;
     private final ChatHistoryMapper chatHistoryMapper;
     private final ObjectMapper objectMapper;            // 1a.8 v3: OCR 写盘
+    private final FundCategoryResolver fundCategoryResolver; // 1a.8.8 决策 8：类别归一化
     private final Path ocrLogRoot;
 
     /** 1a.8 路由 imageCount 上下文：1 张图 parse → imageCount=1；批量 4 张 → imageCount=4。 */
@@ -62,6 +64,7 @@ public class ScreenshotService {
                              PromptLoaderService promptLoader,
                              ChatHistoryMapper chatHistoryMapper,
                              ObjectMapper objectMapper,
+                             FundCategoryResolver fundCategoryResolver,
                              @Value("${fincontrol.ocr.log-path:" + DEFAULT_OCR_LOG_PATH + "}") String ocrLogPath) {
         this.storage = storage;
         this.visionModelClient = visionModelClient;
@@ -69,6 +72,7 @@ public class ScreenshotService {
         this.promptLoader = promptLoader;
         this.chatHistoryMapper = chatHistoryMapper;
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.fundCategoryResolver = fundCategoryResolver;
         this.ocrLogRoot = resolveOcrLogRoot(ocrLogPath);
     }
 
@@ -135,7 +139,7 @@ public class ScreenshotService {
             throw e;
         }
 
-        ParsedAsset asset = mapToParsedAsset(conversationId, raw, json);
+        ParsedAsset asset = mapToParsedAsset(conversationId, raw, json, req.getUserId());
 
         // 1a.8 v3: OCR 真实数据日志写盘
         writeOcrLog(req.getFileId(), usedProvider, fallbackTriggered, raw, asset, null);
@@ -209,7 +213,7 @@ public class ScreenshotService {
             throw e;
         }
 
-        ParsedAsset asset = mapToParsedAsset(req.getConversationId(), raw, json);
+        ParsedAsset asset = mapToParsedAsset(req.getConversationId(), raw, json, userMsg.getUserId());
 
         // 1a.8 v3: OCR 真实数据日志写盘
         writeOcrLog(fileId, usedProvider, fallbackTriggered, raw, asset, null);
@@ -347,7 +351,7 @@ public class ScreenshotService {
         }
     }
 
-    private ParsedAsset mapToParsedAsset(String conversationId, String raw, JsonNode json) {
+    private ParsedAsset mapToParsedAsset(String conversationId, String raw, JsonNode json, Long userId) {
         ParsedAsset out = new ParsedAsset();
         out.setConversationId(conversationId);
         out.setSnapshotDate(firstText(json, "snapshot_date", "date"));
@@ -362,7 +366,10 @@ public class ScreenshotService {
         if (categories.isArray() && categories.size() > 0) {
             for (JsonNode c : categories) {
                 ParsedAsset.CategoryBlock block = new ParsedAsset.CategoryBlock();
-                block.setCategoryName(textOrNull(c, "category_name"));
+                String rawCat = textOrNull(c, "category_name");
+                // 1a.8.8：块类别名归一化（QDII → 海外权益类 等）
+                String canonical = CategoryEnum.fromAlias(rawCat);
+                block.setCategoryName(canonical != null ? canonical : (rawCat == null ? "其他" : rawCat));
                 JsonNode funds = c.path("funds");
                 List<ParsedAsset.FundLine> lines = new ArrayList<>();
                 if (funds.isArray()) {
@@ -373,6 +380,8 @@ public class ScreenshotService {
                         line.setProfit(firstDecimal(f, "holding_profit", "profit"));
                         line.setHoldingProfit(firstDecimal(f, "holding_profit", "profit"));
                         line.setCumulativeProfit(firstDecimal(f, "cumulative_profit", "holding_profit", "profit"));
+                        // 1a.8.8：调 resolver 拿 isUserConfirmed + 覆盖 block（如果 user_correct 不一致）
+                        applyResolver(line, block, rawCat, userId);
                         lines.add(line);
                     }
                 }
@@ -399,7 +408,9 @@ public class ScreenshotService {
                 JsonNode summary = json.path("category_summary");
                 for (Map.Entry<String, List<JsonNode>> entry : byCategory.entrySet()) {
                     ParsedAsset.CategoryBlock block = new ParsedAsset.CategoryBlock();
-                    block.setCategoryName(entry.getKey());
+                    String rawCat = entry.getKey();
+                    String canonical = CategoryEnum.fromAlias(rawCat);
+                    block.setCategoryName(canonical != null ? canonical : rawCat);
                     List<ParsedAsset.FundLine> lines = new ArrayList<>();
                     for (JsonNode h : entry.getValue()) {
                         ParsedAsset.FundLine line = new ParsedAsset.FundLine();
@@ -408,6 +419,7 @@ public class ScreenshotService {
                         line.setProfit(firstDecimal(h, "holding_pnl", "holding_profit", "profit"));
                         line.setHoldingProfit(firstDecimal(h, "holding_pnl", "holding_profit", "profit"));
                         line.setCumulativeProfit(firstDecimal(h, "cumulative_profit", "holding_pnl", "holding_profit", "profit"));
+                        applyResolver(line, block, rawCat, userId);
                         lines.add(line);
                     }
                     block.setFunds(lines);
@@ -435,6 +447,34 @@ public class ScreenshotService {
         out.setUnmatchedFunds(Collections.emptyList());
 
         return out;
+    }
+
+    /**
+     * 1a.8.8：调 resolver 归一化单只基金；user_correct 命中且 canonical 与 block 不同则覆盖 block。
+     */
+    private void applyResolver(ParsedAsset.FundLine line,
+                               ParsedAsset.CategoryBlock block,
+                               String rawCategory,
+                               Long userId) {
+        if (line.getFundName() == null || userId == null) {
+            line.setIsUserConfirmed(false);
+            return;
+        }
+        try {
+            FundCategoryResolver.ResolvedCategory resolved =
+                    fundCategoryResolver.resolve(line.getFundName(), rawCategory, userId);
+            line.setIsUserConfirmed(resolved.isUserConfirmed());
+            if (resolved.isUserConfirmed()
+                    && resolved.canonicalName() != null
+                    && !resolved.canonicalName().equals(block.getCategoryName())) {
+                log.warn("1a.8.8 user_correct 覆盖 block category: fund={} block={} → user={}",
+                        line.getFundName(), block.getCategoryName(), resolved.canonicalName());
+                block.setCategoryName(resolved.canonicalName());
+            }
+        } catch (Exception e) {
+            log.warn("resolver 调用失败，fallback: fund={} err={}", line.getFundName(), e.getMessage());
+            line.setIsUserConfirmed(false);
+        }
     }
 
     private static String textOrNull(JsonNode node, String field) {

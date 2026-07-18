@@ -69,7 +69,8 @@ class CategoryMapServiceTest {
         LocalDateTime t = LocalDateTime.of(2026, 7, 17, 10, 0);
         List<FundCategoryMap> rows = List.of(
                 row(101L, USER_ID, "中加货币E", "货币类", "ai_guess", t),
-                row(102L, USER_ID, "长城短债债券A", "债券类", "user_correct", t)
+                // 1a.8.8：原"债券类" 已合并入 canonical "固收类"
+                row(102L, USER_ID, "长城短债债券A", "固收类", "user_correct", t)
         );
         when(fundCategoryMapMapper.selectByUserAndFundNames(eq(USER_ID), any(Collection.class)))
                 .thenReturn(rows);
@@ -82,6 +83,8 @@ class CategoryMapServiceTest {
         assertThat(resp.getMatchedFunds().get(0).getCategory()).isEqualTo("货币类");
         assertThat(resp.getMatchedFunds().get(0).getSource()).isEqualTo("ai_guess");
         assertThat(resp.getMatchedFunds().get(0).getConfirmedAt()).isEqualTo(t);
+        // 1a.8.8：验证 canonical 名是"固收类"
+        assertThat(resp.getMatchedFunds().get(1).getCategory()).isEqualTo("固收类");
         assertThat(resp.getMatchedFunds().get(1).getSource()).isEqualTo("user_correct");
     }
 
@@ -140,19 +143,20 @@ class CategoryMapServiceTest {
     void update_existing() {
         LocalDateTime before = LocalDateTime.of(2026, 7, 17, 9, 0);
         LocalDateTime after = LocalDateTime.of(2026, 7, 17, 10, 30);
-        FundCategoryMap existing = row(50L, USER_ID, "易方达蓝筹精选", "股票类", "ai_guess", before);
-        FundCategoryMap afterWrite = row(50L, USER_ID, "易方达蓝筹精选", "混合类", "user_correct", after);
+        // 1a.8.8：原"股票类"/"混合类" 已合并入 canonical "A股权益类"
+        FundCategoryMap existing = row(50L, USER_ID, "易方达蓝筹精选", "A股权益类", "ai_guess", before);
+        FundCategoryMap afterWrite = row(50L, USER_ID, "易方达蓝筹精选", "A股权益类", "user_correct", after);
 
         when(fundCategoryMapMapper.selectByUserAndFundName(USER_ID, "易方达蓝筹精选"))
                 .thenReturn(existing)   // 第一次：决定 isUpdate
                 .thenReturn(afterWrite); // 第二次：回读 confirmedAt
 
-        CategoryMapUpdateResponse resp = service.update(USER_ID, "易方达蓝筹精选", "混合类");
+        CategoryMapUpdateResponse resp = service.update(USER_ID, "易方达蓝筹精选", "A股权益类");
 
         assertThat(resp.isUpdated()).isTrue();
         assertThat(resp.getMappingId()).isEqualTo(50L);
         assertThat(resp.getSource()).isEqualTo("user_correct");
-        assertThat(resp.getCategory()).isEqualTo("混合类");
+        assertThat(resp.getCategory()).isEqualTo("A股权益类");
         assertThat(resp.getConfirmedAt()).isEqualTo(after);
 
         // 验证 upsertByFundName 入参 source='user_correct'
@@ -160,7 +164,7 @@ class CategoryMapServiceTest {
         verify(fundCategoryMapMapper).upsertByFundName(captor.capture());
         FundCategoryMap sent = captor.getValue();
         assertThat(sent.getSource()).isEqualTo("user_correct");
-        assertThat(sent.getCategory()).isEqualTo("混合类");
+        assertThat(sent.getCategory()).isEqualTo("A股权益类");
         assertThat(sent.getFundName()).isEqualTo("易方达蓝筹精选");
         assertThat(sent.getUserId()).isEqualTo(USER_ID);
     }
@@ -333,5 +337,84 @@ class CategoryMapServiceTest {
 
         // 防止回归：1004 错误码不应出现 → 业务侧应能成功 upsert
         verify(fundCategoryMapMapper).upsertByFundName(any(FundCategoryMap.class));
+    }
+
+    // ========================================================================
+    // 1a.8.8 T-V3.2-07: DELETE 跨用户隔离
+    // ========================================================================
+
+    @Test
+    @DisplayName("T-V3.2-07: delete(USER_ID) → affected=1；delete(USER_ID_2) → affected=0（不跨 user）")
+    void delete_userIsolation() {
+        when(fundCategoryMapMapper.deleteByUserAndFundName(USER_ID, "国泰黄金ETF联接A"))
+                .thenReturn(1);
+        when(fundCategoryMapMapper.deleteByUserAndFundName(USER_ID_2, "国泰黄金ETF联接A"))
+                .thenReturn(0);
+
+        assertThat(service.delete(USER_ID, "国泰黄金ETF联接A")).isEqualTo(1);
+        assertThat(service.delete(USER_ID_2, "国泰黄金ETF联接A")).isEqualTo(0);
+
+        verify(fundCategoryMapMapper).deleteByUserAndFundName(USER_ID, "国泰黄金ETF联接A");
+        verify(fundCategoryMapMapper).deleteByUserAndFundName(USER_ID_2, "国泰黄金ETF联接A");
+    }
+
+    @Test
+    @DisplayName("delete: 空 fundName → 抛 1004，不调 mapper")
+    void delete_emptyFundName() {
+        assertThatThrownBy(() -> service.delete(USER_ID, " "))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode.code").isEqualTo(ErrorCode.INVALID_CATEGORY_NAME.getCode());
+        verify(fundCategoryMapMapper, never()).deleteByUserAndFundName(anyLong(), any());
+    }
+
+    // ========================================================================
+    // 1a.8.8 T-V3.2-08: reset + stale
+    // ========================================================================
+
+    @Test
+    @DisplayName("T-V3.2-08: reset → updateLastSeen(source='ai_guess')")
+    void reset_callsUpdateLastSeen() {
+        when(fundCategoryMapMapper.updateLastSeen(USER_ID, "国泰黄金ETF联接A", "ai_guess"))
+                .thenReturn(1);
+        assertThat(service.reset(USER_ID, "国泰黄金ETF联接A")).isEqualTo(1);
+        verify(fundCategoryMapMapper).updateLastSeen(USER_ID, "国泰黄金ETF联接A", "ai_guess");
+    }
+
+    @Test
+    @DisplayName("listStale: 透传 cutoffDate 给 mapper；返回列表")
+    void listStale_passesCutoffAndReturnsList() {
+        LocalDateTime t = LocalDateTime.of(2026, 7, 1, 0, 0);
+        List<FundCategoryMap> expected = List.of(
+                row(1L, USER_ID, "旧基金A", "商品类", "user_correct", t),
+                row(2L, USER_ID, "旧基金B", "固收类", "user_correct", t)
+        );
+        when(fundCategoryMapMapper.selectStaleByUser(eq(USER_ID), any(LocalDateTime.class)))
+                .thenReturn(expected);
+
+        List<FundCategoryMap> actual = service.listStale(USER_ID, 90);
+        assertThat(actual).hasSize(2).containsExactlyElementsOf(expected);
+
+        ArgumentCaptor<LocalDateTime> cutoffCap = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(fundCategoryMapMapper).selectStaleByUser(eq(USER_ID), cutoffCap.capture());
+        // cutoff 应是 90 天前附近（误差 1s）
+        assertThat(cutoffCap.getValue()).isBefore(LocalDateTime.now().minusDays(89));
+        assertThat(cutoffCap.getValue()).isAfter(LocalDateTime.now().minusDays(91));
+    }
+
+    @Test
+    @DisplayName("listStale: days < 0 → 抛 1004")
+    void listStale_negativeDaysRejected() {
+        assertThatThrownBy(() -> service.listStale(USER_ID, -1))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode.code").isEqualTo(ErrorCode.INVALID_CATEGORY_NAME.getCode());
+        verify(fundCategoryMapMapper, never()).selectStaleByUser(anyLong(), any());
+    }
+
+    @Test
+    @DisplayName("listStale: mapper 返 null → 返空列表，不 NPE")
+    void listStale_nullFromMapperBecomesEmpty() {
+        when(fundCategoryMapMapper.selectStaleByUser(eq(USER_ID), any(LocalDateTime.class)))
+                .thenReturn(null);
+        assertThat(service.listStale(USER_ID, 90)).isEmpty();
     }
 }

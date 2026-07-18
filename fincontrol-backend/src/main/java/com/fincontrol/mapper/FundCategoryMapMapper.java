@@ -50,4 +50,40 @@ public interface FundCategoryMapMapper extends BaseMapper<FundCategoryMap> {
     Set<String> selectFundNamesByUserAndSnapshotDate(
             @Param("userId") Long userId,
             @Param("snapshotDate") LocalDate snapshotDate);
+
+    // ================================================================
+    // 1a.8.8 决策 8：类别归一化 + 双向 cache + stale 判定
+    // ================================================================
+
+    /**
+     * 1a.8.8 Resolver 查 user_correct 映射（优先级最高）。
+     */
+    FundCategoryMap selectByUserCorrect(
+            @Param("userId") Long userId,
+            @Param("fundName") String fundName);
+
+    /**
+     * 1a.8.8 列 stale user_correct 映射（last_seen_at 早于 cutoffDate）。
+     * <p>cutoffDate 在 Java 端计算为 {@code LocalDateTime.now().minusDays(days)}，
+     * SQL 端不做 INTERVAL 计算（双方言兼容）。
+     */
+    List<FundCategoryMap> selectStaleByUser(
+            @Param("userId") Long userId,
+            @Param("cutoffDate") java.time.LocalDateTime cutoffDate);
+
+    /**
+     * 1a.8.8 re-confirm 二态写：仅更新 last_seen_at（保留 source/category，不重新打 user_correct）。
+     * <p>用于已有 ai_guess 行被快照再次覆盖：不需要重写 source，只需要证明出现过。
+     */
+    int updateLastSeen(
+            @Param("userId") Long userId,
+            @Param("fundName") String fundName,
+            @Param("source") String source);
+
+    /**
+     * 1a.8.8 DELETE 接口：单用户删除映射（不跨 user）。
+     */
+    int deleteByUserAndFundName(
+            @Param("userId") Long userId,
+            @Param("fundName") String fundName);
 }

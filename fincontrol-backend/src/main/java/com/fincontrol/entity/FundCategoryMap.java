@@ -38,4 +38,8 @@ public class FundCategoryMap {
 
     @TableField("confirmed_at")
     private LocalDateTime confirmedAt;
+
+    /** 1a.8.8：最近一次出现在截图中的时间。stale 判定 + re-confirm 去弹窗。 */
+    @TableField("last_seen_at")
+    private LocalDateTime lastSeenAt;
 }

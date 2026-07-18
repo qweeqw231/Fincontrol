@@ -1,5 +1,6 @@
 {
-  "fixtureVersion": "1a.8-v3.1",
+  "fixtureVersion": "1a.8-v3.2",
+  "fixtureNotes": "1a.8.8 类别归一化 + 双向 cache：类别名统一为 7 canonical；港股/大中华类 → 港股大中华类；19 项 expectedCategoryName + expectedIsUserConfirmed=true",
   "snapshotDate": "2026-07-15",
   "expectedCompleteInputCount": 20,
   "expectedUniqueCount": 19,
@@ -104,10 +105,10 @@
             ]
           },
           {
-            "categoryName": "港股/大中华类",
+            "categoryName": "港股大中华类",
             "categoryTotal": 121.11,
             "funds": [
-              {"fundName": "华安香港精选股票(QDII)", "amount": 121.11, "holdingProfit": 1.11, "cumulativeProfit": 1.11}
+              {"fundName": "华安香港精选股票(QDII)", "amount": 121.11, "holdingProfit": 1.11, "cumulativeProfit": 1.11, "isUserConfirmed": true}
             ]
           },
           {
@@ -156,10 +157,10 @@
             ]
           },
           {
-            "categoryName": "港股/大中华类",
+            "categoryName": "港股大中华类",
             "categoryTotal": 255.42,
             "funds": [
-              {"fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "holdingProfit": -8.58, "cumulativeProfit": -8.58}
+              {"fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "holdingProfit": -8.58, "cumulativeProfit": -8.58, "isUserConfirmed": true}
             ]
           },
           {
@@ -190,8 +191,8 @@
     {"categoryName": "海外权益类", "fundName": "天弘纳斯达克100指数(QDII)C", "amount": 308.82, "holdingProfit": 33.82, "cumulativeProfit": 33.82},
     {"categoryName": "海外权益类", "fundName": "摩根纳斯达克100指数(QDII)A", "amount": 545.48, "holdingProfit": 35.48, "cumulativeProfit": 35.48},
     {"categoryName": "海外权益类", "fundName": "招商纳斯达克100ETF联接(QDII)C", "amount": 184.69, "holdingProfit": 24.69, "cumulativeProfit": 24.69},
-    {"categoryName": "港股/大中华类", "fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "holdingProfit": -8.58, "cumulativeProfit": -8.58},
-    {"categoryName": "港股/大中华类", "fundName": "华安香港精选股票(QDII)", "amount": 121.11, "holdingProfit": 1.11, "cumulativeProfit": 1.11},
+    {"categoryName": "港股大中华类", "fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "holdingProfit": -8.58, "cumulativeProfit": -8.58},
+    {"categoryName": "港股大中华类", "fundName": "华安香港精选股票(QDII)", "amount": 121.11, "holdingProfit": 1.11, "cumulativeProfit": 1.11},
     {"categoryName": "余额类", "fundName": "余额宝", "amount": 320.85, "holdingProfit": 1.89, "cumulativeProfit": 1.89}
   ]
 }

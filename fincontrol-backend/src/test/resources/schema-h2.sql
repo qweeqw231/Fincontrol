@@ -44,9 +44,11 @@ CREATE TABLE IF NOT EXISTS fund_category_map (
     fund_name VARCHAR(255) NOT NULL,
     category VARCHAR(50) NOT NULL,
     source VARCHAR(30) NOT NULL DEFAULT 'user_manual',
-    confirmed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    confirmed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMP NULL
 );
 CREATE INDEX IF NOT EXISTS idx_map_user_category ON fund_category_map(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_map_user_last_seen ON fund_category_map(user_id, last_seen_at);
 
 -- 唯一键（CREATE UNIQUE INDEX IF NOT EXISTS 多次跑幂等；H2 1.4+ + MySQL 8 兼容）
 CREATE UNIQUE INDEX IF NOT EXISTS uk_snap_user_date_cat_latest

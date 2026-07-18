@@ -77,8 +77,10 @@ CREATE TABLE fund_category_map (
   category     VARCHAR(50)  NOT NULL COMMENT '七大类',
   source       VARCHAR(30)  NOT NULL DEFAULT 'user_manual' COMMENT '确认方式：ai_guess/ai_guess_confirmed/user_correct/user_manual/user_voided',
   confirmed_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '确认时间',
+  last_seen_at DATETIME     NULL COMMENT '最近一次出现在截图中的时间（1a.8.8：stale 判定 + re-confirm 去弹窗）',
   UNIQUE KEY uk_user_fund     (user_id, fund_name),
-  INDEX idx_user_category     (user_id, category)
+  INDEX idx_user_category     (user_id, category),
+  INDEX idx_user_last_seen    (user_id, last_seen_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金-大类映射表';
 
 -- ============================================
@@ -170,6 +172,13 @@ SET FOREIGN_KEY_CHECKS = 1;
 ALTER TABLE chat_history
   ADD COLUMN IF NOT EXISTS used_provider VARCHAR(20) NULL COMMENT '1a.8：本响应实际使用的 provider',
   ADD COLUMN IF NOT EXISTS fallback_triggered TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1a.8：本响应是否走了 fallback';
+
+-- ============================================
+-- 1a.8.8 增量脚本：已建库兼容（fund_category_map 加 last_seen_at）
+-- ============================================
+ALTER TABLE fund_category_map
+  ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL COMMENT '1a.8.8：最近一次出现在截图中的时间',
+  ADD INDEX IF NOT EXISTS idx_user_last_seen (user_id, last_seen_at);
 
 -- ============================================
 -- 初始化数据：用户默认配置

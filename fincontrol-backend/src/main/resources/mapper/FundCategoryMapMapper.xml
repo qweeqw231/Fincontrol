@@ -9,15 +9,18 @@
          MySQL 原生 `ON DUPLICATE KEY UPDATE` 在 H2 (MySQL mode) 和 MySQL 8.0+ 都支持，
          且依赖 UNIQUE KEY uk_user_fund (user_id, fund_name)（db-schema.sql §3）。
          1a.3.5 注释中"H2 1.4+ 完全支持（PostgreSQL 兼容）"是误判。 -->
+    <!-- 1a8.8 升级：INSERT/UPDATE 都同步 last_seen_at = NOW()。
+         INSERT 分支显式写 last_seen_at，UPDATE 分支 ON DUPLICATE KEY UPDATE 重写 last_seen_at。 -->
     <insert id="upsertByFundName" parameterType="com.fincontrol.entity.FundCategoryMap">
         INSERT INTO fund_category_map
-            (user_id, fund_name, category, source, confirmed_at)
+            (user_id, fund_name, category, source, confirmed_at, last_seen_at)
         VALUES
-            (#{userId}, #{fundName}, #{category}, #{source}, CURRENT_TIMESTAMP)
+            (#{userId}, #{fundName}, #{category}, #{source}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON DUPLICATE KEY UPDATE
             category      = VALUES(category),
             source        = VALUES(source),
-            confirmed_at  = CURRENT_TIMESTAMP
+            confirmed_at  = CURRENT_TIMESTAMP,
+            last_seen_at  = CURRENT_TIMESTAMP
     </insert>
 
     <!-- 1a5 暴露给前端：按 fund_name 查单条 -->
@@ -53,5 +56,44 @@
                         AND ar.fund_name = fcm.fund_name
                         AND ar.is_latest = true)
     </select>
+
+    <!-- ================================================================
+         1a.8.8 决策 8：双向 cache + stale 判定 + DELETE 隔离
+         ================================================================ -->
+
+    <!-- Resolver 查 user_correct 映射（优先级最高，1a.8.8）。 -->
+    <select id="selectByUserCorrect" resultType="com.fincontrol.entity.FundCategoryMap">
+        SELECT * FROM fund_category_map
+        WHERE user_id = #{userId}
+          AND fund_name = #{fundName}
+          AND source = 'user_correct'
+    </select>
+
+    <!-- 列 stale user_correct 映射（cutoffDate 在 Java 端计算，避免 SQL 方言差）。 -->
+    <select id="selectStaleByUser" resultType="com.fincontrol.entity.FundCategoryMap">
+        SELECT * FROM fund_category_map
+        WHERE user_id = #{userId}
+          AND source = 'user_correct'
+          AND last_seen_at IS NOT NULL
+          AND last_seen_at &lt; #{cutoffDate}
+        ORDER BY last_seen_at ASC
+    </select>
+
+    <!-- 二态写：仅更新 last_seen_at（保留 source/category 不被覆盖）。
+         用于已有 ai_guess 行被快照再次覆盖：不需要重写 source。 -->
+    <update id="updateLastSeen">
+        UPDATE fund_category_map
+        SET last_seen_at = CURRENT_TIMESTAMP,
+            source = #{source}
+        WHERE user_id = #{userId}
+          AND fund_name = #{fundName}
+    </update>
+
+    <!-- DELETE 接口：单用户删除映射（不跨 user，1a.8.8 多用户债修复）。 -->
+    <delete id="deleteByUserAndFundName">
+        DELETE FROM fund_category_map
+        WHERE user_id = #{userId}
+          AND fund_name = #{fundName}
+    </delete>
 
 </mapper>

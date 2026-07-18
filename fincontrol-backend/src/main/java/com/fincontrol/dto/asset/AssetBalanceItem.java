@@ -32,4 +32,7 @@ public class AssetBalanceItem {
     private BigDecimal cumulativeProfit;
 
     private String category;
+
+    /** 1a.8.8：来自 FundCategoryResolver；true=user_correct，false=ai_guess/未命中。 */
+    private Boolean isUserConfirmed;
 }

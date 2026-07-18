@@ -52,5 +52,7 @@ public class ParsedAsset {
         private BigDecimal holdingProfit;
         /** 含已实现盈亏。1a.8.7。 */
         private BigDecimal cumulativeProfit;
+        /** 1a.8.8：来自 FundCategoryResolver；true=user_correct，false=ai_guess/未命中。 */
+        private Boolean isUserConfirmed;
     }
 }

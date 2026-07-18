@@ -308,3 +308,46 @@
 - `total_asset` 收紧避免模型幻觉（曾把 sum-of-funds 误认成 visible 总额）
 
 **回退条件**：无（schema 已 ALTER；不向后兼容 holding/cumulative 会破坏累计收益展示）
+
+---
+
+## 决策 8：基金类别归一化 + 双向 cache + 清仓可恢复（1a.8.8）
+
+**状态**：✅ 已锁定（2026-07-18）
+
+**背景**：
+- 1a.5 大类映射（[`fund_category_map`](#)）的 `category` 列是 VARCHAR(50)，模型可输出"QDII / 商品 / 固收 / 货币 / 权益类 / 黄金类 / 保障类"等自由命名，而设计文档规定 7 canonical 名（货币类/固收类/商品类/A股权益类/海外权益类/港股大中华类/余额类）。前端 confirm 页面看到的是自由命名，与文档不一致。
+- 1a.3 confirm 与 1a.5 update 都可向 `fund_category_map` 写映射，但首次确认后无"last_seen_at"字段，清仓后再出现的基金会被模型重新输出自由命名，导致前端必须重复确认。
+- 1a.5 `GET /api/category-map/match` 路由设计未走 userId 参数（仅 `X-User-Id` header），多用户场景下会跨用户命中 mapping。
+
+**决策**：
+
+1. **类别归一化**：新增 `CategoryEnum` 枚举（7 canonical + 别名表），`fromAlias()` 提供模糊匹配；`ScreenshotService.mapToParsedAsset` 与 `SnapShotConfirmService.writeFundCategoryMap` 全部走 `CategoryEnum.fromAlias()` 归一化。块类别名 + 每只基金的 canonical 都经过归一化。
+2. **双向 cache**：新增 `FundCategoryResolver`（4 优先级）：
+   - (1) `fund_category_map.source='user_correct'` 命中 → canonical + `isUserConfirmed=true`
+   - (2) `fund_category_map` 任意 source 命中 → canonical + `isUserConfirmed=false`
+   - (3) `CategoryEnum.fromAlias(rawCategory)` 命中 → canonical + `isUserConfirmed=false`
+   - (4) fallback → raw + `isUserConfirmed=false`（前端高亮）
+3. **`last_seen_at` 字段**：新增 `fund_category_map.last_seen_at TIMESTAMP NULL` 列；upsertByFundName 同步写 `last_seen_at=CURRENT_TIMESTAMP`；新端点 `GET /api/category-map/stale?days=N`（默认 90）列 stale user_correct。
+4. **二态写**：`SnapShotConfirmService.writeFundCategoryMap` 区分：首次 upsert → `source='ai_guess'`；已有行 → `source='user_correct'` + last_seen_at 更新。
+5. **多用户债修复**：`match`/`update` 接受 `?userId=N` 显式参数；`DELETE /api/category-map/{userId}/{fundName}` 路径带 userId；`POST /api/category-map/reset`（source → ai_guess）让用户主动重置。
+
+**Schema 升级**：
+- `fund_category_map` +1 列：`last_seen_at TIMESTAMP NULL`（用户确认后写入）
+- MySQL：`ALTER TABLE fund_category_map ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL AFTER confirmed_at, ADD INDEX IF NOT EXISTS idx_user_last_seen (user_id, last_seen_at);`
+- H2 测试 schema 同步
+
+**DTO 升级**：`ParsedAsset.FundLine` / `AssetBalanceItem` / `SnapshotFundDetail` 三处都加 `isUserConfirmed: boolean`
+
+**Fixture 升级**：`phase1a8-real-four-pages.json` 升 v3.2，类别名统一为 canonical（"港股/大中华类" → "港股大中华类"）
+
+**理由**：
+- 类别名漂移导致 confirm UI 与设计文档不一致，影响前端 review 体验 → 归一化强制 7 canonical
+- 清仓再出现的弹窗误报 → last_seen_at 让 stale 判定可观察
+- 多用户场景下 match 跨用户命中 → userId 显式参数 + DELETE 路径隔离
+- ai_guess → user_correct 升级路径让用户主动确认语义保留
+
+**回退条件**：
+- 若未来需要 CRUD 类别名（增/删/改 7 canonical），属 1a.9+ 范畴（master table 模式）
+- 若前端 confirm UI 需要绕过 user_correct 状态显式提示"未确认"，1a.9 可加 `confirmedAt` 字段
+- multi-user RBAC 隔离完整版属 1b.x / Phase 5b

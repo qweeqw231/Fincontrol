@@ -210,7 +210,47 @@ public class CategoryMapService {
     private static void validateCategory(String category) {
         if (!CategoryEnum.isValid(category)) {
             throw new BusinessException(ErrorCode.INVALID_CATEGORY_NAME,
-                    "category '" + category + "' 不在六大类枚举值内（货币类/债券类/股票类/混合类/商品类/余额类）");
+                    "category '" + category + "' 不在 7 canonical 枚举值内（货币类/固收类/商品类/A股权益类/海外权益类/港股大中华类/余额类）");
         }
+    }
+
+    // ========================================================================
+    // 1a.8.8 决策 8：DELETE / reset / stale（多用户债修复 + stale 判定）
+    // ========================================================================
+
+    /**
+     * 1a.8.8 DELETE：删除单条映射。不跨 user。未命中返 0。
+     */
+    public int delete(Long userId, String fundName) {
+        if (userId == null) throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
+        validateFundName(fundName);
+        int affected = fundCategoryMapMapper.deleteByUserAndFundName(userId, fundName);
+        log.info("1a.8.8 delete: userId={} fund={} affected={}", userId, fundName, affected);
+        return affected;
+    }
+
+    /**
+     * 1a.8.8 reset：重置映射为 ai_guess（不删行，不改 category，只改 source 让 re-confirm 走正常路径）。
+     * <p>用于用户主动让前端弹出确认窗（即使上次已 user_correct）。
+     */
+    public int reset(Long userId, String fundName) {
+        if (userId == null) throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
+        validateFundName(fundName);
+        int affected = fundCategoryMapMapper.updateLastSeen(userId, fundName, "ai_guess");
+        log.info("1a.8.8 reset: userId={} fund={} affected={}", userId, fundName, affected);
+        return affected;
+    }
+
+    /**
+     * 1a.8.8 stale：列 last_seen_at 早于 now-days 的 user_correct 映射（供前端 review）。
+     */
+    public java.util.List<FundCategoryMap> listStale(Long userId, int days) {
+        if (userId == null) throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
+        if (days < 0) throw new BusinessException(ErrorCode.INVALID_CATEGORY_NAME, "days 必须 ≥ 0");
+        java.time.LocalDateTime cutoff = java.time.LocalDateTime.now().minusDays(days);
+        java.util.List<FundCategoryMap> rows = fundCategoryMapMapper.selectStaleByUser(userId, cutoff);
+        log.info("1a.8.8 stale: userId={} days={} cutoff={} returned={}",
+                userId, days, cutoff, rows == null ? 0 : rows.size());
+        return rows == null ? java.util.Collections.emptyList() : rows;
     }
 }

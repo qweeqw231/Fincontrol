@@ -20,7 +20,8 @@ public final class Phase1a8RealFourPageFixture {
     }
 
     public static Fixture load() {
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = new ObjectMapper()
+                .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         try (InputStream in = Phase1a8RealFourPageFixture.class.getResourceAsStream(RESOURCE)) {
             if (in == null) {
                 throw new IllegalStateException("fixture 不存在: " + RESOURCE);

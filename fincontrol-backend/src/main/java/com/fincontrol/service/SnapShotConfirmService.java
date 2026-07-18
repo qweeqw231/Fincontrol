@@ -222,17 +222,27 @@ public class SnapShotConfirmService {
         return count;
     }
 
+    /**
+     * 1a.8.8 二态写：
+     * <ul>
+     *   <li>首次 upsert（无现有行）→ source='ai_guess'，last_seen_at=NOW()（由 mapper upsertByFundName 同步写）</li>
+     *   <li>已有行 → source='user_correct'，last_seen_at=NOW()（re-confirm 后由 user_correct 覆盖 ai_guess）</li>
+     * </ul>
+     * <p>这样清仓后再出现：上次已 user_correct → resolver 返回 isUserConfirmed=true → 前端不弹确认窗。
+     */
     private int writeFundCategoryMap(SnapshotConfirmRequest req, DedupResult dedup) {
         int count = 0;
         for (CategoryBlock cat : dedup.merged().getCategories()) {
             for (FundLine fund : cat.getFunds()) {
+                FundCategoryMap existing = fundCategoryMapMapper.selectByUserAndFundName(
+                        req.getUserId(), fund.getFundName());
                 FundCategoryMap map = new FundCategoryMap();
                 map.setUserId(req.getUserId());
                 map.setFundName(fund.getFundName());
                 map.setCategory(cat.getCategoryName());
-                map.setSource("user_correct");
+                map.setSource(existing == null ? "ai_guess" : "user_correct");
                 map.setConfirmedAt(LocalDateTime.now());
-                fundCategoryMapMapper.upsertByFundName(map);
+                fundCategoryMapMapper.upsertByFundName(map);  // upsert 同步写 last_seen_at
                 count++;
             }
         }

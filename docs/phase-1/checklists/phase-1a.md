@@ -136,6 +136,19 @@
 
 > 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md) 与 [`2026-07-18_phase1a8-acceptance-report.md`](../test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md)
 - [x] **1a.8.7** profit 拆分 holding + cumulative（v3.1 真实四图闭环 19/19 + 7884.68）— 完成日期：2026-07-18
+- [x] **1a.8.8** 类别归一化 + 双向 cache + last_seen_at + DELETE/reset/stale + 多用户债修复 — 完成日期：2026-07-18
+  - **决策 8 落地**：CategoryEnum 7 canonical + 别名 + fromAlias；FundCategoryResolver 4 优先级（user_correct > ai_guess > fromAlias > raw 兜底）
+  - schema 升级：`fund_category_map` +1 列 `last_seen_at TIMESTAMP NULL`，MySQL ALTER + H2 同步 + idx_user_last_seen 索引
+  - DTO 升级：`ParsedAsset.FundLine` / `AssetBalanceItem` / `SnapshotFundDetail` 三处都加 `isUserConfirmed: boolean`
+  - Java 升级：`ScreenshotService.mapToParsedAsset` 调 resolver 归一化（块类别名 + 每只基金 canonical）；`SnapShotConfirmService.writeFundCategoryMap` 二态写（首次 ai_guess / 已有 user_correct + last_seen_at 更新）
+  - CategoryMapController 升级：`match`/`update` 接受 `?userId=N`；新增 `DELETE /{userId}/{fundName}` + `POST /reset` + `GET /stale?days=N`
+  - Fixture v3.2：4 页 19 项类别名统一为 canonical（"港股/大中华类" → "港股大中华类"）
+  - 新增测试：CategoryEnumTest（11）+ FundCategoryResolverTest（11）+ CategoryMapServiceTest+6 / CategoryMapControllerTest+6
+  - **已知债修复明示**：1a.5 `match` 路由之前不传 userId，多用户场景会跨用户命中 → 1a.8.8 补 `?userId=N` + DELETE 路径占 userId
+  - 测试结果：`mvn clean verify` **220/220 PASS**（比 1a.8.7 多 34 个用例：CategoryEnumTest+11、FundCategoryResolverTest+11、CategoryMapServiceTest+6、CategoryMapControllerTest+6）；JaCoCo ≥ 60%（实际 ~77%）
+  - 详细见 [`2026-07-18_phase1a8-v3_2-real-data-check.md`](../test-records/manual-tests/2026-07-18_phase1a8-v3_2-real-data-check.md)
+  - 配套：[`v3.2-work-plan.md`](../work-plans/2026-07-18_phase1a8-v3_2-work-plan.md) + [`v3.2-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-v3_2-acceptance-plan.md)
+  - **未完成（待用户授权）**：prompt_versions v2.2 → v2.3 升级 SQL（MySQL UPDATE）；四图真实 OCR E2E 重跑（需 minimax API key）
   - schema 升级：`asset_raw` +2 列（`holding_profit` / `cumulative_profit`），MySQL 已 ALTER + H2 同步
   - DTO 升级：`ParsedAsset.FundLine` / `AssetBalanceItem` / `SnapshotFundDetail` 三处都加 2 字段
   - Java 升级：`ScreenshotService` 解析 holding/cumulative；`SnapShotConfirmService` 三列同步写；`DedupEngine` MergedFund 内部双字段聚合；`AssetQueryService` / `SnapshotQueryService` 读取时优先 holding/cumulative

@@ -31,7 +31,8 @@ class Phase1a8RealFourPageFixtureTest {
     void fixture_isInternallyConsistent() {
         Fixture fixture = Phase1a8RealFourPageFixture.load();
 
-        assertThat(fixture.fixtureVersion()).isEqualTo("1a.8-v3.1");
+        // 1a.8.8：fixture 升 v3.2（7 canonical 类别名 + isUserConfirmed 字段）
+        assertThat(fixture.fixtureVersion()).isEqualTo("1a.8-v3.2");
         assertThat(fixture.pages()).extracting(Page::expectedCompleteCount)
                 .containsExactly(6, 3, 5, 6);
         assertThat(fixture.pages()).extracting(Page::headerOnly)
