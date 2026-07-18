@@ -16,20 +16,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SCRIPT_DIR/lib-common.sh"
 
-# 计数器：单步失败不退出
+# 单步 curl 失败不退出（mark_ok/mark_err/extract_json_field 已由 lib-common.sh 提供）
 set +e
-OK_COUNT=0
-ERR_COUNT=0
-
-mark_ok()  { OK_COUNT=$((OK_COUNT+1)); ok  "$1"; }
-mark_err() { ERR_COUNT=$((ERR_COUNT+1)); err "$1"; }
-
-# 安全解析 fileId / conversationId：用 grep 替代 python（兼容 Windows + cygwin）
-# 用法：extract_json_field <file> <field>  → 输出 value（不带引号）
-extract_json_field() {
-  local f="$1"; local field="$2"
-  grep -oE "\"${field}\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" "$f" 2>/dev/null | head -1 | cut -d'"' -f4
-}
 
 SAMPLES_DIR="$BACKEND_ROOT/uploads/samples"
 EXPECTED_FILES=(
@@ -82,27 +70,35 @@ for i in "${!EXPECTED_FILES[@]}"; do
   fi
 done
 
-# ---------- A7-S02: 4 张图 parse ----------
-section "A7-S02: parse 4 张图（真实 minimax vision 调用）"
+# ---------- A7-S02: 4 张图 parse（失败时 1 次重试，限流不阻塞）----------
+section "A7-S02: parse 4 张图（真实 minimax vision 调用，失败重试 1 次）"
 declare -A CONV_IDS
 for f in "${!FILE_IDS[@]}"; do
   fid="${FILE_IDS[$f]}"
   outfile="$API_OUT_DIR/03_s02_parse_${fid}.json"
-  status=$(curl -sS -X POST http://127.0.0.1:8080/api/screenshot/parse \
-    -H "Content-Type: application/json" -H "X-User-Id: 1" \
-    -d "{\"fileId\":\"$fid\",\"userId\":1}" \
-    -o "$outfile" -w "%{http_code}" 2>&1)
-  if [ "$status" = "200" ] && [ -s "$outfile" ]; then
-    cid=$(extract_json_field "$outfile" "conversationId")
-    if [ -n "$cid" ] && [ "$cid" != "None" ]; then
-      CONV_IDS[$f]="$cid"
-      fc=$(grep -c '"fundName"' "$outfile" 2>/dev/null || echo 0)
-      mark_ok "  parse $f → convId=$cid（$fc funds）"
-    else
-      mark_err "  parse $f 返 200 但 conversationId 缺失（$(head -c 200 $outfile)）"
+  parse_ok=0
+  for attempt in 1 2; do
+    status=$(curl -sS -X POST http://127.0.0.1:8080/api/screenshot/parse \
+      -H "Content-Type: application/json" -H "X-User-Id: 1" \
+      -d "{\"fileId\":\"$fid\",\"userId\":1}" \
+      -o "$outfile" -w "%{http_code}" 2>&1)
+    if [ "$status" = "200" ] && [ -s "$outfile" ]; then
+      cid=$(extract_json_field "$outfile" "conversationId")
+      if [ -n "$cid" ] && [ "$cid" != "None" ]; then
+        CONV_IDS[$f]="$cid"
+        fc=$(grep -c '"fundName"' "$outfile" 2>/dev/null || echo 0)
+        mark_ok "  parse $f → convId=$cid（$fc funds）"
+        parse_ok=1
+        break
+      fi
     fi
-  else
-    mark_err "  parse $f HTTP $status（minimax vision 限流）"
+    if [ "$attempt" = "1" ]; then
+      warn "  parse $f 失败（HTTP $status），5s 后重试 1 次..."
+      sleep 5
+    fi
+  done
+  if [ "$parse_ok" = "0" ]; then
+    mark_err "  parse $f 二次失败（minimax vision 限流）"
     head -c 200 "$outfile" 2>/dev/null
   fi
 done
@@ -124,9 +120,23 @@ if [ -n "$first_cid" ]; then
   fi
 fi
 
-# ---------- A7-S03: 4 张图 confirm ----------
+# ---------- A7-S03: 4 张图 confirm（Python heredoc 重构 confirm body）----------
 section "A7-S03: confirm 4 张图（真实 MySQL upsert，1a.7-PRE dialect 验证）"
 declare -A CONFIRM_OK=()
+# 将解析脚本以 heredoc 落盘（避免 Windows + cygwin 嵌套引号）
+cat > /tmp/parse2confirm-$$.py <<'PYEOF'
+import json, sys
+data = json.load(open(sys.argv[1]))
+pa = data['data']['parsedAssets'][0]
+confirm = {
+    'userId': 1,
+    'snapshotDate': pa['snapshotDate'],
+    'confirmedOverwrite': False,
+    'includeBalance': False,
+    'parsedAssets': [pa]
+}
+print(json.dumps(confirm, ensure_ascii=False))
+PYEOF
 for f in "${!FILE_IDS[@]}"; do
   fid="${FILE_IDS[$f]}"
   parse_outfile="$API_OUT_DIR/03_s02_parse_${fid}.json"
@@ -134,29 +144,26 @@ for f in "${!FILE_IDS[@]}"; do
     mark_err "  skip confirm $f (no parse output)"
     continue
   fi
-  # 提取 ParsedAsset（不含 fileId/conversationId 字段）；用 sed 删除两行
-  pa=$(grep -v '"fileId"\|"conversationId"\|"userId"\|"confirmedOverwrite"' "$parse_outfile" | head -1)
-  if [ -z "$pa" ]; then
-    mark_err "  skip confirm $f (parse JSON 异常)"
+  # 用 Python 从 parse 响应抽取 .data.parsedAssets[0] 并包装成 confirm body
+  python /tmp/parse2confirm-$$.py "$parse_outfile" > /tmp/confirm-$$.json 2>/tmp/confirm-err.log
+  if [ ! -s /tmp/confirm-$$.json ]; then
+    mark_err "  skip confirm $f (parse JSON 转换失败: $(cat /tmp/confirm-err.log 2>/dev/null))"
     continue
   fi
-  # 注入 userId=1 + confirmedOverwrite=true（直接 sed 替换）
-  pa=$(echo "$pa" | sed 's/}/,"userId":1,"confirmedOverwrite":true}/' | head -1)
   outfile="$API_OUT_DIR/03_s03_confirm_${fid}.json"
-  echo "$pa" > /tmp/req-$$.json
   status=$(curl -sS -X POST http://127.0.0.1:8080/api/snapshot/confirm \
     -H "Content-Type: application/json" -H "X-User-Id: 1" \
-    --data @/tmp/req-$$.json \
+    --data @/tmp/confirm-$$.json \
     -o "$outfile" -w "%{http_code}" 2>&1)
-  rm -f /tmp/req-$$.json
   if [ "$status" = "200" ]; then
     CONFIRM_OK[$f]=1
-    mark_ok "  confirm $f → HTTP 200（1a.7-PRE MERGE INTO 修复生效）"
+    mark_ok "  confirm $f → HTTP 200（1a.7-PRE ON DUPLICATE KEY UPDATE 修复生效）"
   else
     mark_err "  confirm $f HTTP $status"
     head -c 200 "$outfile" 2>/dev/null
   fi
 done
+rm -f /tmp/parse2confirm-$$.json /tmp/confirm-$$.json /tmp/confirm-err.log /tmp/parse2confirm-$$.py
 
 # ---------- A7-S04: balance 端点 ----------
 section "A7-S04: /api/asset/balance"

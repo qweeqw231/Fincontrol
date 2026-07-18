@@ -118,3 +118,30 @@ human_size() {
   else echo "$((bytes/1048576))MB"
   fi
 }
+
+# ---------- 计数器（单步失败不退出）----------
+# 用法：source lib-common.sh 后直接用
+#   mark_ok "<msg>"   OK_COUNT+1 + 输出 OK 日志
+#   mark_err "<msg>"  ERR_COUNT+1 + 输出 ERROR 日志
+#   err_count_report  末尾输出 OK=N/ERR=M 汇总
+# 兼容旧脚本：declare -F 防御性检查，防止重复定义报错
+if ! declare -F mark_ok >/dev/null 2>&1; then
+  OK_COUNT=0
+  ERR_COUNT=0
+  mark_ok()  { OK_COUNT=$((OK_COUNT+1)); ok  "$1"; }
+  mark_err() { ERR_COUNT=$((ERR_COUNT+1)); err "$1"; }
+  err_count_report() {
+    section "汇总"
+    echo "  OK=$OK_COUNT / ERR=$ERR_COUNT"
+  }
+fi
+
+# ---------- JSON 字段提取（grep 替代 python，兼容 Windows + cygwin）----------
+# 用法：extract_json_field <file> <field>  → 输出 value（不带引号）
+# 例：fid=$(extract_json_field "$out" "fileId")
+if ! declare -F extract_json_field >/dev/null 2>&1; then
+  extract_json_field() {
+    local f="$1"; local field="$2"
+    grep -oE "\"${field}\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" "$f" 2>/dev/null | head -1 | cut -d'"' -f4
+  }
+fi

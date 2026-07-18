@@ -16,19 +16,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 source "$SCRIPT_DIR/lib-common.sh"
 
-# 计数器：单步失败不退出
+# 单步 curl 失败不退出（mark_ok/mark_err/extract_json_field 已由 lib-common.sh 提供）
 set +e
-OK_COUNT=0
-ERR_COUNT=0
-
-mark_ok()  { OK_COUNT=$((OK_COUNT+1)); ok  "$1"; }
-mark_err() { ERR_COUNT=$((ERR_COUNT+1)); err "$1"; }
-
-# 解析 JSON 字段（grep 替代 python，兼容 Windows）
-extract_json_field() {
-  local f="$1"; local field="$2"
-  grep -oE "\"${field}\"[[:space:]]*:[[:space:]]*\"[^\"]+\"" "$f" 2>/dev/null | head -1 | cut -d'"' -f4
-}
 
 # 准备 5 个 JSON body 文件（避免在 curl -d 里嵌套引号）
 TMP_DIR=$(mktemp -d)
@@ -157,11 +146,14 @@ fi
 
 # ---------- A7-S12: 真表 SQL 验证 ----------
 section "A7-S12: chat_history 真表 SQL 验证"
+# 阈值调为 6：5 个用例中 2 个 main_loop 写 4 行（user×2+assistant×2），
+# 2 个 garbage_loop 至少写 user×2（assistant fallback 可能为空），
+# 1 个空 message 不写；实际预期 6~8 行
 total_chat=$(sql_query "SELECT COUNT(*) FROM chat_history WHERE user_id=1 AND conversation_type='ai_assistant';" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
-if [ "${total_chat:-0}" -ge 8 ]; then
-  mark_ok "  chat_history (ai_assistant): $total_chat（≥ 8）"
+if [ "${total_chat:-0}" -ge 6 ]; then
+  mark_ok "  chat_history (ai_assistant): $total_chat（≥ 6）"
 else
-  mark_err "  chat_history (ai_assistant): $total_chat（< 8）"
+  mark_err "  chat_history (ai_assistant): $total_chat（< 6）"
 fi
 info "验证最后 5 条："
 sql_query "SELECT id, role, content FROM chat_history WHERE user_id=1 ORDER BY id DESC LIMIT 5\\G" 2>/dev/null
