@@ -1,0 +1,79 @@
+# ============================================
+# FinControl Docker Compose（Phase 1a.7 容器化验证）
+# ============================================
+# 一键起 MySQL + backend 两个容器：
+#   docker compose up -d
+#   docker compose down -v  # 删容器+卷
+#
+# 网络：fincontrol-net（bridge）
+# 端口：
+#   - MySQL:    主机 3307 → 容器 3306（避免与本地 mysqld 冲突）
+#   - Backend:  主机 8080 → 容器 8080
+# 卷：
+#   - fincontrol-mysql-data: MySQL 数据持久化
+#   - fincontrol-uploads:    截图文件持久化
+# ============================================
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: fincontrol-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: fincontrol
+      TZ: Asia/Shanghai
+    ports:
+      - "3307:3306"
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - fincontrol-mysql-data:/var/lib/mysql
+      # schema 首次启动时自动导入（绝对路径，避免 docker-compose 上下文路径问题）
+      - C:/Users/lbc19/Desktop/Fincontrol/docs/phase-0/db-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - fincontrol-net
+
+  backend:
+    build:
+      context: ./fincontrol-backend
+      dockerfile: Dockerfile
+    image: fincontrol-backend:dev
+    container_name: fincontrol-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # 后端在容器内连接同网络的 mysql 服务（不是 localhost）
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root
+      # Spring profile：跳过 application-local.yml（无 minimax key）
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      # AI key 如需可在此覆盖（默认 application.yml 占位符会强制抛 5001）
+      # VISION_API_KEY: sk-api-xxx
+      # TEXT_AI_API_KEY: sk-api-xxx
+    ports:
+      - "8080:8080"
+    volumes:
+      - fincontrol-uploads:/app/uploads
+    networks:
+      - fincontrol-net
+
+volumes:
+  fincontrol-mysql-data:
+  fincontrol-uploads:
+
+networks:
+  fincontrol-net:
+    driver: bridge

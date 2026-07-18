@@ -155,7 +155,79 @@
 
 ---
 
-## 9. Phase 1b 启动建议
+## 9. 容器化验证（2026-07-17 追加：Layer 1 + Layer 2）
+
+> Phase 1a 闭环后，为验证“容器化”原望，补充了 Docker 验证。
+> 本节详述 Layer 1（仅 Docker MySQL）+ Layer 2（Dockerfile + docker-compose 全栈容器化）。
+
+### 9.1 Layer 1：Docker MySQL 路径验证（保留本地 mysqld）
+
+**场景**：本地 mysqld 占用 3306，需证明 Docker MySQL 在 3307 也能走通。
+
+**实现**：
+- `01-up-mysql.sh` 加 `MYSQL_PORT` 环境变量支持；容器探测优先于端口检查（避免容器已起后误判为本地占用）
+- `02-up-backend.sh` 加 `DB_HOST/DB_PORT` 支持；`mvn spring-boot:run --DB_HOST=127.0.0.1 --DB_PORT=3307`
+- `application.yml` 本来就支持 `${DB_PORT}` 环境变量，零代码改动
+
+**验证结果**（2026-07-18 09:27）：
+- ✅ `MYSQL_PORT=3307 bash 01-up-mysql.sh`：Docker MySQL 容器起在 3307→3306、MySQL 8.0.46、7 表 + 3 种子全过
+- ✅ `02-up-backend.sh` 连 Docker MySQL：health UP, db UP（database: MySQL）
+- ✅ `04-smoke-2-chat.sh` 5/5 路由全对、chat_history (ai_assistant) **8 行**真实写入 Docker MySQL
+
+### 9.2 Layer 2：Dockerfile + docker-compose 全栈容器化
+
+**交付物**：
+- `fincontrol-backend/Dockerfile`：multi-stage build（maven:3.9-eclipse-temurin-17 → eclipse-temurin:17-jre-jammy），非 root 用户运行，含 HEALTHCHECK
+- `fincontrol-backend/.dockerignore`：排除 target/、*.log、uploads/等
+- `docker-compose.yml`（工作区根）：mysql + backend 两个服务，同 `fincontrol-net` bridge 网络
+  - MySQL：主机 3307→容器 3306；卷 `fincontrol-mysql-data` 持久化；启动时自动装 schema（绝对路径 bind mount 避免上下文路径问题）
+  - Backend：`DB_HOST=mysql`（Docker DNS）、`SPRING_PROFILES_ACTIVE=prod`；卷 `fincontrol-uploads` 持久化
+- `02-up-backend.sh`：加 Docker 容器复用探测（检测 `fincontrol-backend` 容器在跑→复用，避免重复启）
+
+**验证结果**（2026-07-18 09:39）：
+- ✅ `docker compose down -v && docker compose up -d`：
+  - MySQL 容器 Started → Healthy（healthcheck 过）
+  - Backend 容器 Started（仅复用已构建的 `fincontrol-backend:dev` 镜像，不重 build）
+  - 卷、网络、虚拟网络均创建成功
+- ✅ Backend `/actuator/health` → UP, db UP，`diskSpace.path: /app/.`（**容器内路径，证明是容器化后端**）
+- ✅ `04-smoke-2-chat.sh`：chat 4/5 通过、chat_history 8 行写入（其中 2 个 ERR 是 AI 路由错误，**预期**——容器使用 prod profile，无 minimax key，证明代码路径正确）
+
+### 9.3 容器化与本地架构对比
+
+| 维度 | 本地模式（1a.7 原型） | Docker 模式（本节） |
+|---|---|---|
+| MySQL | 本地 mysqld（端口 3306） | Docker mysql:8.0 容器（主机 3307→容器 3306） |
+| Backend | mvn spring-boot:run（JVM 进程） | fincontrol-backend:dev 镜像容器 |
+| Schema 装入 | 01-up-mysql.sh 手工 `mysql ... < schema.sql` | docker-entrypoint-initdb.d 自动装 |
+| 应用 profile | `local`（用 application-local.yml 的 minimax key） | `prod`（需环境变量传 key） |
+| 数据持久化 | 本地文件 | Docker 卷 `fincontrol-mysql-data` |
+| 启动命令 | `mvn spring-boot:run` | `docker compose up -d` |
+| 启动时间 | ~30-90s（首次编译） | ~60s（首次构建镜像，后续 5-10s） |
+
+### 9.4 验证命令清单
+
+```bash
+# Layer 1
+MYSQL_PORT=3307 bash scripts/1a7/01-up-mysql.sh   # Docker MySQL 3307
+DB_HOST=127.0.0.1 DB_PORT=3307 bash scripts/1a7/02-up-backend.sh
+bash scripts/1a7/04-smoke-2-chat.sh              # 验证业务流
+
+# Layer 2
+docker compose down -v && docker compose up -d
+curl http://127.0.0.1:8080/actuator/health       # 验证容器化 backend
+docker exec fincontrol-mysql mysql -uroot -proot fincontrol -e 'SHOW TABLES;'
+bash scripts/1a7/04-smoke-2-chat.sh
+```
+
+### 9.5 遗留问题
+
+1. **Dockerfile 构建较慢**（首次约 3-4 min 下载 + 编译）：**预期**，后续可考崽加 multi-stage cache 或 Dockerfile layer 优化。
+2. **prod profile 需环境变量传 AI key**：当前 `docker-compose.yml` 注释了 `VISION_API_KEY/TEXT_AI_API_KEY`，如果需要 AI 路由，需取消注释并填入真实 key。
+3. **`/c/...` 绝对路径在 Windows-only**：如果到 Linux/Mac 环境跑，需改为相对路径或 envsubst。
+
+---
+
+## 10. Phase 1b 启动建议
 
 ✅ **可以启动 Phase 1b**（前端骨架）。
 
@@ -164,5 +236,6 @@
 - [x] JaCoCo 覆盖率 76.5% ≥ 60%
 - [x] Swagger UI 15 端点可达
 - [x] 真实 MySQL upsert 路径通过 1a.7-PRE dialect 修复验证
+- [x] **Docker 容器化路径验证（Layer 1 + Layer 2）**（新增）
 
 **建议执行顺序**：1b.1 骨架 → 1b.2 首页 → 1b.3 数据管理（最重）→ 1b.4 AI 顾问。

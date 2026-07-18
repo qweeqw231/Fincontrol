@@ -1,0 +1,34 @@
+# 排除构建产物 & 临时文件，减小构建上下文
+target/
+*.jar
+*.war
+
+# IDE & OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+logs/
+backend.log
+mvn-*.log
+target/
+
+# 测试产物
+test-output/
+surefire-reports/
+reports/
+
+# 上传文件（容器内重新建）
+uploads/
+
+# Git
+.git/
+.gitignore
+
+# Docs（运行时不需要）
+../docs/
+README.md
