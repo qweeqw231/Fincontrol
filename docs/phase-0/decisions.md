@@ -272,3 +272,39 @@
 - **Phase 2 启动前**：补齐 target_ratio_history 表设计（决策 2 触发）
 - **Phase 3a 启动前**：补齐 nav_history、daily_returns、event_log、manual_nav_entry 4 张表设计
 </content>
+---
+
+## 决策 7：profit 字段拆分为 holding_profit / cumulative_profit（1a.8.7）
+
+**状态**：✅ 已锁定（2026-07-18）
+
+**背景**：
+- 1a.7 设计的 `asset_raw.profit` 单字段在 1a.8 真实数据验证中暴露出"语义混合"问题：同一只基金的「持有收益」与「累计收益」在用户发生过卖出操作时不同（如 `国泰黄金ETF联接C` 持有 -45.25 vs 累计 -40.24，差 5.01 元）
+- 单字段只能记录一个值，前端展示、汇总累计收益、数据仓库等都需要两个独立字段
+- 决策 3（profit 在首页明细表展示）只定义了读取位置，未规定字段语义
+
+**决策**：
+
+> 1. `asset_raw.profit` 保留作为兼容期（写入时与 holding_profit 同步填相同值），不破坏现有 v1.0 schema 与决策 3
+> 2. 新增 `asset_raw.holding_profit`（持有收益，严格=截图「持有收益」列，不含当日浮盈/累计已实现）
+> 3. 新增 `asset_raw.cumulative_profit`（累计收益，含已实现盈亏；卖出后分母更新）
+> 4. ScreenshotService / SnapShotConfirmService 写入时三列同步；AssetQueryService / SnapshotQueryService / DedupEngine 读时优先 holding_profit/cumulative_profit，旧 profit 字段保留兼容
+> 5. `total_asset` 规则收紧为：visible 优先（截图实际显示总资产），不可见时 sum-of-complete-funds 兜底（含余额宝/余额类），禁止模型凭空捏造
+
+**Schema 升级**：
+- `asset_raw` 表 +2 列：`holding_profit DECIMAL(12,2) NOT NULL DEFAULT 0` + `cumulative_profit DECIMAL(12,2) NOT NULL DEFAULT 0`（与 profit 并列）
+- MySQL 与 H2 测试 schema 同步 ALTER
+
+**DTO 升级**：
+- `ParsedAsset.FundLine` / `AssetBalanceItem` / `SnapshotFundDetail` 三处都加 `holdingProfit` + `cumulativeProfit`，`profit` 保留
+
+**Fixture 升级**：
+- 4 页 fixture 升级到 v3.1，19 项 unique fund 各自含 `expectedHoldingProfit` + `expectedCumulativeProfit`；`国泰黄金 ETF 联接 C` 保留 `holding=-45.25` / `cumulative=-40.24`
+
+**理由**：
+- 语义分离是真实数据暴露的硬需求，1a.7 字段设计在 v2 prompt 下被验证无法覆盖所有用户的累计/持有差异
+- `profit` 保留保证老读取路径（决策 3 首页明细表）继续工作
+- 旧 fixture / 旧测试同时支持 holding/cumulative 字段可分阶段迁移
+- `total_asset` 收紧避免模型幻觉（曾把 sum-of-funds 误认成 visible 总额）
+
+**回退条件**：无（schema 已 ALTER；不向后兼容 holding/cumulative 会破坏累计收益展示）

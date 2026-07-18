@@ -151,10 +151,14 @@ public class SnapshotQueryService {
             if (Boolean.FALSE.equals(row.getIsLatest())) {
                 continue;
             }
+            BigDecimal holding = nz(row.getHoldingProfit() != null ? row.getHoldingProfit() : row.getProfit());
+            BigDecimal cumulative = nz(row.getCumulativeProfit() != null ? row.getCumulativeProfit() : holding);
             details.add(SnapshotFundDetail.builder()
                     .fundName(row.getFundName())
                     .amount(nz(row.getAmount()))
-                    .profit(nz(row.getProfit()))
+                    .profit(holding)
+                    .holdingProfit(holding)
+                    .cumulativeProfit(cumulative)
                     .category(row.getCategory())
                     .build());
         }

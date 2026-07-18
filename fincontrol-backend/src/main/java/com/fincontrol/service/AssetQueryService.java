@@ -56,10 +56,14 @@ public class AssetQueryService {
             }
             BigDecimal amount = nz(row.getAmount());
             total = total.add(amount);
+            BigDecimal holding = nz(row.getHoldingProfit() != null ? row.getHoldingProfit() : row.getProfit());
+            BigDecimal cumulative = nz(row.getCumulativeProfit() != null ? row.getCumulativeProfit() : holding);
             items.add(AssetBalanceItem.builder()
                     .fundName(row.getFundName())
                     .amount(amount)
-                    .profit(nz(row.getProfit()))
+                    .profit(holding)
+                    .holdingProfit(holding)
+                    .cumulativeProfit(cumulative)
                     .category(row.getCategory())
                     .build());
         }

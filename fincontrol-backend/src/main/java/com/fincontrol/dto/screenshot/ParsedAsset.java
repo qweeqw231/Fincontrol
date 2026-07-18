@@ -46,6 +46,11 @@ public class ParsedAsset {
     public static class FundLine {
         private String fundName;
         private BigDecimal amount;
+        /** 1a.8.7 兼容期：与 holdingProfit 同步填充。 */
         private BigDecimal profit;
+        /** 严格=持有收益（不含当日浮盈）。1a.8.7。 */
+        private BigDecimal holdingProfit;
+        /** 含已实现盈亏。1a.8.7。 */
+        private BigDecimal cumulativeProfit;
     }
 }

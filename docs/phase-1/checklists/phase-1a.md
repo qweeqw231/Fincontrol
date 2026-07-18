@@ -135,3 +135,14 @@
 
 
 > 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md) 与 [`2026-07-18_phase1a8-acceptance-report.md`](../test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md)
+- [x] **1a.8.7** profit 拆分 holding + cumulative（v3.1 真实四图闭环 19/19 + 7884.68）— 完成日期：2026-07-18
+  - schema 升级：`asset_raw` +2 列（`holding_profit` / `cumulative_profit`），MySQL 已 ALTER + H2 同步
+  - DTO 升级：`ParsedAsset.FundLine` / `AssetBalanceItem` / `SnapshotFundDetail` 三处都加 2 字段
+  - Java 升级：`ScreenshotService` 解析 holding/cumulative；`SnapShotConfirmService` 三列同步写；`DedupEngine` MergedFund 内部双字段聚合；`AssetQueryService` / `SnapshotQueryService` 读取时优先 holding/cumulative
+  - prompt_versions 升 v2.2：强制 holding_profit / cumulative_profit 双字段 + total_asset visible 优先 sum 兜底
+  - fixture 升 v3.1：19 项 expectedHoldingProfit + expectedCumulativeProfit；国泰黄金C 保留 holding=-45.25 / cumulative=-40.24
+  - 新增 Phase1a8RealFourPageFixtureTest（3 用例）+ PromptLoaderTest 多版本保护 + ScreenshotServiceTest v2 嵌套 + SnapShotConfirmRealFourPageH2Test 1 用例（H2 三表镜像 + 双字段 7884.68）
+  - 01-real-four-page-e2e.ps1 升级：Compare-FundSet 校验 holding + cumulative；per-page totalAsset 规则
+  - 验证：mvn clean verify 186/186 PASS + JaCoCo 77.46%；真实四图 OCR E2E 19/19 唯一 + 7884.68 全对
+  - 唯一偏差归零（原 1 处 -40.24 vs -45.25 拆为 holding -45.25 / cumulative -40.24 双字段，模型语义正确；用户期望的累计 -40.24 正是 cumulative 字段）
+  - 详细见 [`2026-07-18_phase1a8-v2-real-data-check.md`](../test-records/manual-tests/2026-07-18_phase1a8-v2-real-data-check.md)

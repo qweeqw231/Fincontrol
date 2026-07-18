@@ -370,7 +370,9 @@ public class ScreenshotService {
                         ParsedAsset.FundLine line = new ParsedAsset.FundLine();
                         line.setFundName(textOrNull(f, "fund_name"));
                         line.setAmount(decimalOrNull(f, "amount"));
-                        line.setProfit(decimalOrNull(f, "profit"));
+                        line.setProfit(firstDecimal(f, "holding_profit", "profit"));
+                        line.setHoldingProfit(firstDecimal(f, "holding_profit", "profit"));
+                        line.setCumulativeProfit(firstDecimal(f, "cumulative_profit", "holding_profit", "profit"));
                         lines.add(line);
                     }
                 }
@@ -403,7 +405,9 @@ public class ScreenshotService {
                         ParsedAsset.FundLine line = new ParsedAsset.FundLine();
                         line.setFundName(firstText(h, "name", "fund_name"));
                         line.setAmount(decimalOrNull(h, "amount"));
-                        line.setProfit(firstDecimal(h, "holding_pnl", "profit"));
+                        line.setProfit(firstDecimal(h, "holding_pnl", "holding_profit", "profit"));
+                        line.setHoldingProfit(firstDecimal(h, "holding_pnl", "holding_profit", "profit"));
+                        line.setCumulativeProfit(firstDecimal(h, "cumulative_profit", "holding_pnl", "holding_profit", "profit"));
                         lines.add(line);
                     }
                     block.setFunds(lines);

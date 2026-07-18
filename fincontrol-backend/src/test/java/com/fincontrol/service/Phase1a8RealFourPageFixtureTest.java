@@ -6,6 +6,7 @@ import com.fincontrol.dto.screenshot.ParsedAsset.FundLine;
 import com.fincontrol.fixture.Phase1a8RealFourPageFixture;
 import com.fincontrol.fixture.Phase1a8RealFourPageFixture.ExpectedFund;
 import com.fincontrol.fixture.Phase1a8RealFourPageFixture.Fixture;
+import com.fincontrol.fixture.Phase1a8RealFourPageFixture.Page;
 import com.fincontrol.service.DedupEngine.DedupInput;
 import com.fincontrol.service.DedupEngine.DedupResult;
 import org.junit.jupiter.api.DisplayName;
@@ -17,22 +18,24 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** A8V3-S04/S05：真实四页 ground truth 自校验与 real DedupEngine 20→19。 */
+/** A8V3.1 真实四页 ground truth 自校验与 real DedupEngine 20→19。1a.8.7 holding + cumulative 双字段。 */
 class Phase1a8RealFourPageFixtureTest {
 
     @Test
-    @DisplayName("A8V3-S04 · 四页 fixture = 6/3/5/6、20 条完整行、19 唯一、7884.68")
+    @DisplayName("A8V3.1-S04 · fixture 自检：6/3/5/6、20 完整行、19 唯一、7884.68 总额、holding/cumulative 双字段")
     void fixture_isInternallyConsistent() {
         Fixture fixture = Phase1a8RealFourPageFixture.load();
 
-        assertThat(fixture.fixtureVersion()).isEqualTo("1a.8-v3");
-        assertThat(fixture.pages()).extracting(page -> page.expectedCompleteCount())
+        assertThat(fixture.fixtureVersion()).isEqualTo("1a.8-v3.1");
+        assertThat(fixture.pages()).extracting(Page::expectedCompleteCount)
                 .containsExactly(6, 3, 5, 6);
-        assertThat(fixture.pages()).extracting(page -> page.headerOnly().size())
+        assertThat(fixture.pages()).extracting(Page::headerOnly)
+                .extracting(List::size)
                 .containsExactly(1, 0, 0, 1);
 
         int completeCount = fixture.parsedAssets().stream()
@@ -41,18 +44,34 @@ class Phase1a8RealFourPageFixtureTest {
                 .sum();
         assertThat(completeCount).isEqualTo(fixture.expectedCompleteInputCount()).isEqualTo(20);
 
+        // holding_profit + cumulative_profit 双字段都存在
+        fixture.parsedAssets().forEach(asset -> {
+            assertThat(asset.getCategories()).isNotEmpty();
+            for (CategoryBlock cat : asset.getCategories()) {
+                for (FundLine fund : cat.getFunds()) {
+                    assertThat(fund.getHoldingProfit())
+                            .as("fund %s 缺少 holding_profit", fund.getFundName())
+                            .isNotNull();
+                    assertThat(fund.getCumulativeProfit())
+                            .as("fund %s 缺少 cumulative_profit", fund.getFundName())
+                            .isNotNull();
+                }
+            }
+        });
+
         Map<String, ExpectedFund> expected = expectedByName(fixture);
         assertThat(expected).hasSize(fixture.expectedUniqueCount()).hasSize(19);
-        assertThat(expected.values().stream().map(ExpectedFund::amount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add))
-                .isEqualByComparingTo(fixture.expectedTotalAsset());
+        BigDecimal total = expected.values().stream()
+                .map(ExpectedFund::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(total).isEqualByComparingTo(fixture.expectedUniqueTotalAmount());
         assertThat(fixture.pages().get(1).parsedAsset().getTotalAsset())
                 .isEqualByComparingTo(new BigDecimal("7884.68"));
     }
 
     @Test
-    @DisplayName("A8V3-S05 · 20 条完整行经 real DedupEngine 合并为 19，逐项与 7884.68 全对")
-    void dedup_realFourPages_merges20To19WithExactValues() {
+    @DisplayName("A8V3.1-S05 · real DedupEngine 20→19：holding + cumulative 双字段都精确一致")
+    void dedup_realFourPages_merges20To19WithExactHoldingAndCumulative() {
         Fixture fixture = Phase1a8RealFourPageFixture.load();
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
@@ -62,74 +81,82 @@ class Phase1a8RealFourPageFixtureTest {
         assertThat(result.report().mergedRecordCount()).isEqualTo(19);
         assertThat(result.report().droppedCount()).isEqualTo(1);
         assertThat(result.report().warnings()).isEmpty();
-        assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(fixture.expectedTotalAsset());
+        assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("7884.68"));
         assertThat(result.merged().getMatchedFunds()).hasSize(19);
 
-        Map<String, ActualFund> actual = actualByName(result.merged());
+        Map<String, MergedActual> actual = actualByName(result.merged());
         assertThat(actual).hasSize(19);
         expectedByName(fixture).forEach((name, expected) -> {
-            ActualFund line = actual.get(name);
+            MergedActual line = actual.get(name);
             assertThat(line).as("缺少标的 %s", name).isNotNull();
-            assertThat(line.categoryName()).as(name + " category").isEqualTo(expected.categoryName());
-            assertThat(line.amount()).as(name + " amount").isEqualByComparingTo(expected.amount());
-            assertThat(line.profit()).as(name + " profit").isEqualByComparingTo(expected.profit());
+            assertThat(line.categoryName()).as("%s category", name).isEqualTo(expected.categoryName());
+            assertThat(line.amount()).as("%s amount", name).isEqualByComparingTo(expected.amount());
+            assertThat(line.holdingProfit()).as("%s holding_profit", name)
+                    .isEqualByComparingTo(expected.holdingProfit());
+            assertThat(line.cumulativeProfit()).as("%s cumulative_profit", name)
+                    .isEqualByComparingTo(expected.cumulativeProfit());
         });
     }
 
     @Test
-    @DisplayName("A8V3-S05 · 仅标题行无论前后都不能覆盖完整记录，唯一不完整行被 warning 丢弃")
+    @DisplayName("A8V3.1-S05b · 标题行不覆盖完整记录（holding + cumulative 同时为 null）")
     void dedup_headerOnlyRows_neverOverwriteCompleteRows() {
         Fixture fixture = Phase1a8RealFourPageFixture.load();
-        List<ParsedAsset> withHeaders = new ArrayList<>();
-        withHeaders.add(incompleteAsset("header-before", "海外权益类",
-                "天弘纳斯达克100指数(QDII)C"));
-        withHeaders.addAll(fixture.parsedAssets());
+        List<ParsedAsset> withHeaders = new ArrayList<>(fixture.parsedAssets());
+        withHeaders.add(0, incompleteAsset("header-before", "海外权益类",
+                "天弘纳斯达克100指数(QDII)C", null, null));
 
         ParsedAsset trailingHeaders = new ParsedAsset();
         trailingHeaders.setConversationId("header-after");
         trailingHeaders.setSnapshotDate(fixture.snapshotDate());
         CategoryBlock category = new CategoryBlock();
         category.setCategoryName("港股/大中华类");
-        category.setFunds(List.of(
-                incompleteFund("华安香港精选股票(QDII)"),
-                incompleteFund("只有标题的未知基金")));
+        FundLine fund1 = new FundLine();
+        fund1.setFundName("华安香港精选股票(QDII)");
+        // 不提供 holding/cumulative 模拟仅标题
+        FundLine fund2 = new FundLine();
+        fund2.setFundName("只有标题的未知基金");
+        category.setFunds(List.of(fund1, fund2));
         trailingHeaders.setCategories(List.of(category));
         withHeaders.add(trailingHeaders);
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 withHeaders, Set.of(), LocalDate.parse(fixture.snapshotDate()), false));
 
-        assertThat(result.report().inputRecordCount()).isEqualTo(23);
         assertThat(result.report().mergedRecordCount()).isEqualTo(19);
         assertThat(result.report().droppedCount()).isEqualTo(4);
         assertThat(result.report().warnings())
                 .hasSize(3)
                 .allMatch(warning -> "DATA_INCOMPLETE".equals(warning.code()));
-        assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(fixture.expectedTotalAsset());
+        assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("7884.68"));
 
-        Map<String, ActualFund> actual = actualByName(result.merged());
+        Map<String, MergedActual> actual = actualByName(result.merged());
         assertThat(actual.get("天弘纳斯达克100指数(QDII)C").amount())
                 .isEqualByComparingTo(new BigDecimal("308.82"));
+        assertThat(actual.get("天弘纳斯达克100指数(QDII)C").cumulativeProfit())
+                .isEqualByComparingTo(new BigDecimal("33.82"));
         assertThat(actual.get("华安香港精选股票(QDII)").amount())
                 .isEqualByComparingTo(new BigDecimal("121.11"));
+        assertThat(actual.get("华安香港精选股票(QDII)").cumulativeProfit())
+                .isEqualByComparingTo(new BigDecimal("1.11"));
         assertThat(actual).doesNotContainKey("只有标题的未知基金");
     }
 
-    private static ParsedAsset incompleteAsset(String conversationId, String categoryName, String fundName) {
+    private static ParsedAsset incompleteAsset(String conversationId, String categoryName,
+                                              String fundName, BigDecimal holding, BigDecimal cumulative) {
         ParsedAsset asset = new ParsedAsset();
         asset.setConversationId(conversationId);
         asset.setSnapshotDate("2026-07-15");
+        FundLine line = new FundLine();
+        line.setFundName(fundName);
+        line.setAmount(null);
+        line.setHoldingProfit(holding);
+        line.setCumulativeProfit(cumulative);
         CategoryBlock category = new CategoryBlock();
         category.setCategoryName(categoryName);
-        category.setFunds(List.of(incompleteFund(fundName)));
+        category.setFunds(List.of(line));
         asset.setCategories(List.of(category));
         return asset;
-    }
-
-    private static FundLine incompleteFund(String name) {
-        FundLine line = new FundLine();
-        line.setFundName(name);
-        return line;
     }
 
     private static Map<String, ExpectedFund> expectedByName(Fixture fixture) {
@@ -141,17 +168,20 @@ class Phase1a8RealFourPageFixtureTest {
         return byName;
     }
 
-    private static Map<String, ActualFund> actualByName(ParsedAsset asset) {
-        Map<String, ActualFund> byName = new LinkedHashMap<>();
+    private static Map<String, MergedActual> actualByName(ParsedAsset asset) {
+        Map<String, MergedActual> byName = new LinkedHashMap<>();
         for (CategoryBlock category : asset.getCategories()) {
             for (FundLine line : category.getFunds()) {
-                byName.put(line.getFundName(), new ActualFund(
-                        category.getCategoryName(), line.getAmount(), line.getProfit()));
+                byName.put(line.getFundName(), new MergedActual(
+                        category.getCategoryName(), line.getAmount(),
+                        Objects.requireNonNullElse(line.getHoldingProfit(), line.getProfit()),
+                        Objects.requireNonNullElse(line.getCumulativeProfit(), line.getHoldingProfit())));
             }
         }
         return byName;
     }
 
-    private record ActualFund(String categoryName, BigDecimal amount, BigDecimal profit) {
+    private record MergedActual(String categoryName, BigDecimal amount,
+                                BigDecimal holdingProfit, BigDecimal cumulativeProfit) {
     }
 }

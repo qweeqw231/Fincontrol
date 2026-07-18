@@ -102,7 +102,8 @@ public class DedupEngine {
         List<ParsedAsset> dedupedHash = dedupedFileId;
 
         // 维度 C + D：按 fund_name + snapshot_date 合并（同名完整记录后入优先；按 category 累加）
-        // 1a.8 v3：跨页只有标题的行缺少 amount/profit，不能覆盖另一页的完整记录。
+        // 1a.8.7：holding_profit / cumulative_profit 双字段同名合并也取后入；跨页只有标题的行
+        // （holding 与 cumulative 同时为 null）不能覆盖另一页的完整记录。
         Map<String, MergedFund> mergedFunds = new LinkedHashMap<>();
         for (ParsedAsset a : dedupedHash) {
             if (a.getCategories() == null) continue;
@@ -118,9 +119,11 @@ public class DedupEngine {
                         continue;
                     }
 
+                    BigDecimal holding = effectiveHolding(fund);
+                    BigDecimal cumulative = effectiveCumulative(fund, holding);
                     boolean complete = categoryName != null
                             && fund.getAmount() != null
-                            && fund.getProfit() != null;
+                            && holding != null;
                     MergedFund existing = mergedFunds.get(key);
                     if (!complete) {
                         addIncompleteWarning(warnings, a, categoryName, key,
@@ -131,7 +134,7 @@ public class DedupEngine {
 
                     if (existing == null) {
                         mergedFunds.put(key, new MergedFund(
-                                key, categoryName, fund.getAmount(), fund.getProfit()));
+                                key, categoryName, fund.getAmount(), holding, cumulative));
                     } else {
                         // 维度 D 检查：同 fund_name 的两条完整记录若 category 不同，数据冲突。
                         if (!Objects.equals(existing.categoryName, categoryName)) {
@@ -140,9 +143,10 @@ public class DedupEngine {
                                     "fund '" + key + "' 在 " + existing.categoryName + " 与 " + categoryName + " 之间冲突"
                             );
                         }
-                        // 维度 C：两条都完整时后入优先（覆盖 amount / profit）。
+                        // 维度 C：两条都完整时后入优先（覆盖 amount / holding / cumulative）。
                         existing.amount = fund.getAmount();
-                        existing.profit = fund.getProfit();
+                        existing.holdingProfit = holding;
+                        existing.cumulativeProfit = cumulative;
                     }
                 }
             }
@@ -156,7 +160,12 @@ public class DedupEngine {
                     k -> new AggregatedCategory(k)
             );
             ac.totalAmount = ac.totalAmount.add(mf.amount);
-            ac.totalProfit = ac.totalProfit.add(mf.profit);
+            if (mf.holdingProfit != null) {
+                ac.totalHoldingProfit = ac.totalHoldingProfit.add(mf.holdingProfit);
+            }
+            if (mf.cumulativeProfit != null) {
+                ac.totalCumulativeProfit = ac.totalCumulativeProfit.add(mf.cumulativeProfit);
+            }
             ac.fundCount++;
         }
 
@@ -174,6 +183,8 @@ public class DedupEngine {
                                 fl.setFundName(mf.fundName);
                                 fl.setAmount(mf.amount);
                                 fl.setProfit(mf.profit);
+                                fl.setHoldingProfit(mf.holdingProfit);
+                                fl.setCumulativeProfit(mf.cumulativeProfit);
                                 return fl;
                             })
                             .collect(Collectors.toList());
@@ -300,33 +311,52 @@ public class DedupEngine {
     }
 
     /**
-     * 内部 record：fund 级聚合中间态。
+     * 内部 record：fund 级聚合中间态。1a.8.7 起 holding / cumulative 双字段。
      */
     private static final class MergedFund {
         final String fundName;
         String categoryName;
         BigDecimal amount;
         BigDecimal profit;
+        BigDecimal holdingProfit;
+        BigDecimal cumulativeProfit;
 
-        MergedFund(String fundName, String categoryName, BigDecimal amount, BigDecimal profit) {
+        MergedFund(String fundName, String categoryName,
+                   BigDecimal amount, BigDecimal holdingProfit, BigDecimal cumulativeProfit) {
             this.fundName = fundName;
             this.categoryName = categoryName;
             this.amount = amount;
-            this.profit = profit;
+            this.holdingProfit = holdingProfit;
+            this.cumulativeProfit = cumulativeProfit;
+            // 1a.8.7 兼容：profit 同步 = holdingProfit
+            this.profit = holdingProfit;
         }
     }
 
     /**
-     * 内部 record：category 级聚合中间态。
+     * 内部 record：category 级聚合中间态。1a.8.7 累计 holding + cumulative。
      */
     private static final class AggregatedCategory {
         final String categoryName;
         BigDecimal totalAmount = BigDecimal.ZERO;
         BigDecimal totalProfit = BigDecimal.ZERO;
+        BigDecimal totalHoldingProfit = BigDecimal.ZERO;
+        BigDecimal totalCumulativeProfit = BigDecimal.ZERO;
         int fundCount = 0;
 
         AggregatedCategory(String categoryName) {
             this.categoryName = categoryName;
         }
+    }
+
+    private static BigDecimal effectiveHolding(FundLine fund) {
+        if (fund == null) return null;
+        if (fund.getHoldingProfit() != null) return fund.getHoldingProfit();
+        return fund.getProfit();
+    }
+
+    private static BigDecimal effectiveCumulative(FundLine fund, BigDecimal holdingFallback) {
+        if (fund == null) return holdingFallback;
+        return fund.getCumulativeProfit() != null ? fund.getCumulativeProfit() : holdingFallback;
     }
 }

@@ -9,8 +9,8 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Phase 1a.8 v3 四页真实数据的唯一机器可读 fixture 入口。
- * 图片本身保持在 gitignored uploads/samples；本类只读取不含用户图片的期望 JSON。
+ * Phase 1a.8 v3.1 四页真实数据的唯一机器可读 fixture 入口。
+ * 升级点：每只基金必含 holding_profit / cumulative_profit 双字段；fixture 自带 per-page expectedTotalAsset。
  */
 public final class Phase1a8RealFourPageFixture {
 
@@ -37,6 +37,7 @@ public final class Phase1a8RealFourPageFixture {
             int expectedCompleteInputCount,
             int expectedUniqueCount,
             BigDecimal expectedTotalAsset,
+            BigDecimal expectedUniqueTotalAmount,
             List<Page> pages,
             List<ExpectedFund> expectedUnique
     ) {
@@ -50,6 +51,7 @@ public final class Phase1a8RealFourPageFixture {
             String fileName,
             int expectedCompleteCount,
             List<String> headerOnly,
+            BigDecimal expectedTotalAsset,
             ParsedAsset parsedAsset
     ) {
     }
@@ -58,7 +60,8 @@ public final class Phase1a8RealFourPageFixture {
             String categoryName,
             String fundName,
             BigDecimal amount,
-            BigDecimal profit
+            BigDecimal holdingProfit,
+            BigDecimal cumulativeProfit
     ) {
     }
 }

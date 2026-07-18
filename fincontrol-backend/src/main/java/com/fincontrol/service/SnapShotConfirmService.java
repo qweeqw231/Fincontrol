@@ -176,7 +176,16 @@ public class SnapShotConfirmService {
                 row.setFundName(fund.getFundName());
                 row.setCategory(cat.getCategoryName());
                 row.setAmount(fund.getAmount());
-                row.setProfit(fund.getProfit());
+                // 1a.8.7：profit / holdingProfit / cumulativeProfit 三列同步写
+                BigDecimal holding = fund.getHoldingProfit() != null
+                        ? fund.getHoldingProfit()
+                        : (fund.getProfit() != null ? fund.getProfit() : BigDecimal.ZERO);
+                BigDecimal cumulative = fund.getCumulativeProfit() != null
+                        ? fund.getCumulativeProfit()
+                        : holding;
+                row.setProfit(holding);
+                row.setHoldingProfit(holding);
+                row.setCumulativeProfit(cumulative);
                 row.setSource("screenshot_manual");
                 row.setIsLatest(true);
                 row.setConfirmedAt(LocalDateTime.now());

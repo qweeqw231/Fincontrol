@@ -1,47 +1,50 @@
 {
-  "fixtureVersion": "1a.8-v3",
+  "fixtureVersion": "1a.8-v3.1",
   "snapshotDate": "2026-07-15",
   "expectedCompleteInputCount": 20,
   "expectedUniqueCount": 19,
   "expectedTotalAsset": 7884.68,
+  "expectedUniqueTotalAmount": 7884.68,
   "pages": [
     {
       "pageId": "P1",
       "fileName": "phase1a2-alipay-fund-list-20260715-2355-1.jpg",
       "expectedCompleteCount": 6,
       "headerOnly": ["天弘纳斯达克100指数(QDII)C"],
+      "expectedTotalAsset": 2954.91,
       "parsedAsset": {
         "conversationId": "conv-fixture-p1",
         "snapshotDate": "2026-07-15",
+        "totalAsset": 2954.91,
         "categories": [
           {
             "categoryName": "海外权益类",
             "categoryTotal": 1178.80,
             "funds": [
-              {"fundName": "天弘纳斯达克100指数(QDII)A", "amount": 633.32, "profit": 51.32},
-              {"fundName": "摩根纳斯达克100指数(QDII)A", "amount": 545.48, "profit": 35.48}
+              {"fundName": "天弘纳斯达克100指数(QDII)A", "amount": 633.32, "holdingProfit": 51.32, "cumulativeProfit": 51.32},
+              {"fundName": "摩根纳斯达克100指数(QDII)A", "amount": 545.48, "holdingProfit": 35.48, "cumulativeProfit": 35.48}
             ]
           },
           {
             "categoryName": "商品类",
             "categoryTotal": 564.86,
             "funds": [
-              {"fundName": "国泰黄金ETF联接C", "amount": 564.86, "profit": -45.25}
+              {"fundName": "国泰黄金ETF联接C", "amount": 564.86, "holdingProfit": -45.25, "cumulativeProfit": -40.24}
             ]
           },
           {
             "categoryName": "固收类",
             "categoryTotal": 890.40,
             "funds": [
-              {"fundName": "长城短债债券A", "amount": 454.58, "profit": 4.58},
-              {"fundName": "鹏华纯债债券D", "amount": 435.82, "profit": 1.62}
+              {"fundName": "长城短债债券A", "amount": 454.58, "holdingProfit": 4.58, "cumulativeProfit": 4.58},
+              {"fundName": "鹏华纯债债券D", "amount": 435.82, "holdingProfit": 1.62, "cumulativeProfit": 1.62}
             ]
           },
           {
             "categoryName": "余额类",
             "categoryTotal": 320.85,
             "funds": [
-              {"fundName": "余额宝", "amount": 320.85, "profit": 1.89}
+              {"fundName": "余额宝", "amount": 320.85, "holdingProfit": 1.89, "cumulativeProfit": 1.89}
             ]
           }
         ]
@@ -52,6 +55,7 @@
       "fileName": "phase1a2-alipay-fund-list-20260715-2355-2.jpg",
       "expectedCompleteCount": 3,
       "headerOnly": [],
+      "expectedTotalAsset": 7884.68,
       "parsedAsset": {
         "conversationId": "conv-fixture-p2",
         "snapshotDate": "2026-07-15",
@@ -61,21 +65,21 @@
             "categoryName": "A股权益类",
             "categoryTotal": 1267.84,
             "funds": [
-              {"fundName": "诺安中证A100指数A", "amount": 1267.84, "profit": 46.84}
+              {"fundName": "诺安中证A100指数A", "amount": 1267.84, "holdingProfit": 46.84, "cumulativeProfit": 46.84}
             ]
           },
           {
             "categoryName": "商品类",
             "categoryTotal": 923.16,
             "funds": [
-              {"fundName": "国泰黄金ETF联接A", "amount": 923.16, "profit": -129.84}
+              {"fundName": "国泰黄金ETF联接A", "amount": 923.16, "holdingProfit": -129.84, "cumulativeProfit": -129.84}
             ]
           },
           {
             "categoryName": "货币类",
             "categoryTotal": 796.32,
             "funds": [
-              {"fundName": "中加货币E", "amount": 796.32, "profit": 2.32}
+              {"fundName": "中加货币E", "amount": 796.32, "holdingProfit": 2.32, "cumulativeProfit": 2.32}
             ]
           }
         ]
@@ -86,31 +90,33 @@
       "fileName": "phase1a2-alipay-fund-list-20260715-2355-3.jpg",
       "expectedCompleteCount": 5,
       "headerOnly": [],
+      "expectedTotalAsset": 605.20,
       "parsedAsset": {
         "conversationId": "conv-fixture-p3",
         "snapshotDate": "2026-07-15",
+        "totalAsset": 605.20,
         "categories": [
           {
             "categoryName": "商品类",
             "categoryTotal": 156.48,
             "funds": [
-              {"fundName": "华安黄金ETF联接C", "amount": 156.48, "profit": -26.27}
+              {"fundName": "华安黄金ETF联接C", "amount": 156.48, "holdingProfit": -26.27, "cumulativeProfit": -26.27}
             ]
           },
           {
             "categoryName": "港股/大中华类",
             "categoryTotal": 121.11,
             "funds": [
-              {"fundName": "华安香港精选股票(QDII)", "amount": 121.11, "profit": 1.11}
+              {"fundName": "华安香港精选股票(QDII)", "amount": 121.11, "holdingProfit": 1.11, "cumulativeProfit": 1.11}
             ]
           },
           {
             "categoryName": "A股权益类",
             "categoryTotal": 327.61,
             "funds": [
-              {"fundName": "广发价值回报混合C", "amount": 113.84, "profit": -6.16},
-              {"fundName": "易方达机器人ETF联接C", "amount": 108.20, "profit": 8.20},
-              {"fundName": "诺安中证A100指数C", "amount": 105.57, "profit": 5.57}
+              {"fundName": "广发价值回报混合C", "amount": 113.84, "holdingProfit": -6.16, "cumulativeProfit": -6.16},
+              {"fundName": "易方达机器人ETF联接C", "amount": 108.20, "holdingProfit": 8.20, "cumulativeProfit": 8.20},
+              {"fundName": "诺安中证A100指数C", "amount": 105.57, "holdingProfit": 5.57, "cumulativeProfit": 5.57}
             ]
           }
         ]
@@ -121,44 +127,46 @@
       "fileName": "phase1a2-alipay-fund-list-20260715-2356-1.jpg",
       "expectedCompleteCount": 6,
       "headerOnly": ["华安香港精选股票(QDII)"],
+      "expectedTotalAsset": 1493.73,
       "parsedAsset": {
         "conversationId": "conv-fixture-p4",
         "snapshotDate": "2026-07-15",
+        "totalAsset": 1493.73,
         "categories": [
           {
             "categoryName": "海外权益类",
             "categoryTotal": 493.51,
             "funds": [
-              {"fundName": "天弘纳斯达克100指数(QDII)C", "amount": 308.82, "profit": 33.82},
-              {"fundName": "招商纳斯达克100ETF联接(QDII)C", "amount": 184.69, "profit": 24.69}
+              {"fundName": "天弘纳斯达克100指数(QDII)C", "amount": 308.82, "holdingProfit": 33.82, "cumulativeProfit": 33.82},
+              {"fundName": "招商纳斯达克100ETF联接(QDII)C", "amount": 184.69, "holdingProfit": 24.69, "cumulativeProfit": 24.69}
             ]
           },
           {
             "categoryName": "固收类",
             "categoryTotal": 298.45,
             "funds": [
-              {"fundName": "安信新价值灵活配置混合A", "amount": 298.45, "profit": -1.55}
+              {"fundName": "安信新价值灵活配置混合A", "amount": 298.45, "holdingProfit": -1.55, "cumulativeProfit": -1.55}
             ]
           },
           {
             "categoryName": "A股权益类",
             "categoryTotal": 289.87,
             "funds": [
-              {"fundName": "国泰海通中证500指数增强C", "amount": 289.87, "profit": -0.13}
+              {"fundName": "国泰海通中证500指数增强C", "amount": 289.87, "holdingProfit": -0.13, "cumulativeProfit": -0.13}
             ]
           },
           {
             "categoryName": "港股/大中华类",
             "categoryTotal": 255.42,
             "funds": [
-              {"fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "profit": -8.58}
+              {"fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "holdingProfit": -8.58, "cumulativeProfit": -8.58}
             ]
           },
           {
             "categoryName": "商品类",
             "categoryTotal": 156.48,
             "funds": [
-              {"fundName": "华安黄金ETF联接C", "amount": 156.48, "profit": -26.27}
+              {"fundName": "华安黄金ETF联接C", "amount": 156.48, "holdingProfit": -26.27, "cumulativeProfit": -26.27}
             ]
           }
         ]
@@ -166,24 +174,24 @@
     }
   ],
   "expectedUnique": [
-    {"categoryName": "货币类", "fundName": "中加货币E", "amount": 796.32, "profit": 2.32},
-    {"categoryName": "固收类", "fundName": "长城短债债券A", "amount": 454.58, "profit": 4.58},
-    {"categoryName": "固收类", "fundName": "鹏华纯债债券D", "amount": 435.82, "profit": 1.62},
-    {"categoryName": "固收类", "fundName": "安信新价值灵活配置混合A", "amount": 298.45, "profit": -1.55},
-    {"categoryName": "商品类", "fundName": "国泰黄金ETF联接A", "amount": 923.16, "profit": -129.84},
-    {"categoryName": "商品类", "fundName": "国泰黄金ETF联接C", "amount": 564.86, "profit": -45.25},
-    {"categoryName": "商品类", "fundName": "华安黄金ETF联接C", "amount": 156.48, "profit": -26.27},
-    {"categoryName": "A股权益类", "fundName": "诺安中证A100指数A", "amount": 1267.84, "profit": 46.84},
-    {"categoryName": "A股权益类", "fundName": "国泰海通中证500指数增强C", "amount": 289.87, "profit": -0.13},
-    {"categoryName": "A股权益类", "fundName": "广发价值回报混合C", "amount": 113.84, "profit": -6.16},
-    {"categoryName": "A股权益类", "fundName": "易方达机器人ETF联接C", "amount": 108.20, "profit": 8.20},
-    {"categoryName": "A股权益类", "fundName": "诺安中证A100指数C", "amount": 105.57, "profit": 5.57},
-    {"categoryName": "海外权益类", "fundName": "天弘纳斯达克100指数(QDII)A", "amount": 633.32, "profit": 51.32},
-    {"categoryName": "海外权益类", "fundName": "天弘纳斯达克100指数(QDII)C", "amount": 308.82, "profit": 33.82},
-    {"categoryName": "海外权益类", "fundName": "摩根纳斯达克100指数(QDII)A", "amount": 545.48, "profit": 35.48},
-    {"categoryName": "海外权益类", "fundName": "招商纳斯达克100ETF联接(QDII)C", "amount": 184.69, "profit": 24.69},
-    {"categoryName": "港股/大中华类", "fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "profit": -8.58},
-    {"categoryName": "港股/大中华类", "fundName": "华安香港精选股票(QDII)", "amount": 121.11, "profit": 1.11},
-    {"categoryName": "余额类", "fundName": "余额宝", "amount": 320.85, "profit": 1.89}
+    {"categoryName": "货币类", "fundName": "中加货币E", "amount": 796.32, "holdingProfit": 2.32, "cumulativeProfit": 2.32},
+    {"categoryName": "固收类", "fundName": "长城短债债券A", "amount": 454.58, "holdingProfit": 4.58, "cumulativeProfit": 4.58},
+    {"categoryName": "固收类", "fundName": "鹏华纯债债券D", "amount": 435.82, "holdingProfit": 1.62, "cumulativeProfit": 1.62},
+    {"categoryName": "固收类", "fundName": "安信新价值灵活配置混合A", "amount": 298.45, "holdingProfit": -1.55, "cumulativeProfit": -1.55},
+    {"categoryName": "商品类", "fundName": "国泰黄金ETF联接A", "amount": 923.16, "holdingProfit": -129.84, "cumulativeProfit": -129.84},
+    {"categoryName": "商品类", "fundName": "国泰黄金ETF联接C", "amount": 564.86, "holdingProfit": -45.25, "cumulativeProfit": -40.24},
+    {"categoryName": "商品类", "fundName": "华安黄金ETF联接C", "amount": 156.48, "holdingProfit": -26.27, "cumulativeProfit": -26.27},
+    {"categoryName": "A股权益类", "fundName": "诺安中证A100指数A", "amount": 1267.84, "holdingProfit": 46.84, "cumulativeProfit": 46.84},
+    {"categoryName": "A股权益类", "fundName": "国泰海通中证500指数增强C", "amount": 289.87, "holdingProfit": -0.13, "cumulativeProfit": -0.13},
+    {"categoryName": "A股权益类", "fundName": "广发价值回报混合C", "amount": 113.84, "holdingProfit": -6.16, "cumulativeProfit": -6.16},
+    {"categoryName": "A股权益类", "fundName": "易方达机器人ETF联接C", "amount": 108.20, "holdingProfit": 8.20, "cumulativeProfit": 8.20},
+    {"categoryName": "A股权益类", "fundName": "诺安中证A100指数C", "amount": 105.57, "holdingProfit": 5.57, "cumulativeProfit": 5.57},
+    {"categoryName": "海外权益类", "fundName": "天弘纳斯达克100指数(QDII)A", "amount": 633.32, "holdingProfit": 51.32, "cumulativeProfit": 51.32},
+    {"categoryName": "海外权益类", "fundName": "天弘纳斯达克100指数(QDII)C", "amount": 308.82, "holdingProfit": 33.82, "cumulativeProfit": 33.82},
+    {"categoryName": "海外权益类", "fundName": "摩根纳斯达克100指数(QDII)A", "amount": 545.48, "holdingProfit": 35.48, "cumulativeProfit": 35.48},
+    {"categoryName": "海外权益类", "fundName": "招商纳斯达克100ETF联接(QDII)C", "amount": 184.69, "holdingProfit": 24.69, "cumulativeProfit": 24.69},
+    {"categoryName": "港股/大中华类", "fundName": "易方达恒生科技ETF联接(QDII)C", "amount": 255.42, "holdingProfit": -8.58, "cumulativeProfit": -8.58},
+    {"categoryName": "港股/大中华类", "fundName": "华安香港精选股票(QDII)", "amount": 121.11, "holdingProfit": 1.11, "cumulativeProfit": 1.11},
+    {"categoryName": "余额类", "fundName": "余额宝", "amount": 320.85, "holdingProfit": 1.89, "cumulativeProfit": 1.89}
   ]
 }

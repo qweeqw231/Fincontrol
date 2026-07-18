@@ -56,14 +56,23 @@ function Get-CompleteFunds($ParsedAsset) {
         foreach ($fund in @($categoryFunds)) {
             $amount = Get-PropertyValue $fund "amount"
             $profit = Get-PropertyValue $fund "profit"
+            $holding = Get-PropertyValue $fund "holdingProfit"
+            $cumulative = Get-PropertyValue $fund "cumulativeProfit"
             $fundName = [string](Get-PropertyValue $fund "fundName")
-            if ($null -ne $amount -and $null -ne $profit -and
+            # 1a.8.7 完整判定：amount + (profit 或 holding 或 cumulative) + name 非空
+            $hasProfit = ($null -ne $profit) -or ($null -ne $holding) -or ($null -ne $cumulative)
+            if ($null -ne $amount -and $hasProfit -and
                 -not [string]::IsNullOrWhiteSpace($fundName)) {
+                if ($null -eq $holding) { $holding = if ($null -ne $profit) { $profit } else { $cumulative } }
+                if ($null -eq $cumulative) { $cumulative = $holding }
+                $profitOut = if ($null -ne $profit) { $profit } else { $holding }
                 $funds += [pscustomobject]@{
                     categoryName = [string](Get-PropertyValue $category "categoryName")
                     fundName = $fundName
                     amount = [decimal]$amount
-                    profit = [decimal]$profit
+                    profit = [decimal]$profitOut
+                    holdingProfit = [decimal]$holding
+                    cumulativeProfit = [decimal]$cumulative
                 }
             }
         }
@@ -81,12 +90,17 @@ function Get-IncompleteFunds($ParsedAsset) {
         foreach ($fund in @($categoryFunds)) {
             $amount = Get-PropertyValue $fund "amount"
             $profit = Get-PropertyValue $fund "profit"
-            if ($null -eq $amount -or $null -eq $profit) {
+            $holding = Get-PropertyValue $fund "holdingProfit"
+            $cumulative = Get-PropertyValue $fund "cumulativeProfit"
+            $hasProfit = ($null -ne $profit) -or ($null -ne $holding) -or ($null -ne $cumulative)
+            if ($null -eq $amount -or -not $hasProfit) {
                 $funds += [pscustomobject]@{
                     categoryName = [string](Get-PropertyValue $category "categoryName")
                     fundName = [string](Get-PropertyValue $fund "fundName")
                     amount = $amount
                     profit = $profit
+                    holdingProfit = $holding
+                    cumulativeProfit = $cumulative
                 }
             }
         }
@@ -123,8 +137,11 @@ function Compare-FundSet {
         if ([decimal]$expected.amount -ne [decimal]$actual.amount) {
             $errors.Add("$Scope amount mismatch: $name expected=$($expected.amount) actual=$($actual.amount)")
         }
-        if ([decimal]$expected.profit -ne [decimal]$actual.profit) {
-            $errors.Add("$Scope profit mismatch: $name expected=$($expected.profit) actual=$($actual.profit)")
+        if ([decimal]$expected.holdingProfit -ne [decimal]$actual.holdingProfit) {
+            $errors.Add("$Scope holding_profit mismatch: $name expected=$($expected.holdingProfit) actual=$($actual.holdingProfit)")
+        }
+        if ([decimal]$expected.cumulativeProfit -ne [decimal]$actual.cumulativeProfit) {
+            $errors.Add("$Scope cumulative_profit mismatch: $name expected=$($expected.cumulativeProfit) actual=$($actual.cumulativeProfit)")
         }
     }
     foreach ($name in $actualByName.Keys) {
@@ -198,12 +215,20 @@ foreach ($page in @($fixture.pages)) {
     if ($actualComplete.Count -ne [int]$page.expectedCompleteCount) {
         $pageErrors += "$pageId count mismatch: expected=$($page.expectedCompleteCount) actual=$($actualComplete.Count)"
     }
+    # 1a.8.7 total_asset 规则：visible 优先；不可见则 sum-of-complete-funds 兜底；只在 fixture 给定期望时校验
     $expectedPageTotal = Get-PropertyValue $page.parsedAsset "totalAsset"
     $actualPageTotal = Get-PropertyValue $parse.Body.data "totalAsset"
     if ($null -ne $expectedPageTotal) {
         if ($null -eq $actualPageTotal -or
             [math]::Abs([decimal]$actualPageTotal - [decimal]$expectedPageTotal) -gt [decimal]0.01) {
             $pageErrors += "$pageId totalAsset mismatch: expected=$expectedPageTotal actual=$actualPageTotal"
+        }
+    } else {
+        # 不可见期望时使用 sum-of-complete-funds 兜底（模型若 visible 则覆盖为 visible）
+        $fallback = ($actualComplete | ForEach-Object { $_.amount } | Measure-Object -Sum).Sum
+        if ($null -ne $fallback -and $null -ne $actualPageTotal -and
+            [math]::Abs([decimal]$fallback - [decimal]$actualPageTotal) -gt [decimal]0.01) {
+            $pageErrors += "$pageId totalAsset fallback mismatch: actual=$actualPageTotal expected_sum=$fallback"
         }
     }
 

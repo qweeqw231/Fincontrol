@@ -44,8 +44,17 @@ public class AssetRaw {
     @TableField("amount")
     private BigDecimal amount;
 
+    /** 1a.8.7 拆分：与 {@link #holdingProfit} 同步写，保留兼容。 */
     @TableField("profit")
     private BigDecimal profit;
+
+    /** 严格=截图「持有收益」列（不含当日浮盈）。1a.8.7 新增。 */
+    @TableField("holding_profit")
+    private BigDecimal holdingProfit;
+
+    /** 含已实现盈亏（卖出后分母更新）。1a.8.7 新增。 */
+    @TableField("cumulative_profit")
+    private BigDecimal cumulativeProfit;
 
     @TableField("source")
     private String source;

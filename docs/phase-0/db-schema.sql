@@ -33,7 +33,10 @@ CREATE TABLE asset_raw (
   fund_code     VARCHAR(20)  NULL COMMENT '基金代码（远期预留，Phase 5）',
   category      VARCHAR(50)  NOT NULL COMMENT '七大类：货币类/固收类/商品类/A股权益类/海外权益类/港股/大中华类/余额类',
   amount        DECIMAL(12,2) NOT NULL COMMENT '持仓金额（元）',
-  profit        DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '持有收益（元），第四轮P0 2.1.1激活读取',
+  -- 1a.8.7 拆分：profit 与 holding_profit 同步写（兼容期），cumulative_profit 单独存。
+  profit           DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '持有收益（元），保留兼容；新代码优先读 holding_profit',
+  holding_profit   DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '持有收益（元），严格=截图「持有收益」列（不含当日浮盈）',
+  cumulative_profit DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '累计收益（元），含已实现盈亏（卖出后分母更新）',
   source        VARCHAR(30)  NOT NULL COMMENT '数据来源：screenshot_manual/screenshot_folder/manual_input/re_parse/manual_edit/import_csv/system_seed/data_correction',
   created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录首次写入时间',
   is_latest     BOOLEAN      NOT NULL DEFAULT TRUE COMMENT '是否为该快照日期的最新记录',
