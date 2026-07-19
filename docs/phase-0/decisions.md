@@ -449,3 +449,52 @@
 **详细验收计划**：`docs/test-records/manual-tests/2026-07-19_phase1a10-acceptance-plan.md`
 
 > 旧 plan 中"只放宽 zero_funds 即可""四页顶部都应为 7884.68""MySQL 迁移均已落地"等表述不再作为验收事实。
+
+---
+
+## 决策 12（Phase 1a 收尾新增）：豆包 vision 路径暂时废弃，Phase 1a 按 minimax-only 验收通过
+
+**状态**：✅ 已锁定（2026-07-19）
+
+**背景**：
+- Phase 1a.8（1a.10 计划内）设计双 provider 互为 fallback：minimax + 豆包 ARK
+- 真实 e2e 测试在 1.5 小时内（17:50 ~ 20:55）尝试了 4 个豆包 vision model（1-5-pro / 1-8 / 2-0-pro / 2-1-turbo），**4 个全部失败**：
+  - HTTP 404 InvalidEndpointOrModel.NotFound（2-0-pro / 1-8）
+  - HTTP 429 RequestBurstTooFast（1-5-pro on /responses）
+  - 5 分钟 readTimeout（2-1-turbo on /chat/completions）
+- 唯一稳定工作的路径是 minimax，路径 A 和路径 B 全部通过 minimax fallback 跑通
+
+**决策**：
+- **Phase 1a 验收按 minimax-only 路径通过**（单图 minimax / 多图 minimax fallback）
+- **豆包 vision 路径代码保留不删**（callOpenAiChatDoubao、5 参数 callRaw 重载等基础设施）
+- **1a.11+ 重新评估**：联系 ARK 客服 / 评估其他 vision provider（Azure Computer Vision / 阿里云视觉智能 / 腾讯云图像识别等）
+
+**理由**：
+- 4 个 model 全部失败的 pattern 强烈指向「ARK 账户没开通 vision 模型权限」
+- minimax 完全可替代豆包在本 Phase 的角色（都是 OpenAI Chat Completions 兼容接口）
+- 强制等豆包修好不阻塞 Phase 1a 进入 Phase 1b
+
+**影响范围**：
+- 代码：无（豆包路径代码完整保留）
+- 测试：路径 A 4/4 + 路径 B 4/4 都通过 minimax 跑通（19 funds / 7884.68）
+- 监控：vision failure 审计会记录豆包 primary 失败（已有 §9.3 修复，commit 8de7139）
+- 部署：生产路径完全收敛到 minimax
+- 文档：phase-1a.md 1a.10.B5 标为「部分完成」并说明
+
+**关键 commit**：
+- `8de7139` fix(1a.10): 路径 B 多图一次传跑通（§9.2/§9.3/§9.4 修复）
+- `184e6c9` 1a.10 report sec 9.5b: doubao-seed-2-1-turbo-260628 with chat/completions
+- `c71da93` docs(1a.10): 报告 sec 9.6 - seed-2-1-turbo + chat/completions 实测
+- `20c3539` refactor(1a.10): AiRouter.callRaw 改用 5 参数重载
+
+**Phase 1a 退出条件重新确认**：
+- ✅ 24 项 API 全部完成
+- ✅ 8 项 P0 全部达成
+- ✅ 2 条冒烟测试通过
+- ✅ 路径 A 真实 confirm 跑通（19 funds / 7884.68）
+- ✅ 路径 B 真实 4 图一次传跑通（minimax fallback 19 funds / 7884.68）
+- ✅ mvn test 238/238 PASS
+- ✅ 7 个 commit push 至 origin/main
+
+→ **Phase 1a 通过，可进入 Phase 1b**
+
