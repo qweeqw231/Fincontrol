@@ -72,7 +72,9 @@ public class VisionModelClient {
      */
     @Autowired
     public VisionModelClient(AiProperties properties) {
-        this(defaultMinimaxHttp(), defaultDoubaoHttp(), new ObjectMapper(),
+        this(buildHttp(properties.getVision().getMinimax().getTimeoutSeconds()),
+                buildHttp(properties.getVision().getDoubao().getTimeoutSeconds()),
+                new ObjectMapper(),
                 properties.getVision().getMinimax(),
                 properties.getVision().getDoubao());
     }
@@ -395,10 +397,14 @@ public class VisionModelClient {
     }
 
     private String executeRequest(OkHttpClient http, Request request, String providerLabel) {
+        long startMs = System.currentTimeMillis();
         try (Response response = http.newCall(request).execute()) {
             if (!response.isSuccessful()) {
                 String errBody = response.body() != null ? response.body().string() : "";
+                long latencyMs = System.currentTimeMillis() - startMs;
                 log.warn("{} 非 2xx: status={} body={}", providerLabel, response.code(), errBody);
+                writeProviderFailureAudit(providerLabel, "HTTP_" + response.code(),
+                        response.code(), errBody, latencyMs);
                 throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
                         providerLabel + " HTTP " + response.code() + ": " + errBody);
             }
@@ -406,19 +412,59 @@ public class VisionModelClient {
             JsonNode root = objectMapper.readTree(respBody);
             String content = extractContentFromProvider(root);
             if (content.isBlank()) {
+                long latencyMs = System.currentTimeMillis() - startMs;
+                writeProviderFailureAudit(providerLabel, "EMPTY_CONTENT", 200,
+                        "响应 content 为空", latencyMs);
                 throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
                         providerLabel + " 响应 content 为空: " + respBody);
             }
             return content;
         } catch (SocketTimeoutException ste) {
+            long latencyMs = System.currentTimeMillis() - startMs;
+            writeProviderFailureAudit(providerLabel, "TIMEOUT", 0, ste.getMessage(), latencyMs);
             throw new BusinessException(ErrorCode.VISION_TIMEOUT,
                     providerLabel + " 调用超时: " + ste.getMessage());
         } catch (JsonProcessingException jpe) {
+            long latencyMs = System.currentTimeMillis() - startMs;
+            writeProviderFailureAudit(providerLabel, "JSON_PARSE_ERROR", 0, jpe.getMessage(), latencyMs);
             throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
                     providerLabel + " 响应解析失败: " + jpe.getMessage());
         } catch (IOException e) {
+            long latencyMs = System.currentTimeMillis() - startMs;
+            writeProviderFailureAudit(providerLabel, "NETWORK_ERROR", 0, e.getMessage(), latencyMs);
             throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
                     providerLabel + " 网络错误: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 1a.10 P1（§9.3 修复）：provider 失败时落盘结构化审计日志。
+     * <p>路径 {@code docs/test-records/ocr-results/{date}/}（与 OCR 成功日志同目录，gitignored），
+     * 文件名 {@code {provider}-failure-{ts}.json}，含 provider / errorClass / statusCode / errorMessage / latencyMs / timestamp。
+     * <p>这样豆包 primary 失败后 5 秒内能定位原因（401 鉴权？429 限流？408 实际超时？网络断？）。
+     */
+    private void writeProviderFailureAudit(String provider, String errorClass,
+                                            int statusCode, String errorMessage, long latencyMs) {
+        try {
+            String date = java.time.LocalDate.now().toString();
+            java.nio.file.Path dir = java.nio.file.Paths.get("docs", "test-records",
+                    "ocr-results", date);
+            java.nio.file.Files.createDirectories(dir);
+            String ts = java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss_SSS"));
+            java.util.Map<String, Object> audit = new java.util.LinkedHashMap<>();
+            audit.put("event", "provider_failure");
+            audit.put("provider", provider);
+            audit.put("errorClass", errorClass);
+            audit.put("statusCode", statusCode);
+            audit.put("errorMessage", errorMessage == null ? "" : errorMessage);
+            audit.put("latencyMs", latencyMs);
+            audit.put("timestamp", java.time.LocalDateTime.now().toString());
+            java.nio.file.Path file = dir.resolve(provider + "-failure-" + ts + ".json");
+            java.nio.file.Files.writeString(file, objectMapper.writeValueAsString(audit));
+            log.warn("provider failure audit written: {}", file);
+        } catch (Exception auditEx) {
+            log.error("provider failure audit 落盘失败（非致命）: {}", auditEx.getMessage());
         }
     }
 
@@ -460,20 +506,29 @@ public class VisionModelClient {
     // ===================================================================
     // 静态工具：默认 OkHttp + 默认 Provider（1a.7 测试 + 占位启动兼容）
     // ===================================================================
-    private static OkHttpClient defaultMinimaxHttp() {
+
+    /**
+     * 1a.10 P1（§9.2 修复）：OkHttp client 读 {@code timeoutSeconds}（来自 {@code AiProperties.Provider}）。
+     * 之前两个 static 方法写死 60/120s，导致配置 {@code fincontrol.ai.vision.{minimax|doubao}.timeout-seconds=300} 不生效。
+     * 现在 read/write/connect 三个超时都用 {@code timeoutSeconds}，与 application.yml 配置一致。
+     */
+    private static OkHttpClient buildHttp(int timeoutSeconds) {
+        int t = Math.max(1, timeoutSeconds);
         return new OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(120, TimeUnit.SECONDS)
+                .readTimeout(t, TimeUnit.SECONDS)
+                .writeTimeout(t, TimeUnit.SECONDS)
                 .build();
     }
 
+    /** 1a.7 老单测兼容：60s readTimeout 写死（仅供 VisionModelClientTest 旧版构造器）。 */
+    private static OkHttpClient defaultMinimaxHttp() {
+        return buildHttp(60);
+    }
+
+    /** 1a.7 老单测兼容：120s readTimeout 写死（仅供 VisionModelClientTest 旧版构造器）。 */
     private static OkHttpClient defaultDoubaoHttp() {
-        return new OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(120, TimeUnit.SECONDS)
-                .writeTimeout(120, TimeUnit.SECONDS)
-                .build();
+        return buildHttp(120);
     }
 
     private static AiProperties.Provider defaultMinimaxProvider() {

@@ -132,7 +132,11 @@ public class AiRouter {
 
     private VisionResult callVisionInternal(List<File> imageFiles, String systemPrompt,
                                             String userMessage, int imageCount) {
-        String cacheKey = VISION_CACHE_PREFIX + orderedImageHashes(imageFiles);
+        // 1a.10 P1（§9.4 修复）：cache key 包含 system prompt SHA-256，
+        // 避免 prompt 升级到 v2.7.1 后命中 v2.5/v2.6 旧结果。
+        String cacheKey = VISION_CACHE_PREFIX
+                + orderedImageHashes(imageFiles)
+                + ":" + sha256Text(systemPrompt);
         VisionResult cached = visionCache.getIfPresent(cacheKey);
         if (cached != null) {
             log.info("vision cache hit imageCount={} key={}", imageCount, cacheKey);
@@ -263,6 +267,25 @@ public class AiRouter {
             return sb.toString();
         } catch (Exception e) {
             throw new RuntimeException("SHA-256 计算失败: " + file.getAbsolutePath(), e);
+        }
+    }
+
+    /**
+     * 1a.10 P1（§9.4 修复）：system prompt SHA-256。
+     * 之前 cache key 只看图片字节，prompt 升级到 v2.7.1 后可能命中 v2.5/v2.6 旧结果。
+     * 现在 cache key = 图片 hash + prompt hash，prompt 一变 key 就变，强制重跑。
+     */
+    private static String sha256Text(String s) {
+        if (s == null) s = "";
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(s.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(hash.length * 2);
+            for (byte b : hash) sb.append(String.format(Locale.ROOT, "%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            // 极端情况：MessageDigest 不可用时降级为固定串，避免阻塞请求
+            return "0".repeat(64);
         }
     }
 
