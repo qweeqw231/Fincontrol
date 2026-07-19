@@ -169,7 +169,7 @@ public class AiRouter {
         try {
             String primaryContent = retryWithCircuitBreaker(() ->
                     visionClient.callRaw(imageFiles, systemPrompt, userMessage,
-                            isMinimaxPrimary ? ApiStyle.OPENAI_CHAT : ApiStyle.OPENAI_RESPONSES));
+                            isMinimaxPrimary ? ApiStyle.OPENAI_CHAT : ApiStyle.OPENAI_RESPONSES, isMinimaxPrimary ? "minimax" : "doubao"));
             return VisionResult.success(
                     isMinimaxPrimary ? ChatHistory.PROVIDER_MINIMAX : ChatHistory.PROVIDER_DOUBAO,
                     false, primaryContent);
@@ -182,7 +182,7 @@ public class AiRouter {
 
         try {
             String fallbackContent = visionClient.callRaw(imageFiles, systemPrompt, userMessage,
-                    isMinimaxPrimary ? ApiStyle.OPENAI_RESPONSES : ApiStyle.OPENAI_CHAT);
+                    isMinimaxPrimary ? ApiStyle.OPENAI_RESPONSES : ApiStyle.OPENAI_CHAT, isMinimaxPrimary ? "doubao" : "minimax");
             return VisionResult.success(
                     isMinimaxPrimary ? ChatHistory.PROVIDER_DOUBAO : ChatHistory.PROVIDER_MINIMAX,
                     true, fallbackContent);
