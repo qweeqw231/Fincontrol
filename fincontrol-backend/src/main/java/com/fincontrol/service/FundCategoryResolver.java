@@ -5,6 +5,7 @@ import com.fincontrol.entity.FundCategoryMap;
 import com.fincontrol.mapper.FundCategoryMapMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -31,13 +32,24 @@ public class FundCategoryResolver {
     private static final Logger log = LoggerFactory.getLogger(FundCategoryResolver.class);
 
     private final FundCategoryMapMapper fundCategoryMapMapper;
+    private final CategoryMasterService categoryMasterService;
 
+    /** 保留纯单测/迁移前构造器；alias 回退 CategoryEnum。 */
     public FundCategoryResolver(FundCategoryMapMapper fundCategoryMapMapper) {
-        this.fundCategoryMapMapper = fundCategoryMapMapper;
+        this(fundCategoryMapMapper, null);
     }
 
-    /** Resolver 输出值对象。 */
-    public record ResolvedCategory(String canonicalName, boolean isUserConfirmed) {}
+    @Autowired
+    public FundCategoryResolver(FundCategoryMapMapper fundCategoryMapMapper,
+                                CategoryMasterService categoryMasterService) {
+        this.fundCategoryMapMapper = fundCategoryMapMapper;
+        this.categoryMasterService = categoryMasterService;
+    }
+
+    /** confirmedAt 仅在 user_correct 命中时非 null。 */
+    public record ResolvedCategory(String canonicalName,
+                                   boolean isUserConfirmed,
+                                   LocalDateTime confirmedAt) {}
 
     /**
      * 解析基金类别（不写库）。
@@ -49,7 +61,7 @@ public class FundCategoryResolver {
      */
     public ResolvedCategory resolve(String fundName, String rawCategory, Long userId) {
         if (fundName == null || fundName.isBlank()) {
-            return new ResolvedCategory(safeRaw(rawCategory), false);
+            return new ResolvedCategory(safeRaw(rawCategory), false, null);
         }
         if (userId == null) {
             throw new IllegalArgumentException("userId 必填");
@@ -60,7 +72,8 @@ public class FundCategoryResolver {
         if (userCorrect != null) {
             log.debug("resolver hit user_correct: userId={} fund={} → {} (last_seen_at={})",
                     userId, fundName, userCorrect.getCategory(), userCorrect.getLastSeenAt());
-            return new ResolvedCategory(userCorrect.getCategory(), true);
+            return new ResolvedCategory(
+                    userCorrect.getCategory(), true, userCorrect.getConfirmedAt());
         }
 
         // 2) ai_guess / user_manual 命中（按 fund_name 查任意 source）
@@ -68,20 +81,23 @@ public class FundCategoryResolver {
         if (any != null) {
             log.debug("resolver hit any-source: userId={} fund={} source={} → {}",
                     userId, fundName, any.getSource(), any.getCategory());
-            return new ResolvedCategory(any.getCategory(), false);
+            return new ResolvedCategory(any.getCategory(), false, null);
         }
 
         // 3) 未知名归一化（fromAlias）
-        String canonical = CategoryEnum.fromAlias(rawCategory);
+        String canonical = categoryMasterService != null
+                ? categoryMasterService.resolveAlias(rawCategory)
+                : CategoryEnum.fromAlias(rawCategory);
         if (canonical != null) {
-            log.debug("resolver hit fromAlias: fund={} raw={} → {}", fundName, rawCategory, canonical);
-            return new ResolvedCategory(canonical, false);
+            log.debug("resolver hit DB alias/fallback: fund={} raw={} → {}",
+                    fundName, rawCategory, canonical);
+            return new ResolvedCategory(canonical, false, null);
         }
 
         // 4) fallback：保留 raw 供前端高亮 + 抛 1004 错位（不抛错，解析路径保持幂等）
         log.warn("resolver fallback: fund={} raw={} 未命中任何映射，保留 raw 供前端高亮",
                 fundName, rawCategory);
-        return new ResolvedCategory(safeRaw(rawCategory), false);
+        return new ResolvedCategory(safeRaw(rawCategory), false, null);
     }
 
     /**

@@ -7,11 +7,14 @@ import com.fincontrol.dto.screenshot.ParsedAsset.CategoryBlock;
 import com.fincontrol.dto.screenshot.ParsedAsset.FundLine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -35,6 +38,25 @@ import java.util.stream.Collectors;
 public class DedupEngine {
 
     private static final Logger log = LoggerFactory.getLogger(DedupEngine.class);
+    private static final BigDecimal DEFAULT_DISCREPANCY_THRESHOLD_RATIO = new BigDecimal("0.01");
+
+    /** 0.01 表示 1%；由 application.yml 覆盖，纯 Java 单测默认保持 1%。 */
+    private final BigDecimal discrepancyThresholdRatio;
+
+    public DedupEngine() {
+        this(DEFAULT_DISCREPANCY_THRESHOLD_RATIO);
+    }
+
+    @Autowired
+    public DedupEngine(@Value("${fincontrol.dedup.discrepancy-threshold-pct:0.01}")
+                       BigDecimal discrepancyThresholdRatio) {
+        if (discrepancyThresholdRatio == null
+                || discrepancyThresholdRatio.compareTo(BigDecimal.ZERO) < 0
+                || discrepancyThresholdRatio.compareTo(BigDecimal.ONE) > 0) {
+            throw new IllegalArgumentException("discrepancy threshold 必须在 0~1 之间");
+        }
+        this.discrepancyThresholdRatio = discrepancyThresholdRatio;
+    }
 
     // ========================================================================
     // 输入 / 输出 record 类
@@ -137,7 +159,8 @@ public class DedupEngine {
 
                     if (existing == null) {
                         mergedFunds.put(key, new MergedFund(
-                                key, categoryName, fund.getAmount(), holding, cumulative));
+                                key, categoryName, fund.getAmount(), holding, cumulative,
+                                Boolean.TRUE.equals(fund.getIsUserConfirmed()), fund.getConfirmedAt()));
                     } else {
                         // 维度 D 检查：同 fund_name 的两条完整记录若 category 不同，数据冲突。
                         if (!Objects.equals(existing.categoryName, categoryName)) {
@@ -148,8 +171,11 @@ public class DedupEngine {
                         }
                         // 维度 C：两条都完整时后入优先（覆盖 amount / holding / cumulative）。
                         existing.amount = fund.getAmount();
+                        existing.profit = holding;
                         existing.holdingProfit = holding;
                         existing.cumulativeProfit = cumulative;
+                        existing.userConfirmed = Boolean.TRUE.equals(fund.getIsUserConfirmed());
+                        existing.confirmedAt = fund.getConfirmedAt();
                     }
                 }
             }
@@ -188,6 +214,8 @@ public class DedupEngine {
                                 fl.setProfit(mf.profit);
                                 fl.setHoldingProfit(mf.holdingProfit);
                                 fl.setCumulativeProfit(mf.cumulativeProfit);
+                                fl.setIsUserConfirmed(mf.userConfirmed);
+                                fl.setConfirmedAt(mf.confirmedAt);
                                 return fl;
                             })
                             .collect(Collectors.toList());
@@ -241,23 +269,30 @@ public class DedupEngine {
         merged.setTotalAsset(finalTotal);
         merged.setTotalAssetSource(totalSource);
 
-        // 校验：top vs dedupedSum 偏差 > 1% → DISCREPANCY warning（不阻塞）
+        // 校验：top vs dedupedSum 偏差超过可配置阈值 → DISCREPANCY warning（不阻塞）
         if (!tops.isEmpty()) {
             BigDecimal refTop = tops.get(0);
             BigDecimal diff = refTop.subtract(dedupedSum).abs();
+            BigDecimal diffRatio = refTop.compareTo(BigDecimal.ZERO) == 0
+                    ? BigDecimal.ZERO
+                    : diff.divide(refTop, 8, RoundingMode.HALF_UP);
             if (refTop.compareTo(BigDecimal.ZERO) != 0
-                    && diff.divide(refTop, 4, RoundingMode.HALF_UP)
-                            .compareTo(new BigDecimal("0.01")) > 0) {
-                BigDecimal diffPct = diff.multiply(BigDecimal.valueOf(100))
-                        .divide(refTop, 2, RoundingMode.HALF_UP);
+                    && diffRatio.compareTo(discrepancyThresholdRatio) > 0) {
+                BigDecimal diffPct = diffRatio.multiply(BigDecimal.valueOf(100))
+                        .setScale(2, RoundingMode.HALF_UP);
+                BigDecimal thresholdPct = discrepancyThresholdRatio.multiply(BigDecimal.valueOf(100))
+                        .stripTrailingZeros();
                 Map<String, Object> ctx = new LinkedHashMap<>();
                 ctx.put("top", refTop);
                 ctx.put("dedupedSum", dedupedSum);
-                ctx.put("diffRatio", diffPct);
+                ctx.put("diffRatio", diffRatio);
+                ctx.put("diffPct", diffPct);
+                ctx.put("thresholdRatio", discrepancyThresholdRatio);
+                ctx.put("thresholdPct", thresholdPct);
                 warnings.add(new DedupWarning(
                         "DISCREPANCY",
                         "顶部总资产 " + refTop + " 与 deduped sum " + dedupedSum
-                                + " 偏差 " + diffPct + "% > 1%阈值",
+                                + " 偏差 " + diffPct + "% > " + thresholdPct.toPlainString() + "%阈值",
                         ctx
                 ));
             }
@@ -377,14 +412,19 @@ public class DedupEngine {
         BigDecimal profit;
         BigDecimal holdingProfit;
         BigDecimal cumulativeProfit;
+        boolean userConfirmed;
+        LocalDateTime confirmedAt;
 
         MergedFund(String fundName, String categoryName,
-                   BigDecimal amount, BigDecimal holdingProfit, BigDecimal cumulativeProfit) {
+                   BigDecimal amount, BigDecimal holdingProfit, BigDecimal cumulativeProfit,
+                   boolean userConfirmed, LocalDateTime confirmedAt) {
             this.fundName = fundName;
             this.categoryName = categoryName;
             this.amount = amount;
             this.holdingProfit = holdingProfit;
             this.cumulativeProfit = cumulativeProfit;
+            this.userConfirmed = userConfirmed;
+            this.confirmedAt = confirmedAt;
             // 1a.8.7 兼容：profit 同步 = holdingProfit
             this.profit = holdingProfit;
         }

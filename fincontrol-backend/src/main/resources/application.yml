@@ -116,6 +116,10 @@ fincontrol:
   ocr:
     log-path: ${FINCONTROL_OCR_LOG_PATH:docs/test-records/ocr-results}
 
+  # 1a.10：top 与去重后唯一基金加和的偏差阈值。0.01 表示 1%。
+  dedup:
+    discrepancy-threshold-pct: ${FINCONTROL_DEDUP_DISCREPANCY_THRESHOLD_PCT:0.01}
+
   # 视觉模型配置（Phase 1a.5+，1a.8 保留兼容段 + 新增 fincontrol.ai.vision）
   # ============================================
   # 1a.8 兼容性说明：

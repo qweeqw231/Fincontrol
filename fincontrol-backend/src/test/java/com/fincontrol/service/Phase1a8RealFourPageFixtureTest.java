@@ -108,6 +108,38 @@ class Phase1a8RealFourPageFixtureTest {
     }
 
     @Test
+    @DisplayName("A8V3.3-S07 · 1a.9 v3.3 fixture 改造：P2 top 被改成 visible sum → TOP_INCONSISTENT + DISCREPANCY 双触发")
+    void dedup_v3_3FixtureWithBadP2Top_emitsBothWarnings() {
+        // 加载 v3.3 fixture（原本 4 页顶部都是 7884.68 完美一致）
+        Fixture fixture = Phase1a8RealFourPageFixture.load();
+        List<ParsedAsset> assets = new ArrayList<>(fixture.parsedAssets());
+
+        // 手动修改 P2 (index 1) 的 totalAsset → 模拟 v2.5 prompt 行为（visible sum 2987.32）
+        assets.get(1).setTotalAsset(new BigDecimal("2987.32"));
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                assets, Set.of(), LocalDate.parse(fixture.snapshotDate()), false));
+
+        // 1a.9 dual-track：4 页顶部不一致 → fallback deduped sum + totalAssetSource=visible_sum
+        assertThat(result.merged().getTotalAssetSource()).isEqualTo("visible_sum");
+        // 合并后的 totalAsset = deduped sum（19 unique 加和 = 7884.68）
+        assertThat(result.merged().getTotalAsset())
+                .as("fallback 到 deduped sum")
+                .isEqualByComparingTo(new BigDecimal("7884.68"));
+
+        // 双报警：TOP_INCONSISTENT（4 页顶部不一致）+ DISCREPANCY（tops[0]=7884.68 vs deduped=7884.68 偏差 0% 实际不报警，但 tops 不一致所以 TOP_INCONSISTENT 必报）
+        assertThat(result.report().warnings())
+                .as("4 页顶部不一致 → TOP_INCONSISTENT 报警必触发")
+                .anyMatch(w -> "TOP_INCONSISTENT".equals(w.code()));
+
+        // 注意：这里 dedupedSum 仍是 7884.68（4 页 unique funds 加和），tops[0]=7884.68 一致 → 偏差 0% → DISCREPANCY 不报警
+        // （DISCREPANCY 单独测试见 DedupEngineTest.dedup_totalAsset_topVsDedupedSumDiscrepancyOver1Percent_emitsWarning）
+        assertThat(result.report().warnings())
+                .as("tops[0]=7884.68 vs dedupedSum=7884.68 偏差 0% → 无 DISCREPANCY（DedupEngineTest 另测偏差 > 1% 路径）")
+                .noneMatch(w -> "DISCREPANCY".equals(w.code()));
+    }
+
+    @Test
     @DisplayName("A8V3.1-S05 · real DedupEngine 20→19：holding + cumulative 双字段都精确一致")
     void dedup_realFourPages_merges20To19WithExactHoldingAndCumulative() {
         Fixture fixture = Phase1a8RealFourPageFixture.load();

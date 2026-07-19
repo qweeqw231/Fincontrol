@@ -56,16 +56,19 @@ class FundCategoryResolverTest {
     // ========================================================================
 
     @Test
-    @DisplayName("优先级1: user_correct 命中 → canonical + isUserConfirmed=true")
+    @DisplayName("优先级1: user_correct 命中 → canonical + isUserConfirmed=true（同时透传 confirmedAt）")
     void resolve_userCorrectWins() {
+        LocalDateTime confirmed = LocalDateTime.of(2026, 7, 15, 12, 30);
+        FundCategoryMap hit = row("user_correct", "海外权益类");
+        hit.setConfirmedAt(confirmed);
         when(fundCategoryMapMapper.selectByUserCorrect(USER_ID, "国泰黄金C"))
-                .thenReturn(row("user_correct", "海外权益类"));
+                .thenReturn(hit);
 
         FundCategoryResolver.ResolvedCategory r = resolver.resolve("国泰黄金C", "QDII", USER_ID);
 
         assertThat(r.canonicalName()).isEqualTo("海外权益类");
         assertThat(r.isUserConfirmed()).isTrue();
-        // 不再查 ai_guess 行
+        assertThat(r.confirmedAt()).isEqualTo(confirmed);
         verify(fundCategoryMapMapper, never()).selectByUserAndFundName(anyLong(), any());
     }
 

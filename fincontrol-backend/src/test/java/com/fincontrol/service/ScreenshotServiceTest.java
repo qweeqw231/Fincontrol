@@ -6,6 +6,8 @@ import com.fincontrol.ai.AiRouter;
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
 import com.fincontrol.dto.screenshot.ParsedAsset;
+import com.fincontrol.dto.screenshot.ScreenshotBatchParseRequest;
+import com.fincontrol.dto.screenshot.ScreenshotBatchParseResponse;
 import com.fincontrol.dto.screenshot.ScreenshotParseRequest;
 import com.fincontrol.dto.screenshot.ScreenshotReparseRequest;
 import com.fincontrol.entity.ChatHistory;
@@ -31,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -65,19 +68,24 @@ class ScreenshotServiceTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private Path ocrRoot;
     private File fakeImage;
+    private File fakeImage2;
     private static final String FILE_ID = "test-file-id-001";
+    private static final String FILE_ID_2 = "test-file-id-002";
     private static final String CONVERSATION_ID = "conv-" + FILE_ID;
 
     @BeforeEach
     void setUp() throws Exception {
         fakeImage = tmp.resolve("img.png").toFile();
+        fakeImage2 = tmp.resolve("img-2.png").toFile();
         Files.write(fakeImage.toPath(), new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47});
+        Files.write(fakeImage2.toPath(), new byte[]{(byte) 0x89, 0x50, 0x4E, 0x48});
         ocrRoot = tmp.resolve("ocr-results");
         // 1a.8.8：注入 FundCategoryResolver（via FundCategoryMapMapper mock）
         service = new ScreenshotService(
                 storage, visionModelClient, aiRouter, promptLoader, chatHistoryMapper, mapper,
-                new FundCategoryResolver(fundCategoryMapMapper), ocrRoot.toString());
+                new FundCategoryResolver(fundCategoryMapMapper), new DedupEngine(), ocrRoot.toString());
         when(storage.resolveByFileId(FILE_ID)).thenReturn(fakeImage.toPath());
+        when(storage.resolveByFileId(FILE_ID_2)).thenReturn(fakeImage2.toPath());
         when(promptLoader.get("screenshot_parser")).thenReturn("SYS_PROMPT");
         // resolver 默认返 null（无 mapping）→ 调用 CategoryEnum.fromAlias 归一化
         when(fundCategoryMapMapper.selectByUserCorrect(any(), any())).thenReturn(null);
@@ -337,10 +345,131 @@ class ScreenshotServiceTest {
         assertThat(equity.getFunds()).hasSize(1);
         assertThat(equity.getFunds().get(0).getFundName()).isEqualTo("天弘纳斯达克100指数(QDII)A");
         assertThat(equity.getFunds().get(0).getAmount()).isEqualTo(new java.math.BigDecimal("633.32"));
-        assertThat(equity.getCategoryTotal()).isEqualTo(new java.math.BigDecimal("633.32"));
-        assertThat(equity.getCategoryPercentage()).isEqualTo(new java.math.BigDecimal("0.0803"));
-        assertThat(equity.getDeviation()).isEqualTo(new java.math.BigDecimal("51.32"));
+         assertThat(equity.getCategoryTotal()).isEqualTo(new java.math.BigDecimal("633.32"));
+         assertThat(equity.getCategoryPercentage()).isEqualTo(new java.math.BigDecimal("0.0803"));
+         assertThat(equity.getDeviation()).isEqualTo(new java.math.BigDecimal("51.32"));
 
-        verify(chatHistoryMapper, times(2)).insert(any(ChatHistory.class));
-    }
+         verify(chatHistoryMapper, times(2)).insert(any(ChatHistory.class));
+     }
+
+     // ================================================================
+     // 1a.10 路径 A：zero_funds 3-tier check 单元测试
+     // 场景：v2.6 prompt 顶部不可见时 fund 仍完整输出（含余额类 holding=null）→ 不判 zero_funds
+     // ================================================================
+     @Test
+     void parse_v2_6StyleWithBalanceCategoryHoldingNull_doesNotThrowZeroFunds() {
+         // 1a.10 路径 A：v2.6 prompt 输出的真实 4 页子页（无顶部"总资产"）
+         // - 货币类 1 只 (holding 非 null)
+         // - 商品类 1 只 (holding 非 null)
+         // - 海外权益类 2 只 (holding 非 null)
+         // - 余额类 1 只 (余额宝 holding=null，但 amount=320.85 + cumulative=1.89)
+         // - A股/港股/固收 3 只空类别
+         // 期望：parse 走通，不抛 VISION_ZERO_FUNDS（hasCompleteFund 命中）
+         String raw = "{" +
+                 "\"snapshot_date\":\"2026-07-15\"," +
+                 "\"categories\":[" +
+                 "  {\"category_name\":\"货币类\",\"funds\":[{\"fund_name\":\"中加货币E\",\"amount\":796.32,\"holding_profit\":2.32,\"cumulative_profit\":2.32}]}," +
+                 "  {\"category_name\":\"商品类\",\"funds\":[{\"fund_name\":\"国泰黄金ETF联接C\",\"amount\":564.86,\"holding_profit\":-45.25,\"cumulative_profit\":-40.24}]}," +
+                 "  {\"category_name\":\"海外权益类\",\"funds\":[{\"fund_name\":\"天弘纳斯达克100指数(QDII)A\",\"amount\":633.32,\"holding_profit\":51.32,\"cumulative_profit\":51.32},{\"fund_name\":\"摩根纳斯达克100指数(QDII)A\",\"amount\":545.48,\"holding_profit\":35.48,\"cumulative_profit\":35.48}]}," +
+                 "  {\"category_name\":\"余额类\",\"funds\":[{\"fund_name\":\"余额宝\",\"amount\":320.85,\"holding_profit\":null,\"cumulative_profit\":1.89}]}," +
+                 "  {\"category_name\":\"A股权益类\",\"funds\":[]}," +
+                 "  {\"category_name\":\"港股大中华类\",\"funds\":[]}," +
+                 "  {\"category_name\":\"固收类\",\"funds\":[{\"fund_name\":\"长城短债债券A\",\"amount\":454.58,\"holding_profit\":4.58,\"cumulative_profit\":4.58}]}" +
+                 "]}";
+         stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
+         stubExtractJson(raw);
+         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+         ScreenshotParseRequest req = new ScreenshotParseRequest();
+         req.setFileId(FILE_ID);
+         req.setUserId(1L);
+
+         ParsedAsset asset = service.parse(req);  // 不抛异常
+
+         assertThat(asset).isNotNull();
+         assertThat(asset.getCategories()).hasSize(7);
+         // 余额宝 holding=null 但 amount 非空 → 1a.10 路径 A 判有完整基金，不抛 zero_funds
+         ParsedAsset.CategoryBlock yue = asset.getCategories().stream()
+                 .filter(b -> "余额类".equals(b.getCategoryName())).findFirst().orElseThrow();
+         assertThat(yue.getFunds()).hasSize(1);
+         assertThat(yue.getFunds().get(0).getFundName()).isEqualTo("余额宝");
+         assertThat(yue.getFunds().get(0).getAmount()).isEqualByComparingTo(new java.math.BigDecimal("320.85"));
+         assertThat(yue.getFunds().get(0).getHoldingProfit()).isNull();
+         assertThat(yue.getFunds().get(0).getCumulativeProfit()).isEqualByComparingTo(new java.math.BigDecimal("1.89"));
+     }
+
+     @Test
+     void parseBatch_twoImages_callsVisionOnceAndReturnsDedupAudit() {
+         String raw = "{" +
+                 "\"snapshot_date\":\"2026-07-15\"," +
+                 "\"total_asset\":300.00," +
+                 "\"categories\":[{" +
+                 "\"category_name\":\"货币类\",\"funds\":[" +
+                 "{\"fund_name\":\"基金A\",\"amount\":100.00,\"holding_profit\":1.00}," +
+                 "{\"fund_name\":\"基金A\",\"amount\":100.00,\"holding_profit\":1.00}," +
+                 "{\"fund_name\":\"基金B\",\"amount\":200.00,\"holding_profit\":2.00}" +
+                 "]}]}";
+         when(aiRouter.callVision(anyList(), anyString(), anyString()))
+                 .thenReturn(AiRouter.VisionResult.success(ChatHistory.PROVIDER_DOUBAO, false, raw));
+         stubExtractJson(raw);
+         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+         ScreenshotBatchParseRequest req = new ScreenshotBatchParseRequest();
+         req.setUserId(1L);
+         req.setFileIds(List.of(FILE_ID, FILE_ID_2));
+
+         ScreenshotBatchParseResponse response = service.parseBatch(req);
+
+         assertThat(response.getImageCount()).isEqualTo(2);
+         assertThat(response.getUsedProvider()).isEqualTo(ChatHistory.PROVIDER_DOUBAO);
+         assertThat(response.getDedupReport().inputRecordCount()).isEqualTo(3);
+         assertThat(response.getDedupReport().mergedRecordCount()).isEqualTo(2);
+         assertThat(response.getDedupReport().droppedCount()).isEqualTo(1);
+         assertThat(response.getParsedAsset().getMatchedFunds())
+                 .containsExactlyInAnyOrder("基金A", "基金B");
+         assertThat(response.getParsedAsset().getTotalAsset())
+                 .isEqualByComparingTo("300.00");
+         assertThat(response.getParsedAsset().getTotalAssetSource()).isEqualTo("top");
+         verify(aiRouter, times(1)).callVision(anyList(), anyString(), anyString());
+         verify(chatHistoryMapper, times(2)).insert(any(ChatHistory.class));
+     }
+
+     @Test
+     void parseBatch_duplicateFileIds_rejectedBeforeVisionCall() {
+         ScreenshotBatchParseRequest req = new ScreenshotBatchParseRequest();
+         req.setUserId(1L);
+         req.setFileIds(List.of(FILE_ID, FILE_ID));
+
+         assertThatThrownBy(() -> service.parseBatch(req))
+                 .isInstanceOf(BusinessException.class)
+                 .hasMessageContaining("不允许重复");
+         verify(aiRouter, never()).callVision(anyList(), anyString(), anyString());
+     }
+
+     @Test
+     void parse_truncatedFundWithAllNullFields_throwsZeroFunds() {
+         // 1a.10 路径 A：边界场景——所有 fund name+amount 都 null（模型真输出 0 只）
+         // 期望：抛 VISION_ZERO_FUNDS（3-tier check 都"空"）
+         String raw = "{" +
+                 "\"snapshot_date\":\"2026-07-15\"," +
+                 "\"categories\":[" +
+                 "  {\"category_name\":\"货币类\",\"funds\":[{\"fund_name\":null,\"amount\":null}]}" +
+                 "]}";
+         stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
+         stubExtractJson(raw);
+         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+         ScreenshotParseRequest req = new ScreenshotParseRequest();
+         req.setFileId(FILE_ID);
+         req.setUserId(1L);
+
+         BusinessException thrown = null;
+         try {
+             service.parse(req);
+         } catch (BusinessException ex) {
+             thrown = ex;
+         }
+         assertThat(thrown).isNotNull();
+         assertThat(thrown.getErrorCode().getCode()).isEqualTo(3003);
+     }
 }

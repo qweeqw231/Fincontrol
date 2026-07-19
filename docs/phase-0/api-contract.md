@@ -3,6 +3,7 @@
 > Phase 0 产出。本文档定义 FinControl 所有 REST API 的端点、请求/响应结构、状态码。**前端开发与后端开发以此文档为准进行并行开发**。
 >
 > 与四轮评审的衔接：本文档补齐了第四轮评审（跨模块一致性）中识别的 API 契约缺失问题（问题 3.3.5）。
+> Phase 1a.10 增补：`POST /api/screenshot/parse-batch`（一次多图）+ `category-master` CRUD + 顶部总资产三级判定规则。
 
 ---
 
@@ -10,7 +11,7 @@
 
 | 字段 | 值 |
 |------|---|
-| 文档版本 | v1.0 |
+| 文档版本 | v1.1 |
 | 编写日期 | 2026-07-09 |
 | 编写者 | 架构审查助手 |
 | 配套文档 | FinControl 技术设计文档 v2.0 + 四轮评审 |
@@ -142,13 +143,22 @@ POST /api/screenshot/parse
     "conversationId": "uuid-yyyy",
     "snapshotDate": "2026-06-09",
     "totalAsset": 6899.37,
+    "totalAssetSource": "top",
     "sixCategoriesTotal": 6480.91,
     "balanceFund": 418.46,
+    "dedupedFundSum": 6480.91,
     "categories": [
       {
         "categoryName": "货币类",
         "funds": [
-          { "fundName": "中加货币E", "amount": 641.49, "profit": 1.49 }
+          {
+            "fundName": "中加货币E",
+            "amount": 641.49,
+            "holdingProfit": 1.49,
+            "cumulativeProfit": 1.49,
+            "category": "货币类",
+            "isUserConfirmed": false
+          }
         ],
         "categoryTotal": 641.49,
         "categoryPercentage": 9.90,
@@ -158,7 +168,10 @@ POST /api/screenshot/parse
     ],
     "matchedFunds": ["中加货币E", "长城短债A"],
     "unmatchedFunds": [],
-    "aiMarkdownReport": "### 支付宝资产明细...\n..."
+    "aiMarkdownReport": "### 支付宝资产明细...\n...",
+    "usedProvider": "minimax",
+    "fallbackTriggered": false,
+    "cacheHit": false
   }
 }
 ```
@@ -201,6 +214,102 @@ POST /api/screenshot/reparse
 **Response**：同 2.2
 
 **说明**：基于已存在的 conversationId，重新调用 DeepSeek API 解析原始截图。用于"重新解析"按钮。
+
+### 2.4 单次多图 parse-batch（1a.10 新增）
+
+```
+POST /api/screenshot/parse-batch
+```
+
+**Request**：
+
+```json
+{
+  "userId": 1,
+  "fileIds": ["uuid-1", "uuid-2", "uuid-3", "uuid-4"]
+}
+```
+
+- `userId`：必填
+- `fileIds`：1-10 个 fileId；不能重复；全部由 `/api/screenshot/upload` 返回
+
+**Response 200**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "imageCount": 4,
+    "parsedAsset": {
+      "conversationId": "conv-batch-uuid",
+      "snapshotDate": "2026-07-15",
+      "totalAsset": 7884.68,
+      "totalAssetSource": "top",
+      "dedupedFundSum": 7884.68,
+      "sixCategoriesTotal": 7563.83,
+      "balanceFund": 320.85,
+      "categories": [
+        {
+          "categoryName": "货币类",
+          "categoryTotal": 796.32,
+          "funds": [
+            {
+              "fundName": "中加货币E",
+              "amount": 796.32,
+              "holdingProfit": 2.32,
+              "cumulativeProfit": 2.32,
+              "category": "货币类",
+              "isUserConfirmed": false,
+              "confirmedAt": null
+            }
+          ]
+        }
+      ],
+      "matchedFunds": ["中加货币E", "长城短债债券A", "..."],
+      "unmatchedFunds": []
+    },
+    "dedupReport": {
+      "inputRecordCount": 20,
+      "mergedRecordCount": 19,
+      "droppedCount": 1,
+      "warnings": [
+        { "code": "TOP_INCONSISTENT", "message": "...", "context": {} },
+        { "code": "DISCREPANCY", "message": "...", "context": {} }
+      ]
+    },
+    "usedProvider": "minimax",
+    "fallbackTriggered": false,
+    "cacheHit": false
+  }
+}
+```
+
+**顶部总资产三级判定**（与单图共用，决策 9 增补 + 1a.10 收尾）：
+
+| 情景 | totalAsset | totalAssetSource | 报警 |
+|---|---|---|---|
+| 4 页 `top` 一致 | `top` 数值 | `top` | 无 |
+| 4 页 `top` 不一致 | `dedupedFundSum` | `visible_sum` | `TOP_INCONSISTENT` |
+| 4 页 `top` 全 null | `dedupedFundSum` | `visible_sum` | 无 |
+| 有 top 且偏差 > 1% | `top` | `top` | `DISCREPANCY` |
+
+> 「总金额」或「总资产」字样 + 数字（顺序未知，匹配任一即可）→ 记为该页 `top`。
+
+**字段语义**（1a.8.7 + 1a.10 增补）：
+
+- `parsedAsset.funds[].holdingProfit`：严格 = 截图「持有收益」列；余额类允许 NULL
+- `parsedAsset.funds[].cumulativeProfit`：累计收益；余额类可 NULL
+- `parsedAsset.funds[].isUserConfirmed`：true=user_correct，false=ai_guess/未命中
+- `parsedAsset.funds[].confirmedAt`：仅 user_correct 命中时非 null
+- `dedupedFundSum`：唯一基金加总（不含任何标题行）
+- `imageCount`：本批图片数（1-10）
+- `usedProvider` / `fallbackTriggered` / `cacheHit`：1a.8 监控字段
+
+**说明**：
+
+- 与 `POST /api/screenshot/parse`（单图）的差异：一次提交 1-10 个 fileId；上游 vision 模型一次接收全部图片，返回合并 JSON
+- 工具 A 与工具 B 是并存工具，**不互相替代**：工具 A 是 4 次单图 + 后端汇总，工具 B 是 1 次 4 图
+- 失败映射：图片不存在 → 1001 / fileId 重复 → 1001 / fileIds 为空 → 1001 / userId 缺失 → 1001
 
 ---
 
@@ -252,15 +361,15 @@ GET /api/snapshot/latest
 }
 ```
 
-**说明**：`includeDetail=true` 时，categories[].funds 会包含每只基金的明细（含 profit）。
+**说明**：`includeDetail=true` 时，categories[].funds 会包含每只基金的明细（含 holding/cumulative）。
 
-### 3.2 获取最新快照详情（含每只基金 profit）
+### 3.2 获取最新快照详情（含每只基金 holding + cumulative）
 
 ```
 GET /api/snapshot/latest/detail
 ```
 
-**Response**：同 3.1 + categories[].funds 数组
+**Response 200**：同 3.1 + categories[].funds 数组
 
 ```json
 {
@@ -273,7 +382,8 @@ GET /api/snapshot/latest/detail
           {
             "fundName": "中加货币E",
             "amount": 641.49,
-            "profit": 1.49,
+            "holdingProfit": 1.49,
+            "cumulativeProfit": 1.49,
             "category": "货币类"
           }
         ]
@@ -355,14 +465,27 @@ POST /api/snapshot/confirm
 
 ```json
 {
-  "conversationId": "uuid-yyyy",
-  "snapshotDate": "2026-06-09",
-  "fundMappings": [
-    { "fundName": "中加货币E", "category": "货币类", "amount": 641.49, "profit": 1.49, "isIgnored": false },
-    { "fundName": "某未知基金", "category": "商品类", "amount": 100.00, "profit": 0, "isIgnored": false },
-    { "fundName": "噪音基金", "category": null, "amount": 0, "profit": 0, "isIgnored": true }
-  ],
-  "userId": 1
+  "userId": 1,
+  "snapshotDate": "2026-07-15",
+  "confirmedOverwrite": false,
+  "includeBalance": true,
+  "parsedAssets": [
+    {
+      "conversationId": "conv-uuid-yyyy",
+      "snapshotDate": "2026-07-15",
+      "totalAsset": 7884.68,
+      "totalAssetSource": "top",
+      "categories": [
+        {
+          "categoryName": "货币类",
+          "categoryTotal": 796.32,
+          "funds": [
+            { "fundName": "中加货币E", "amount": 796.32, "holdingProfit": 2.32, "cumulativeProfit": 2.32 }
+          ]
+        }
+      ]
+    }
+  ]
 }
 ```
 
@@ -372,29 +495,27 @@ POST /api/snapshot/confirm
 {
   "code": 0,
   "data": {
-    "snapshotId": 123,
-    "snapshotDate": "2026-06-09",
-    "isLatest": true,
-    "overwrittenExistingData": true,
-    "newMappingCount": 1,
-    "ignoredFundCount": 1
+    "assetRawInserted": 19,
+    "assetSnapshotUpserted": 7,
+    "dedupReport": {
+      "inputRecordCount": 20,
+      "mergedRecordCount": 19,
+      "droppedCount": 1,
+      "warnings": []
+    },
+    "warnings": [],
+    "rollbackAvailable": true,
+    "rollbackDeadline": "2026-07-15T20:30:10"
   }
 }
 ```
 
 **说明**：
 
-- `isLatest=true`：本次入库已设为该日期最新
-- `overwrittenExistingData=true`：覆盖了同日已有数据
-- `newMappingCount`：新增的 fund_category_map 条目数
-- `ignoredFundCount`：标记为忽略的基金数（**第三轮 P0 2.2.4.5 解决**）
-
-**状态码**：
-
-- 200：成功
-- 400：fundMappings 为空或格式错误
-- 404：conversationId 不存在
-- 409：快照日期与其他对话冲突（code 2002）
+- `parsedAssets`：从 `/parse` 或 `/parse-batch` 拿到
+- `confirmedOverwrite`：true 覆盖同日已有快照
+- `rollbackAvailable`：10 秒内可撤销
+- 错误码：2001（对话不存在）/ 2002（同日已有快照 + 未 confirmedOverwrite）
 
 ### 4.2 撤销入库（10 秒撤销）
 
@@ -410,9 +531,11 @@ DELETE /api/snapshot/confirm/{snapshotId}
 {
   "code": 0,
   "data": {
-    "deletedAssetRawCount": 18,
-    "deletedFundMappingCount": 0,
-    "restoredSnapshotId": 122
+    "rolledBack": true,
+    "snapshotDate": "2026-07-15",
+    "previousSnapshotRestored": null,
+    "assetRawUpdated": 19,
+    "assetSnapshotUpdated": 7
   }
 }
 ```
@@ -457,7 +580,7 @@ GET /api/correction/defaults
       "商品类": 25,
       "A股权益类": 25,
       "海外权益类": 20,
-      "港股/大中华类": 5
+      "港股大中华类": 5
     },
     "budgetLimit": 1000,
     "purchaseThreshold": 100,
@@ -641,7 +764,7 @@ GET /api/config
       "商品类": 25,
       "A股权益类": 25,
       "海外权益类": 20,
-      "港股/大中华类": 5
+      "港股大中华类": 5
     },
     "budgetLimit": 1000,
     "purchaseThreshold": 100,
@@ -666,7 +789,7 @@ POST /api/config
     "商品类": 30,
     "A股权益类": 25,
     "海外权益类": 15,
-    "港股/大中华类": 5
+    "港股大中华类": 5
   },
   "budgetLimit": 1000,
   "purchaseThreshold": 100,
@@ -692,7 +815,7 @@ POST /api/config
 
 - 仅写入 `user_config` 表（**第四轮 P0 2.2.1 解锁决策 = 解读 4**）
 - 不触发 `asset_snapshot` 的级联更新
-- `triggeredSnapshotUpdate=false` 是预期的（与原文档 7.4.4 的"同步更新 asset_snapshot 表的 target_ratio 字段"不同，此处明确选择解读 4）
+- `triggeredSnapshotUpdate=false` 是预期的
 
 ---
 
@@ -708,6 +831,7 @@ GET /api/category-map/match
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
+| userId | ❌ | 用户 ID（默认 1）|
 | funds | ✅ | 基金名称列表，逗号分隔（最多 50 个）|
 
 **示例**：`?funds=中加货币E,长城短债债券A,未知基金`
@@ -719,7 +843,14 @@ GET /api/category-map/match
   "code": 0,
   "data": {
     "matchedFunds": [
-      { "fundName": "中加货币E", "category": "货币类", "source": "ai_guess", "confirmedAt": "2026-06-09T20:30:00" }
+      {
+        "fundName": "中加货币E",
+        "category": "货币类",
+        "source": "ai_guess",
+        "confirmedAt": "2026-06-09T20:30:00",
+        "isUserConfirmed": false,
+        "lastSeenAt": "2026-07-15T20:30:00"
+      }
     ],
     "unmatchedFunds": ["未知基金"]
   }
@@ -738,7 +869,6 @@ POST /api/category-map/update
 {
   "fundName": "某基金",
   "category": "商品类",
-  "source": "user_correct",
   "userId": 1
 }
 ```
@@ -765,11 +895,196 @@ POST /api/category-map/update
 - 不存在的映射：`INSERT new row with source='user_manual'`
 - **第一轮 P0 2.2 解锁决策**
 
+### 7.3 删除映射（多用户隔离）
+
+```
+DELETE /api/category-map/{userId}/{fundName}
+```
+
+**Response 200**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "deleted": true,
+    "userId": 1,
+    "fundName": "某基金"
+  }
+}
+```
+
+### 7.4 重置映射为 ai_guess
+
+```
+POST /api/category-map/reset
+```
+
+**Request**：
+
+```json
+{
+  "userId": 1,
+  "fundName": "某基金"
+}
+```
+
+**Response 200**：
+
+```json
+{
+  "code": 0,
+  "data": { "reset": true }
+}
+```
+
+### 7.5 列出 stale user_correct 映射
+
+```
+GET /api/category-map/stale
+```
+
+**Query 参数**：
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| userId | ✅ | 用户 ID |
+| days | ❌ | stale 阈值（默认 90 天）|
+
+**Response 200**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "items": [
+      {
+        "fundName": "国泰黄金ETF联接A",
+        "category": "商品类",
+        "lastSeenAt": "2025-04-01T10:00:00",
+        "confirmedAt": "2025-04-01T10:00:00"
+      }
+    ]
+  }
+}
+```
+
 ---
 
-## 8. 对话与 AI 顾问 API
+## 8. 基金大类主数据 API（1a.10 新增）
 
-### 8.1 发送消息
+### 8.1 列出大类主数据
+
+```
+GET /api/category-master
+```
+
+**Query 参数**：
+
+| 参数 | 必填 | 说明 |
+|------|------|------|
+| includeInactive | ❌ | 是否含停用项（默认 false）|
+
+**Response 200**：
+
+```json
+{
+  "code": 0,
+  "data": [
+    {
+      "id": 1,
+      "nameCanonical": "货币类",
+      "aliases": ["货币", "货基", "货币基金"],
+      "active": true,
+      "createdAt": "2026-07-19T11:55:24",
+      "updatedAt": "2026-07-19T11:55:24"
+    }
+  ]
+}
+```
+
+### 8.2 新建大类主数据
+
+```
+POST /api/category-master
+```
+
+**Request**：
+
+```json
+{
+  "nameCanonical": "商品类",
+  "aliases": ["商品", "黄金", "大宗商品"],
+  "active": true
+}
+```
+
+**Response 200**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": 3,
+    "nameCanonical": "商品类",
+    "aliases": ["商品", "黄金", "大宗商品"],
+    "active": true,
+    "createdAt": "2026-07-19T11:55:24",
+    "updatedAt": "2026-07-19T11:55:24"
+  }
+}
+```
+
+### 8.3 更新大类主数据
+
+```
+PUT /api/category-master/{id}
+```
+
+**Request**：
+
+```json
+{
+  "nameCanonical": "商品类",
+  "aliases": ["商品", "黄金", "大宗商品", "黄金ETF"],
+  "active": true
+}
+```
+
+**Response 200**：同 8.2
+
+### 8.4 停用大类主数据（软删）
+
+```
+DELETE /api/category-master/{id}
+```
+
+**Response 200**：
+
+```json
+{
+  "code": 0,
+  "data": {
+    "id": 3,
+    "nameCanonical": "商品类",
+    "active": false,
+    "updatedAt": "2026-07-19T12:00:00"
+  }
+}
+```
+
+**说明**：
+
+- 软停用：保留历史快照引用的 canonical 语义
+- 7 个 canonical 启动 seed：货币类 / 固收类 / 商品类 / A股权益类 / 海外权益类 / 港股大中华类 / 余额类
+- alias 冲突检测：不能跨 canonical 重复
+- 错误码：1004（canonical 不在 7 canonical 之一）/ 2004（alias 冲突）
+
+---
+
+## 9. 对话与 AI 顾问 API
+
+### 9.1 发送消息
 
 ```
 POST /api/chat/send
@@ -819,7 +1134,7 @@ POST /api/chat/send
 - 每次 API 调用都重新组装 messages（第三轮 P0 3.2.1 解锁决策）
 - `routedTo` 标识走的是主回路（main_loop）还是垃圾回路（garbage_loop）
 
-### 8.2 获取对话列表
+### 9.2 获取对话列表
 
 ```
 GET /api/conversations
@@ -860,7 +1175,7 @@ GET /api/conversations
 - `fundCount`、`status` 通过派生查询得到（第四轮 2.3.1 推荐方案 A）
 - 不需要单独的 conversation_meta 表
 
-### 8.3 获取单个对话详情
+### 9.3 获取单个对话详情
 
 ```
 GET /api/conversations/{conversationId}
@@ -891,7 +1206,7 @@ GET /api/conversations/{conversationId}
 }
 ```
 
-### 8.4 新建对话
+### 9.4 新建对话
 
 ```
 POST /api/conversations
@@ -919,7 +1234,7 @@ POST /api/conversations
 }
 ```
 
-### 8.5 删除对话
+### 9.5 删除对话
 
 ```
 DELETE /api/conversations/{conversationId}
@@ -938,9 +1253,9 @@ DELETE /api/conversations/{conversationId}
 
 ---
 
-## 9. 首页辅助 API
+## 10. 首页辅助 API
 
-### 9.1 获取余额类卡片数据
+### 10.1 获取余额类卡片数据
 
 ```
 GET /api/asset/balance
@@ -954,8 +1269,13 @@ GET /api/asset/balance
   "data": {
     "balanceFundTotal": 418.46,
     "items": [
-      { "fundName": "余额宝", "amount": 418.46, "profit": 1.56, "category": "余额类" },
-      { "fundName": "余额", "amount": 0, "profit": 0, "category": "余额类" }
+      {
+        "fundName": "余额宝",
+        "amount": 320.85,
+        "holdingProfit": null,
+        "cumulativeProfit": 1.89,
+        "category": "余额类"
+      }
     ],
     "snapshotDate": "2026-06-09"
   }
@@ -964,7 +1284,7 @@ GET /api/asset/balance
 
 **说明**：第一轮 P0 1.1 解决方案的读取路径。
 
-### 9.2 获取最近操作时间线
+### 10.2 获取最近操作时间线
 
 ```
 GET /api/asset/operations/recent
@@ -998,11 +1318,11 @@ GET /api/asset/operations/recent
 
 **说明**：
 
-- Phase 1 临时方案：从当前 user 的 `chat_history` 查最近 5 条 `conversation_type=screenshot_parse` 的 assistant 消息；此处表示“解析活动”，不表示确认入库已经成功。
+- Phase 1 临时方案：从当前 user 的 `chat_history` 查最近 5 条 `conversation_type=screenshot_parse` 的 assistant 消息；此处表示"解析活动"，不表示确认入库已经成功。
 - Phase 1 的 `operationType` 固定为 `screenshot_parse`，`operationDate` 来自 `chat_history.created_at`，summary 由解析结果派生。
-- Phase 2 `operation_log` 上线后改为跨表查询，届时才展示月度校正等真实操作记录和确认入库状态。
+- Phase 2 `operation_log` 上线后改为跨表查询。
 
-### 9.3 获取累计收益率（Phase 3 启用）
+### 10.3 获取累计收益率（Phase 3 启用）
 
 ```
 GET /api/asset/cumulative-return
@@ -1039,9 +1359,9 @@ GET /api/asset/cumulative-return
 
 ---
 
-## 10. 解析日志与对话元数据 API
+## 11. 解析日志与对话元数据 API
 
-### 10.1 获取解析日志列表
+### 11.1 获取解析日志列表
 
 ```
 GET /api/parse-logs
@@ -1063,15 +1383,6 @@ GET /api/parse-logs
         "source": "screenshot_manual",
         "createdAt": "2026-07-09T20:30:00",
         "confirmedAt": "2026-07-09T20:30:05"
-      },
-      {
-        "logId": 2,
-        "conversationId": "uuid-xxxx",
-        "snapshotDate": null,
-        "fundCount": 0,
-        "status": "parse_failed",
-        "source": "screenshot_manual",
-        "createdAt": "2026-07-09T19:00:00"
       }
     ]
   }
@@ -1085,27 +1396,28 @@ GET /api/parse-logs
 
 ---
 
-## 11. 错误码速查表
+## 12. 错误码速查表（1a.10 增补）
 
 | 错误码 | 含义 | HTTP 状态 |
 |-------|------|----------|
 | 0 | 成功 | 200 |
-| 1001 | 快照日期无效 | 400 |
+| 1001 | 参数错误（fileId/fileIds/userId/缺失） | 400 |
 | 1002 | 基金名称缺失 | 400 |
 | 1003 | 金额必须 > 0 | 400 |
 | 1004 | 大类名称不在枚举值内 | 400 |
 | 2001 | 该日期无快照数据 | 404 |
-| 2002 | 快照日期与其他对话冲突 | 409 |
+| 2002 | 同日已有快照 + 未 confirmedOverwrite | 409 |
 | 2003 | 超过撤销时限（10 秒）| 410 |
-| 3001 | DeepSeek API 返回非 JSON | 502 |
-| 3002 | DeepSeek API 调用超时 | 504 |
-| 3003 | DeepSeek API 返回 0 只基金 | 502 |
+| 2004 | category-master alias 冲突 | 409 |
+| 3001 | 视觉模型 API 返回非 JSON | 502 |
+| 3002 | 视觉模型 API 调用超时 | 504 |
+| 3003 | 视觉模型 API 返回 0 只完整基金 | 502 |
 | 5001 | 服务器内部错误 | 500 |
 | 5002 | 数据库写入失败 | 500 |
 
 ---
 
-## 12. 待补充 API（Phase 2-3）
+## 13. 待补充 API（Phase 2-3）
 
 以下 API 在 Phase 2-3 启动前补齐：
 
@@ -1118,11 +1430,11 @@ GET /api/parse-logs
 
 ---
 
-## 13. 与四轮评审的衔接
+## 14. 与四轮评审的衔接
 
 | 评审问题 | 本文档对应 API |
 |---------|---------------|
-| 第一轮 1.1 余额类落点 | 3.1 / 3.2 / 9.1 |
+| 第一轮 1.1 余额类落点 | 3.1 / 3.2 / 10.1 |
 | 第一轮 1.3 三表事务 | 4.1（@Transactional） |
 | 第一轮 1.6 AI 解析失败 | 2.2（3001/3003 错误码） |
 | 第一轮 2.2 映射 UPDATE 规则 | 7.2 |
@@ -1132,17 +1444,17 @@ GET /api/parse-logs
 | 第三轮 2.2.4.3 余额类下拉选项 | 7.1（matchedFunds 返回余额类） |
 | 第三轮 2.2.4.5 忽略该条 | 4.1（isIgnored 字段） |
 | 第三轮 2.2.2.1 撤销机制 | 4.2 |
-| 第三轮 3.2.1 system prompt 切换 | 8.1（每次重新组装 messages） |
+| 第三轮 3.2.1 system prompt 切换 | 9.1（每次重新组装 messages） |
 | 第三轮 4.1.2 默认值优先级 | 5.1（snapshotNote 字段） |
 | 第四轮 2.1.1 profit 字段读取 | 3.2 |
 | 第四轮 2.2.1 target_ratio 解读 4 | 6.2（triggeredSnapshotUpdate=false） |
-| 第四轮 3.3.1 累计收益率 | 9.3（Phase 1 available=false） |
-| 第四轮 3.3.2 最近操作时间线 | 9.2 |
+| 第四轮 3.3.1 累计收益率 | 10.3（Phase 1 available=false） |
+| 第四轮 3.3.2 最近操作时间线 | 10.2 |
 | 第四轮 3.3.3 重新解析 | 2.3 |
 
 ---
 
-## 14. 文档维护
+## 15. 文档维护
 
 - **Phase 1 编码期间**：根据实际开发调整 API，需同步更新本文档
 - **Phase 2-3**：补齐 Phase 2-3 待补充 API

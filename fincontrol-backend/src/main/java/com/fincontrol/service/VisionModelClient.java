@@ -21,8 +21,10 @@ import java.io.File;
 import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.nio.file.Files;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -114,70 +116,148 @@ public class VisionModelClient {
     // 公共入口
     // ===================================================================
 
-    /** 旧 API（默认 OPENAI_CHAT，保持 ScreenshotService 不破坏）。 */
+    /** 旧单图 API（默认 OPENAI_CHAT），委托给 1a.10 多图实现。 */
     public String callRaw(File imageFile, String systemPrompt, String userMessage) {
-        return callRaw(imageFile, systemPrompt, userMessage, ApiStyle.OPENAI_CHAT);
+        return callRaw(java.util.Collections.singletonList(imageFile),
+                systemPrompt, userMessage, ApiStyle.OPENAI_CHAT);
     }
 
-    /** 1a.8 新增：按 ApiStyle 路由到对应 provider schema。 */
+    /** 旧单图 + ApiStyle API，保持现有调用方兼容。 */
     public String callRaw(File imageFile, String systemPrompt, String userMessage, ApiStyle apiStyle) {
+        return callRaw(java.util.Collections.singletonList(imageFile), systemPrompt, userMessage, apiStyle);
+    }
+
+    /** 1a.10：一次请求传入有序多图；顺序用于跨页截断补全。 */
+    public String callRaw(List<File> imageFiles, String systemPrompt,
+                          String userMessage, ApiStyle apiStyle) {
         Objects.requireNonNull(apiStyle, "apiStyle");
+        List<File> validated = validateImageFiles(imageFiles);
         switch (apiStyle) {
             case OPENAI_CHAT:
-                return callOpenAiChat(imageFile, systemPrompt, userMessage);
+                return callOpenAiChat(validated, systemPrompt, userMessage);
             case OPENAI_RESPONSES:
-                return callOpenAiResponses(imageFile, systemPrompt, userMessage);
+                return callOpenAiResponses(validated, systemPrompt, userMessage);
             default:
                 throw new IllegalArgumentException("Unsupported ApiStyle: " + apiStyle);
         }
     }
 
-    /** 提取 JSON（与 1a.7 兼容，未改）。 */
+    /**
+     * 从不受控模型响应中选择完整的资产 JSON 根对象。
+     *
+     * <p>MiniMax 可能返回 {@code <think>}、Markdown、schema 示例、局部 fund JSON，最后才给出
+     * 完整 {@code categories[].funds[]}。旧实现返回“第一个可解析对象”，会误选局部 fund，
+     * 导致后续得到 {@code categories=[]}。1a.10 改为：
+     *
+     * <ol>
+     *   <li>若整个响应就是 JSON，保持原有直返行为；</li>
+     *   <li>否则以字符串/转义感知的方式提取所有平衡花括号候选；</li>
+     *   <li>按资产根 schema 和完整基金数量评分，得分相同时选择后出现的候选。</li>
+     * </ol>
+     */
     public JsonNode extractFirstJsonObject(String raw) {
-        if (raw == null) {
+        if (raw == null || raw.isBlank()) {
             throw new BusinessException(ErrorCode.VISION_INVALID_JSON, "视觉模型响应为空");
         }
+
         try {
-            return objectMapper.readTree(raw);
-        } catch (Exception ignore) { /* fall through */ }
-        int start = raw.indexOf('{');
-        while (start >= 0) {
-            int depth = 0;
-            for (int i = start; i < raw.length(); i++) {
-                char c = raw.charAt(i);
-                if (c == '{') depth++;
-                else if (c == '}') {
-                    depth--;
-                    if (depth == 0) {
-                        String candidate = raw.substring(start, i + 1);
-                        try {
-                            return objectMapper.readTree(candidate);
-                        } catch (Exception ignore) {
-                            break;
-                        }
-                    }
-                }
+            JsonNode direct = objectMapper.readTree(raw);
+            if (direct != null && direct.isObject()) {
+                return direct;
             }
-            start = raw.indexOf('{', start + 1);
+        } catch (Exception ignore) {
+            // 响应含 think/Markdown 时进入候选扫描。
         }
+
+        JsonNode best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (String candidate : extractBalancedJsonObjects(raw)) {
+            try {
+                JsonNode parsed = objectMapper.readTree(candidate);
+                if (parsed == null || !parsed.isObject()) continue;
+                int score = assetRootScore(parsed);
+                // >=：相同 schema/基金数时优先最终输出，而不是前面的示例。
+                if (score >= bestScore) {
+                    best = parsed;
+                    bestScore = score;
+                }
+            } catch (Exception ignore) {
+                // 单个候选无效不影响后续候选。
+            }
+        }
+        if (best != null) {
+            log.debug("从混合模型响应中选择 JSON 根对象：score={} fields={}",
+                    bestScore, best.size());
+            return best;
+        }
+
         String truncated = raw.length() > 200 ? raw.substring(0, 200) + "..." : raw;
         throw new BusinessException(ErrorCode.VISION_INVALID_JSON,
                 "视觉模型响应无 JSON 对象: " + truncated);
     }
 
+    /** 提取所有平衡的 JSON object；忽略字符串值内部及转义后的花括号。 */
+    private static List<String> extractBalancedJsonObjects(String raw) {
+        List<String> candidates = new ArrayList<>();
+        Deque<Integer> starts = new ArrayDeque<>();
+        boolean inString = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                } else if (c == '\\') {
+                    escaped = true;
+                } else if (c == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (c == '"') {
+                inString = true;
+            } else if (c == '{') {
+                starts.push(i);
+            } else if (c == '}' && !starts.isEmpty()) {
+                int start = starts.pop();
+                candidates.add(raw.substring(start, i + 1));
+            }
+        }
+        return candidates;
+    }
+
+    /** 完整资产根远高于局部 fund；完整基金越多得分越高。 */
+    private static int assetRootScore(JsonNode node) {
+        int score = 0;
+        JsonNode categories = node.path("categories");
+        if (categories.isArray()) {
+            score += 10_000 + categories.size() * 100;
+            for (JsonNode category : categories) {
+                if (category.hasNonNull("category_name")) score += 10;
+                JsonNode funds = category.path("funds");
+                if (funds.isArray()) score += funds.size() * 1_000;
+            }
+        }
+        JsonNode holdings = node.path("holdings");
+        if (holdings.isArray()) {
+            score += 9_000 + holdings.size() * 1_000;
+        }
+        if (node.has("snapshot_date") || node.has("date")) score += 100;
+        if (node.has("total_asset")) score += 100;
+        if (node.has("matchedFunds") || node.has("matched_funds")) score += 20;
+        if (node.has("fund_name") || node.has("name")) score += 1;
+        if (node.has("amount")) score += 1;
+        return score;
+    }
+
     // ===================================================================
     // 内部：OPENAI_CHAT（minimax OpenAI compat）
     // ===================================================================
-    private String callOpenAiChat(File imageFile, String systemPrompt, String userMessage) {
+    private String callOpenAiChat(List<File> imageFiles, String systemPrompt, String userMessage) {
         validateProviderConfig("minimax", minimaxApiKey, minimaxBaseUrl, minimaxModel);
-        if (imageFile == null || !imageFile.isFile()) {
-            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "图片文件不存在");
-        }
 
-        // 1. 读图 → base64 dataURL
-        String dataUrl = readImageAsDataUrl(imageFile);
-
-        // 2. 构造 OpenAI-兼容 body（messages[] + image_url）
+        // 构造 OpenAI-兼容 body（messages[] + 有序 image_url parts）
         String body;
         try {
             List<Map<String, Object>> messages = new ArrayList<>();
@@ -187,8 +267,10 @@ public class VisionModelClient {
             String userText = (userMessage != null && !userMessage.isBlank()) ? userMessage : "请解析以下截图";
             List<Map<String, Object>> parts = new ArrayList<>();
             parts.add(Map.of("type", "text", "text", userText));
-            parts.add(Map.of("type", "image_url",
-                    "image_url", Map.of("url", dataUrl)));
+            for (File imageFile : imageFiles) {
+                parts.add(Map.of("type", "image_url",
+                        "image_url", Map.of("url", readImageAsDataUrl(imageFile))));
+            }
             messages.add(Map.of("role", "user", "content", parts));
 
             Map<String, Object> req = new LinkedHashMap<>();
@@ -240,16 +322,10 @@ public class VisionModelClient {
      * }
      * </pre>
      */
-    private String callOpenAiResponses(File imageFile, String systemPrompt, String userMessage) {
+    private String callOpenAiResponses(List<File> imageFiles, String systemPrompt, String userMessage) {
         validateProviderConfig("doubao", doubaoApiKey, doubaoBaseUrl, doubaoModel);
-        if (imageFile == null || !imageFile.isFile()) {
-            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "图片文件不存在");
-        }
 
-        // 1. 读图 → base64 dataURL
-        String dataUrl = readImageAsDataUrl(imageFile);
-
-        // 2. 构造 OpenAI Responses 形态 body（input[] + input_image）
+        // 构造 OpenAI Responses 形态 body（input[] + 有序 input_image parts）
         String body;
         try {
             String userText = (userMessage != null && !userMessage.isBlank()) ? userMessage : "请解析以下截图";
@@ -259,7 +335,10 @@ public class VisionModelClient {
             userInput.put("role", "user");
             List<Map<String, Object>> contentParts = new ArrayList<>();
             contentParts.add(Map.of("type", "input_text", "text", userText));
-            contentParts.add(Map.of("type", "input_image", "image_url", dataUrl));
+            for (File imageFile : imageFiles) {
+                contentParts.add(Map.of("type", "input_image",
+                        "image_url", readImageAsDataUrl(imageFile)));
+            }
             userInput.put("content", contentParts);
 
             Map<String, Object> req = new LinkedHashMap<>();
@@ -290,6 +369,20 @@ public class VisionModelClient {
     // ===================================================================
     // 内部工具：复用
     // ===================================================================
+    private static List<File> validateImageFiles(List<File> imageFiles) {
+        if (imageFiles == null || imageFiles.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "图片列表至少包含 1 张图");
+        }
+        List<File> copy = List.copyOf(imageFiles);
+        for (File imageFile : copy) {
+            if (imageFile == null || !imageFile.isFile()) {
+                throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE,
+                        "图片文件不存在: " + (imageFile == null ? "null" : imageFile.getPath()));
+            }
+        }
+        return copy;
+    }
+
     private String readImageAsDataUrl(File imageFile) {
         try {
             byte[] bytes = Files.readAllBytes(imageFile.toPath());

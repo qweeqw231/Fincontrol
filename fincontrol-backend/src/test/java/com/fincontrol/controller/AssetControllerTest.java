@@ -66,6 +66,8 @@ class AssetControllerTest {
 
     @MockBean
     private FundCategoryMapMapper fundCategoryMapMapper;
+    @MockBean
+    private com.fincontrol.mapper.CategoryMasterMapper categoryMasterMapper;
 
     @Test
     void balance_defaultUserId_returnsData() throws Exception {

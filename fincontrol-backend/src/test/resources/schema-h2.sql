@@ -62,6 +62,23 @@ CREATE TABLE IF NOT EXISTS fund_category_map (
 CREATE INDEX IF NOT EXISTS idx_map_user_category ON fund_category_map(user_id, category);
 CREATE INDEX IF NOT EXISTS idx_map_user_last_seen ON fund_category_map(user_id, last_seen_at);
 
+-- 1a.10：category_master + 4 列/索引
+CREATE TABLE IF NOT EXISTS category_master (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    name_canonical VARCHAR(50) NOT NULL,
+    aliases VARCHAR(8000) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_category_master_canonical
+    ON category_master(name_canonical);
+CREATE INDEX IF NOT EXISTS idx_category_master_active ON category_master(is_active);
+
+-- 1a.10：H2 中资产明细的 holding/cumulative 允许 NULL（1a.8.7）
+ALTER TABLE asset_raw ALTER COLUMN holding_profit SET NULL;
+ALTER TABLE asset_raw ALTER COLUMN cumulative_profit SET NULL;
+
 -- 唯一键（CREATE UNIQUE INDEX IF NOT EXISTS 多次跑幂等；H2 1.4+ + MySQL 8 兼容）
 CREATE UNIQUE INDEX IF NOT EXISTS uk_snap_user_date_cat_latest
     ON asset_snapshot(user_id, snapshot_date, category, is_latest);

@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -63,5 +64,7 @@ public class ParsedAsset {
         private BigDecimal cumulativeProfit;
         /** 1a.8.8：来自 FundCategoryResolver；true=user_correct，false=ai_guess/未命中。 */
         private Boolean isUserConfirmed;
+        /** 1a.10：仅 user_correct 映射透传已有 fund_category_map.confirmed_at。 */
+        private LocalDateTime confirmedAt;
     }
 }

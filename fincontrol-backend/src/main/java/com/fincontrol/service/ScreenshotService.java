@@ -53,6 +53,7 @@ public class ScreenshotService {
     private final ChatHistoryMapper chatHistoryMapper;
     private final ObjectMapper objectMapper;            // 1a.8 v3: OCR 写盘
     private final FundCategoryResolver fundCategoryResolver; // 1a.8.8 决策 8：类别归一化
+    private final DedupEngine dedupEngine;                    // 1a.10：batch 内部去重 + top/sum 校验
     private final Path ocrLogRoot;
 
     /** 1a.8 路由 imageCount 上下文：1 张图 parse → imageCount=1；批量 4 张 → imageCount=4。 */
@@ -65,6 +66,7 @@ public class ScreenshotService {
                              ChatHistoryMapper chatHistoryMapper,
                              ObjectMapper objectMapper,
                              FundCategoryResolver fundCategoryResolver,
+                             DedupEngine dedupEngine,
                              @Value("${fincontrol.ocr.log-path:" + DEFAULT_OCR_LOG_PATH + "}") String ocrLogPath) {
         this.storage = storage;
         this.visionModelClient = visionModelClient;
@@ -73,6 +75,7 @@ public class ScreenshotService {
         this.chatHistoryMapper = chatHistoryMapper;
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.fundCategoryResolver = fundCategoryResolver;
+        this.dedupEngine = Objects.requireNonNull(dedupEngine, "dedupEngine");
         this.ocrLogRoot = resolveOcrLogRoot(ocrLogPath);
     }
 
@@ -144,11 +147,9 @@ public class ScreenshotService {
         // 1a.8 v3: OCR 真实数据日志写盘
         writeOcrLog(req.getFileId(), usedProvider, fallbackTriggered, raw, asset, null);
 
-        // 4) 0 基金
-        boolean zeroFunds = asset.getCategories() == null
-                || asset.getCategories().isEmpty()
-                || asset.getCategories().stream().allMatch(c -> c.getFunds() == null || c.getFunds().isEmpty());
-        if (zeroFunds) {
+        // 4) 0 基金（1a.10）：name + amount 是解析成功的最低完整性门槛。
+        // holding_profit 不参与此门槛；余额宝等余额类 holding=null 是合法值。
+        if (!hasCompleteFund(asset)) {
             BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
                     "视觉模型返回 0 只基金（conversationId=" + conversationId + "）",
                     new VisionErrorData(conversationId, "zero_funds", raw));
@@ -168,6 +169,133 @@ public class ScreenshotService {
         chatHistoryMapper.insert(assistantMsg);
 
         return asset;
+    }
+
+    /**
+     * 1a.10 单次多图：按 fileIds 顺序把同一持仓列表的连续截图放入一次 vision 请求，
+     * 再在服务端执行 fund-name 去重与 top/dedupedSum 校验。
+     */
+    public ScreenshotBatchParseResponse parseBatch(ScreenshotBatchParseRequest req) {
+        if (req == null || req.getUserId() == null) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "userId 必填");
+        }
+        if (req.getFileIds() == null || req.getFileIds().isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileIds 至少包含 1 个 fileId");
+        }
+        if (req.getFileIds().size() > 10) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileIds 最多 10 个");
+        }
+
+        List<String> fileIds = req.getFileIds().stream()
+                .map(id -> id == null ? null : id.trim())
+                .toList();
+        if (fileIds.stream().anyMatch(id -> id == null || id.isBlank())) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileId 不能为空");
+        }
+        if (new LinkedHashSet<>(fileIds).size() != fileIds.size()) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileIds 不允许重复");
+        }
+
+        List<Path> imagePaths = new ArrayList<>(fileIds.size());
+        for (String fileId : fileIds) {
+            Path path = storage.resolveByFileId(fileId);
+            if (path == null) {
+                throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE,
+                        "fileId 不存在或已过期: " + fileId);
+            }
+            imagePaths.add(path);
+        }
+
+        String conversationId = "conv-batch-" + UUID.randomUUID();
+        ChatHistory userMsg = new ChatHistory();
+        userMsg.setUserId(req.getUserId());
+        userMsg.setConversationId(conversationId);
+        userMsg.setRole(ChatHistory.ROLE_USER);
+        userMsg.setContent(String.join(",", fileIds));
+        userMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
+        chatHistoryMapper.insert(userMsg);
+
+        String systemPrompt = promptLoader.get("screenshot_parser");
+        AiRouter.VisionResult visionResult;
+        try {
+            visionResult = aiRouter.callVision(
+                    imagePaths.stream().map(Path::toFile).toList(),
+                    systemPrompt,
+                    "这些图片按顺序属于同一账户同一时点的连续持仓页。请跨页补全截断基金，"
+                            + "只按 fund_name 去重，并输出一个完整资产 JSON。"
+            );
+        } catch (BusinessException e) {
+            persistAssistantError(conversationId, req.getUserId(), e, null);
+            throw e;
+        }
+
+        String raw = visionResult.content();
+        JsonNode json;
+        try {
+            json = visionModelClient.extractFirstJsonObject(raw);
+        } catch (BusinessException e) {
+            writeOcrLog("batch-" + conversationId, visionResult.usedProvider(),
+                    visionResult.fallbackTriggered(), raw, null, e);
+            persistAssistantError(conversationId, req.getUserId(), e, raw,
+                    visionResult.usedProvider(), visionResult.fallbackTriggered());
+            throw e;
+        }
+
+        ParsedAsset parsed = mapToParsedAsset(conversationId, raw, json, req.getUserId());
+        if (!hasCompleteFund(parsed)) {
+            BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
+                    "视觉模型批量解析返回 0 只完整基金（conversationId=" + conversationId + "）",
+                    new VisionErrorData(conversationId, "zero_funds", raw));
+            writeOcrLog("batch-" + conversationId, visionResult.usedProvider(),
+                    visionResult.fallbackTriggered(), raw, parsed, e);
+            persistAssistantError(conversationId, req.getUserId(), e, raw,
+                    visionResult.usedProvider(), visionResult.fallbackTriggered());
+            throw e;
+        }
+
+        LocalDate dedupDate = parseDateOrToday(parsed.getSnapshotDate());
+        DedupEngine.DedupResult dedup;
+        try {
+            dedup = dedupEngine.deduplicate(new DedupEngine.DedupInput(
+                    List.of(parsed), Set.of(), dedupDate, true));
+        } catch (BusinessException e) {
+            persistAssistantError(conversationId, req.getUserId(), e, raw,
+                    visionResult.usedProvider(), visionResult.fallbackTriggered());
+            throw e;
+        }
+        ParsedAsset merged = dedup.merged();
+        merged.setConversationId(conversationId);
+        merged.setSnapshotDate(parsed.getSnapshotDate());
+        if (!hasCompleteFund(merged)) {
+            BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
+                    "批量解析结果没有可入库的完整基金（conversationId=" + conversationId + "）",
+                    new VisionErrorData(conversationId, "zero_funds", raw));
+            persistAssistantError(conversationId, req.getUserId(), e, raw,
+                    visionResult.usedProvider(), visionResult.fallbackTriggered());
+            throw e;
+        }
+
+        writeOcrLog("batch-" + conversationId, visionResult.usedProvider(),
+                visionResult.fallbackTriggered(), raw, merged, null);
+
+        ChatHistory assistantMsg = new ChatHistory();
+        assistantMsg.setUserId(req.getUserId());
+        assistantMsg.setConversationId(conversationId);
+        assistantMsg.setRole(ChatHistory.ROLE_ASSISTANT);
+        assistantMsg.setContent(raw);
+        assistantMsg.setConversationType(ChatHistory.CONVERSATION_TYPE_SCREENSHOT_PARSE);
+        assistantMsg.setUsedProvider(visionResult.usedProvider());
+        assistantMsg.setFallbackTriggered(visionResult.fallbackTriggered());
+        chatHistoryMapper.insert(assistantMsg);
+
+        return ScreenshotBatchParseResponse.builder()
+                .parsedAsset(merged)
+                .dedupReport(dedup.report())
+                .usedProvider(visionResult.usedProvider())
+                .fallbackTriggered(visionResult.fallbackTriggered())
+                .cacheHit(visionResult.cacheHit())
+                .imageCount(imagePaths.size())
+                .build();
     }
 
     // 1a.6 reparse
@@ -218,10 +346,8 @@ public class ScreenshotService {
         // 1a.8 v3: OCR 真实数据日志写盘
         writeOcrLog(fileId, usedProvider, fallbackTriggered, raw, asset, null);
 
-        boolean zeroFunds = asset.getCategories() == null
-                || asset.getCategories().isEmpty()
-                || asset.getCategories().stream().allMatch(c -> c.getFunds() == null || c.getFunds().isEmpty());
-        if (zeroFunds) {
+        // reparse 与 parse 共用相同的最低完整性规则，避免两条路径漂移。
+        if (!hasCompleteFund(asset)) {
             BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
                     "视觉模型返回 0 只基金（reparse conversationId=" + req.getConversationId() + "）",
                     new VisionErrorData(req.getConversationId(), "zero_funds", raw));
@@ -318,6 +444,29 @@ public class ScreenshotService {
     // ===================================================================
     // 内部辅助
     // ===================================================================
+
+    private static LocalDate parseDateOrToday(String value) {
+        if (value == null || value.isBlank()) return LocalDate.now();
+        try {
+            return LocalDate.parse(value);
+        } catch (Exception ignored) {
+            return LocalDate.now();
+        }
+    }
+
+    /** 至少一只基金同时有非空名称与金额；收益字段由后续 DedupEngine 做更严格校验。 */
+    static boolean hasCompleteFund(ParsedAsset asset) {
+        return asset != null
+                && asset.getCategories() != null
+                && asset.getCategories().stream()
+                        .filter(Objects::nonNull)
+                        .filter(c -> c.getFunds() != null)
+                        .flatMap(c -> c.getFunds().stream())
+                        .filter(Objects::nonNull)
+                        .anyMatch(f -> f.getFundName() != null
+                                && !f.getFundName().isBlank()
+                                && f.getAmount() != null);
+    }
 
     private void persistAssistantError(String conversationId, Long userId, BusinessException e) {
         persistAssistantError(conversationId, userId, e, null);
@@ -458,22 +607,24 @@ public class ScreenshotService {
                                Long userId) {
         if (line.getFundName() == null || userId == null) {
             line.setIsUserConfirmed(false);
+            line.setConfirmedAt(null);
             return;
         }
         try {
             FundCategoryResolver.ResolvedCategory resolved =
                     fundCategoryResolver.resolve(line.getFundName(), rawCategory, userId);
             line.setIsUserConfirmed(resolved.isUserConfirmed());
-            if (resolved.isUserConfirmed()
-                    && resolved.canonicalName() != null
+            line.setConfirmedAt(resolved.confirmedAt());
+            if (resolved.canonicalName() != null
                     && !resolved.canonicalName().equals(block.getCategoryName())) {
-                log.warn("1a.8.8 user_correct 覆盖 block category: fund={} block={} → user={}",
+                log.debug("类别主数据/用户映射覆盖 block category: fund={} block={} → resolved={}",
                         line.getFundName(), block.getCategoryName(), resolved.canonicalName());
                 block.setCategoryName(resolved.canonicalName());
             }
         } catch (Exception e) {
             log.warn("resolver 调用失败，fallback: fund={} err={}", line.getFundName(), e.getMessage());
             line.setIsUserConfirmed(false);
+            line.setConfirmedAt(null);
         }
     }
 

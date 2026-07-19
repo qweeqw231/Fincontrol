@@ -131,10 +131,6 @@
   - 唯一偏差：`国泰黄金ETF联接C` 实际 -40.24 vs 期望 -45.25（金额完全一致，利润语义差异，OCR 原始 raw 已落盘可人工复核）
   - 详细见 [`2026-07-18_phase1a8-v2-real-data-check.md`](../test-records/manual-tests/2026-07-18_phase1a8-v2-real-data-check.md)
 
----
-
-
-> 详细见 [`2026-07-18_phase1a8-work-plan.md`](../work-plans/2026-07-18_phase1a8-work-plan.md) 与 [`2026-07-18_phase1a8-acceptance-plan.md`](../../test-records/manual-tests/2026-07-18_phase1a8-acceptance-plan.md) 与 [`2026-07-18_phase1a8-acceptance-report.md`](../test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md)
 - [x] **1a.8.7** profit 拆分 holding + cumulative（v3.1 真实四图闭环 19/19 + 7884.68）— 完成日期：2026-07-18
 - [x] **1a.8.8** 类别归一化 + 双向 cache + last_seen_at + DELETE/reset/stale + 多用户债修复 — 完成日期：2026-07-18
   - **决策 8 落地**：CategoryEnum 7 canonical + 别名 + fromAlias；FundCategoryResolver 4 优先级（user_correct > ai_guess > fromAlias > raw 兜底）
@@ -178,3 +174,81 @@
   - 验证：mvn clean verify 186/186 PASS + JaCoCo 77.46%；真实四图 OCR E2E 19/19 唯一 + 7884.68 全对
   - 唯一偏差归零（原 1 处 -40.24 vs -45.25 拆为 holding -45.25 / cumulative -40.24 双字段，模型语义正确；用户期望的累计 -40.24 正是 cumulative 字段）
   - 详细见 [`2026-07-18_phase1a8-v2-real-data-check.md`](../test-records/manual-tests/2026-07-18_phase1a8-v2-real-data-check.md)
+
+---
+
+## Phase 1a.10 — 1a.9 真实 E2E 修复 + 后端收尾（双路径并存）
+
+> **状态**：`IN_PROGRESS`（代码 + 单测 + MySQL 漂移修复完成；路径 A 真实 confirm 与路径 B 一次 4 图真实验收待执行）
+> 配套：工作 [`2026-07-19_phase1a10-work-plan.md`](../work-plans/2026-07-19_phase1a10-work-plan.md) / 验收 [`2026-07-19_phase1a10-acceptance-plan.md`](../../test-records/manual-tests/2026-07-19_phase1a10-acceptance-plan.md) / 报告 [`2026-07-19_phase1a10-real-e2e.md`](../test-records/manual-tests/2026-07-19_phase1a10-real-e2e.md)
+
+### 真实 ground truth（用户 14:42 确认）
+
+- 支付宝总资产：**7,884.68 元**
+- 六大类合计：**7,563.83 元**；余额类 **320.85 元**
+- 唯一基金 **19 只**；**20 完整行**（6/3/5/6）
+- 余额宝 holding=NULL、cumulative=1.89
+- 国泰黄金ETF联接C 保留差异：holding=-45.25、cumulative=-40.24
+- 机器 canonical「港股大中华类」；展示名「港股/大中华类」
+- P1/P3/P4 top=null；**P2 top=7884.68**（唯一非空）
+
+### 顶部总资产三级判定（单图与多图共用）
+
+1. 任意页面读到「总金额」或「总资产」字样 + 数字 → 记为该页 `top`（顺序未知，匹配任一即可）
+2. 4 页 `top` 一致 → `totalAsset=top`、`totalAssetSource="top"`
+3. 4 页 `top` 不一致 → 报警 `TOP_INCONSISTENT`、`totalAsset=dedupedFundSum`、`totalAssetSource="visible_sum"`
+4. 4 页 `top` 全 null → `totalAsset=dedupedFundSum`、`totalAssetSource="visible_sum"`、**无报警**
+
+### 工具 A：4×单图 + 1×confirm
+
+- [x] **1a.10.A1** VisionModelClient 提取完整资产 JSON 根对象（balanced-brace + assetRootScore）— 2026-07-19
+- [x] **1a.10.A2** 路径 A zero_funds 检测改为 fundName+amount 完整性（路径 A）— 2026-07-19
+- [x] **1a.10.A3** DedupEngine top/sum 三级判定（top 一致 / top 不一致 / 全 null）— 2026-07-19
+- [x] **1a.10.A4** DISCREPANCY 阈值 `@Value` 注入 + `application.yml` 默认 0.01 — 2026-07-19
+- [ ] **1a.10.A5** 余额宝 confirm 时 holding 保持 NULL（不写 0）— 待
+- [ ] **1a.10.A6** FundCategoryResolver per-fund 覆盖修复（同一 block 多基金各自命中 user_correct）— 待
+- [ ] **1a.10.A7** 真实 confirm 写入 MySQL（用户 19999，19 raw / 7 snapshot / 19 map，余额宝 holding NULL）— 待
+- [ ] **1a.10.A8** top=7884.68, source='top', 偏差 0, 无 DISCREPANCY — 待
+
+### 工具 B：1×parse-batch 一次 4 图
+
+- [x] **1a.10.B1** ScreenshotService.parseBatch + ScreenshotBatchParseRequest/Response DTO — 2026-07-19
+- [x] **1a.10.B2** AiRouter 多图入口 + orderedImageHashes + cache key 含 prompt — 2026-07-19
+- [x] **1a.10.B3** VisionModelClient 多图 schema（MiniMax chat + 豆包 Responses）— 2026-07-19
+- [ ] **1a.10.B4** provider `timeoutSeconds=300` 真正进入 OkHttp — 待
+- [ ] **1a.10.B5** 真实 4 图一次请求成功（豆包 primary 通过 / MiniMax fallback 通过）— 待
+- [ ] **1a.10.B6** merged unique=19、fund sum=7884.68、totalAsset=7884.68、source='top'、偏差 0 — 待
+- [ ] **1a.10.B7** 真实 4 图仍失败 → 标 PRODUCTION_BLOCKED（不冒充 PASS）— 待
+
+### 数据库与迁移
+
+- [x] **1a.10.M1** `last_seen_at` / `idx_user_last_seen` / `holding_profit` / `cumulative_profit` 实际状态确认（MySQL）— 2026-07-19
+- [x] **1a.10.M2** `category_master` 表 + 7 canonical seed 实际存在 — 2026-07-19
+- [ ] **1a.10.M3** 整合 MySQL 迁移脚本 `fincontrol-backend/scripts/1a10/00-mysql-migration.sql` — 待
+- [ ] **1a.10.M4** 删除两个未跟踪的 test-resource migration 草稿 — 待
+- [ ] **1a.10.M5** H2 schema 同步 + 4 个新增断言 — 待
+
+### 文档与契约
+
+- [x] **1a.10.D1** 工作计划 + 验收计划 + decisions 1.10 后续债段 + 1a.10 真实 E2E 报告 + 1a.9 errata 落盘 — 2026-07-19
+- [ ] **1a.10.D2** API 契约补 `parse-batch` + `category-master` CRUD 章节 — 待
+- [ ] **1a.10.D3** fixture 升 v3.4：仅 P2 top=7884.68、余额宝 holding=null — 待
+
+### Git 与运维
+
+- [ ] **1a.10.G1** `mvn clean verify` ≥ 245/245 PASS — 待
+- [ ] **1a.10.G2** 真实 E2E 路径 A + 路径 B 跑通 — 待
+- [ ] **1a.10.G3** 本地 7 commit（不 push）— 待
+- [ ] **1a.10.G4** 关闭所有 java 进程 — 待
+
+### 5 段式验收（双路径独立判定）
+
+| 段 | 路径 A | 路径 B |
+|---|---|---|
+| BUSINESS | 4×单图 + confirm 单测 + SnapShotConfirmServiceTest | AiRouterTest + VisionModelClientTest 4 图 + ScreenshotServiceTest batch |
+| CONTRACT | 现有 API 行为不变 | `parse-batch` Request/Response |
+| READ_SQL | `fund_category_map.category='港股大中华类'` 19 行；余额宝 holding NULL | 与 A 共享 |
+| PRODUCTION | MySQL 19/7/19 镜像；top=7884.68；偏差 0 | 一次 4 图真实 code=0 + merged 19/7884.68/7884.68 |
+| COVERAGE | JaCoCo ≥ 60% | JaCoCo ≥ 60% |
+
+> **关键**：若路径 B 真实 4 图仍超时 → **B-PRODUCTION 段诚实标 PRODUCTION_BLOCKED**，绝不拿 A 路径 4/4 顶替。

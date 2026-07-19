@@ -8,11 +8,12 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
- * Screenshot 3 端点（Phase 1a.2）：
+ * Screenshot 4 端点（Phase 1a.2 + 1a.10）：
  * <ul>
  *   <li>{@code POST /api/screenshot/upload}  —— 1a.4（仅存盘）</li>
  *   <li>{@code POST /api/screenshot/parse}   —— 1a.5（含 [P0-1.4] 三类失败码）</li>
  *   <li>{@code POST /api/screenshot/reparse} —— 1a.6（[P0-4.4]）</li>
+ *   <li>{@code POST /api/screenshot/parse-batch} —— 1a.10（单次有序多图）</li>
  * </ul>
  */
 @RestController
@@ -38,5 +39,11 @@ public class ScreenshotController {
     @PostMapping("/reparse")
     public ApiResponse<ParsedAsset> reparse(@Valid @RequestBody ScreenshotReparseRequest req) {
         return ApiResponse.success(screenshotService.reparse(req));
+    }
+
+    @PostMapping("/parse-batch")
+    public ApiResponse<ScreenshotBatchParseResponse> parseBatch(
+            @Valid @RequestBody ScreenshotBatchParseRequest req) {
+        return ApiResponse.success(screenshotService.parseBatch(req));
     }
 }

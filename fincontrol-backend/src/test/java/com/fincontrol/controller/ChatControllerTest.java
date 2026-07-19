@@ -56,6 +56,7 @@ class ChatControllerTest {
     private ChatService chatService;
 
     @MockBean private FundCategoryMapMapper fundCategoryMapMapper;
+    @MockBean private com.fincontrol.mapper.CategoryMasterMapper categoryMasterMapper;
     @MockBean private AssetRawMapper assetRawMapper;
     @MockBean private AssetSnapshotMapper assetSnapshotMapper;
     @MockBean private ChatHistoryMapper chatHistoryMapper;

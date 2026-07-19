@@ -271,7 +271,7 @@
 - **Phase 1a 编码期间**：根据实际开发调整本文档的决策，需同步更新 [api-contract.md](./api-contract.md) 与 [acceptance-criteria.md](../phase-1/acceptance-criteria.md)
 - **Phase 2 启动前**：补齐 target_ratio_history 表设计（决策 2 触发）
 - **Phase 3a 启动前**：补齐 nav_history、daily_returns、event_log、manual_nav_entry 4 张表设计
-</content>
+
 ---
 
 ## 决策 7：profit 字段拆分为 holding_profit / cumulative_profit（1a.8.7）
@@ -400,3 +400,52 @@
 - `DedupEngineTest.dedup_totalAsset_topVsDedupedSumDiscrepancyOver1Percent_emitsWarning`：偏差 > 1% → DISCREPANCY warning
 - `DedupEngineTest.dedup_totalAsset_topVsDedupedSumDiscrepancyWithin1Percent_noWarning`：偏差 <= 1% → 无 warning
 - `Phase1a8RealFourPageFixtureTest.dedup_totalAsset_topConsistentAcrossPages_usesTop`：fixture v3.3 4 页 → 7884.68 + top
+- `Phase1a8RealFourPageFixtureTest.dedup_v3_3FixtureWithBadP2Top_emitsBothWarnings`：fixture v3.3 P2 top 改成 2987.32 → TOP_INCONSISTENT + totalAssetSource=visible_sum
+
+---
+
+### 1a.10 后续债（2026-07-19 真实 E2E 暴露；14:48 接手重写为「双路径并存」）
+
+**状态**：`IN_PROGRESS`（路径 A 真实 confirm 待收尾 + 路径 B 一次 4 图 provider 真实验收待执行）。本轮确认两个工具并存，**不互相替代**。
+
+**真实 ground truth（用户 14:42 确认）**：
+- 支付宝总资产 7,884.68 元；六大类合计 7,563.83 元；余额类 320.85 元
+- 唯一基金 19 个；双字段独立 holding + cumulative
+- 余额宝 holding=NULL、cumulative=1.89
+- 国泰黄金ETF联接C 保留差异：holding=-45.25、cumulative=-40.24
+- 机器 canonical「港股大中华类」；展示名「港股/大中华类」
+- P1/P3/P4 顶部总资产不可见（null），P2 真实 7884.68
+
+**顶部总资产三级判定（单图与多图共用）**：
+- 任意页面读到「总金额」或「总资产」字样 + 数字 → 记为该页 `top`
+- 4 页 `top` 一致 → `totalAsset=top`、`totalAssetSource="top"`
+- 4 页 `top` 不一致 → 报警 `TOP_INCONSISTENT`、`totalAsset=dedupedFundSum`、`totalAssetSource="visible_sum"`
+- 4 页 `top` 全 null → `totalAsset=dedupedFundSum`、`totalAssetSource="visible_sum"`、**无报警**
+
+**两条工具路径**：
+- 工具 A：4 次单图 `/api/screenshot/parse` + 后端汇总/`/api/screenshot/confirm`。当前 MySQL `asset_raw=0 / asset_snapshot=0`，真实 confirm 尚未跑通。
+- 工具 B：1 次 `/api/screenshot/parse-batch` 一次传 4 个 fileId → 一次上游多模态请求 → 后端兜底去重 + top/sum 校验。当前真实 4 图请求最终 3002（MiniMax fallback 60s timeout）；豆包 primary 失败原因缺乏审计。
+
+**仍存在的实质问题（按优先级）**：
+1. 余额宝 `holdingProfit=null` 在 confirm 时被默认值 0 覆盖（H2 集成 SQL 日志已直接证明）
+2. `FundCategoryResolver` per-fund 覆盖 bug：同一 block 内多只基金被最后一只的 `user_correct` 整体覆盖
+3. vision cache key 未含 prompt（v2.7.1 命中旧结果）
+4. provider `timeoutSeconds=300` 未实际进入 OkHttp（当前硬编码 MiniMax 60s / 豆包 120s）
+5. fixture v3.3 错误假设四页 top 都是 7884.68（实际仅 P2 可见）
+6. 既有 reports 中多条「PRODUCTION 段 4/4 跑通」「19+1 unique」「4 列 NULL 化」「7+ 张才切豆包」等不实描述
+
+**最终硬验收（双路径独立）**：
+
+工具 A：
+- 4 张样图 × 1 次单图 parse → 4/4 code=0
+- 1 次 confirm → MySQL 19 raw（余额宝 holding=NULL） / 7 snapshot / 19 map；镜像一致
+- `totalAsset=7884.68`、`totalAssetSource="top"`、偏差 0、无 DISCREPANCY
+
+工具 B：
+- 1 次 4 图 parse-batch → code=0、merged unique=19、fund sum=7884.68、`totalAsset=7884.68`、偏差 0
+- 若真实 provider 4 图仍超时 → **诚实标 PRODUCTION_BLOCKED**，不冒充 PASS
+
+**详细执行计划**：`docs/phase-1/work-plans/2026-07-19_phase1a10-work-plan.md`
+**详细验收计划**：`docs/test-records/manual-tests/2026-07-19_phase1a10-acceptance-plan.md`
+
+> 旧 plan 中"只放宽 zero_funds 即可""四页顶部都应为 7884.68""MySQL 迁移均已落地"等表述不再作为验收事实。

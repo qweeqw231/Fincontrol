@@ -79,6 +79,8 @@ class SnapshotControllerTest {
 
     @MockBean
     private FundCategoryMapMapper fundCategoryMapMapper;
+    @MockBean
+    private com.fincontrol.mapper.CategoryMasterMapper categoryMasterMapper;
 
     private SnapshotLatestResponse latestFixture() {
         return SnapshotLatestResponse.builder()

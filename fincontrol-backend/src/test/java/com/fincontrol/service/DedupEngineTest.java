@@ -475,4 +475,44 @@ class DedupEngineTest {
                 .noneMatch(w -> "DISCREPANCY".equals(w.code()));
         assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("1000.00"));
     }
+
+    @Test
+    @DisplayName("1a.10 · DISCREPANCY 阈值可覆盖：4% 在 5% 下不报、在 3% 下报警")
+    void dedup_discrepancyThreshold_isConfigurable() {
+        ParsedAsset page = new ParsedAsset();
+        page.setConversationId("img-threshold");
+        page.setSnapshotDate("2026-07-16");
+        page.setTotalAsset(new BigDecimal("1000.00"));
+        CategoryBlock cat = new CategoryBlock();
+        cat.setCategoryName("权益类");
+        FundLine fund = new FundLine();
+        fund.setFundName("阈值测试基金");
+        fund.setAmount(new BigDecimal("960.00"));
+        fund.setHoldingProfit(new BigDecimal("1.00"));
+        cat.setFunds(List.of(fund));
+        page.setCategories(List.of(cat));
+        DedupInput input = new DedupInput(
+                List.of(page), new HashSet<>(), LocalDate.of(2026, 7, 16), false);
+
+        DedupResult fivePercent = new DedupEngine(new BigDecimal("0.05")).deduplicate(input);
+        assertThat(fivePercent.report().warnings())
+                .noneMatch(w -> "DISCREPANCY".equals(w.code()));
+
+        DedupResult threePercent = new DedupEngine(new BigDecimal("0.03")).deduplicate(input);
+        DedupWarning warning = threePercent.report().warnings().stream()
+                .filter(w -> "DISCREPANCY".equals(w.code()))
+                .findFirst().orElseThrow();
+        assertThat(warning.context().get("thresholdRatio"))
+                .isEqualTo(new BigDecimal("0.03"));
+        assertThat(warning.context().get("diffPct"))
+                .isEqualTo(new BigDecimal("4.00"));
+        assertThat(warning.message()).contains("3%阈值");
+    }
+
+    @Test
+    void constructor_rejectsThresholdOutsideZeroToOne() {
+        assertThatThrownBy(() -> new DedupEngine(new BigDecimal("1.01")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("0~1");
+    }
 }

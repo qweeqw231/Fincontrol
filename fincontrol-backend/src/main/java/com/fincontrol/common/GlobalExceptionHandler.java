@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -51,6 +52,23 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(ApiResponse.error(1001, ex.getMessage()));
     }
 
+    /**
+     * 1a.10：请求体不可读（JSON parse 错误、空 body、UTF-8 BOM 等）。
+     * 之前回退到 {@link #handleAny} 输出 code 5001，定位困难；
+     * 改为 BAD_REQUEST + code 1001，把 Jackson 错误信息前 160 字符透传给调用方。
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Object>> handleUnreadable(HttpMessageNotReadableException ex) {
+        String rootMsg = ex.getMostSpecificCause() != null
+                ? ex.getMostSpecificCause().getMessage()
+                : ex.getMessage();
+        if (rootMsg == null) rootMsg = ex.getMessage();
+        String snippet = snippet(rootMsg, 160);
+        log.warn("HttpMessageNotReadable: {}", snippet);
+        return ResponseEntity.badRequest()
+                .body(ApiResponse.error(1001, "请求体不可读: " + snippet));
+    }
+
     @ExceptionHandler({JsonProcessingException.class, JsonMappingException.class})
     public ResponseEntity<ApiResponse<Object>> handleJson(Exception ex) {
         log.warn("JSON parse error {}", ex.getMessage());
@@ -68,6 +86,12 @@ public class GlobalExceptionHandler {
     /**
      * 错误码到 HTTP 状态的映射。
      */
+    private static String snippet(String value, int max) {
+        if (value == null) return "";
+        String clean = value.replaceAll("\\s+", " ").trim();
+        return clean.length() > max ? clean.substring(0, max) + "..." : clean;
+    }
+
     private static final class HttpStatusCode {
         static HttpStatus forErrorCode(int code) {
             if (code >= 1000 && code < 1100) return HttpStatus.BAD_REQUEST;

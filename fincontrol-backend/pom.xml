@@ -127,6 +127,15 @@
     <build>
         <finalName>fincontrol-backend</finalName>
         <plugins>
+            <!-- 1a.10：Windows 默认 GBK 环境也必须按 UTF-8 读取 Java 源文件。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                    <release>${java.version}</release>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

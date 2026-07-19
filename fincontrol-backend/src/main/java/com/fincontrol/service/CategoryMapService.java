@@ -10,6 +10,7 @@ import com.fincontrol.entity.FundCategoryMap;
 import com.fincontrol.mapper.FundCategoryMapMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -47,9 +48,18 @@ public class CategoryMapService {
     public static final int MATCH_FUNDS_LIMIT = 50;
 
     private final FundCategoryMapMapper fundCategoryMapMapper;
+    private final CategoryMasterService categoryMasterService;
 
+    /** 保留纯单测构造器；迁移前按 CategoryEnum 校验。 */
     public CategoryMapService(FundCategoryMapMapper fundCategoryMapMapper) {
+        this(fundCategoryMapMapper, null);
+    }
+
+    @Autowired
+    public CategoryMapService(FundCategoryMapMapper fundCategoryMapMapper,
+                              CategoryMasterService categoryMasterService) {
         this.fundCategoryMapMapper = fundCategoryMapMapper;
+        this.categoryMasterService = categoryMasterService;
     }
 
     // ========================================================================
@@ -207,8 +217,11 @@ public class CategoryMapService {
         }
     }
 
-    private static void validateCategory(String category) {
-        if (!CategoryEnum.isValid(category)) {
+    private void validateCategory(String category) {
+        boolean valid = categoryMasterService != null
+                ? categoryMasterService.isActiveCanonical(category)
+                : CategoryEnum.isValid(category);
+        if (!valid) {
             throw new BusinessException(ErrorCode.INVALID_CATEGORY_NAME,
                     "category '" + category + "' 不在 7 canonical 枚举值内（货币类/固收类/商品类/A股权益类/海外权益类/港股大中华类/余额类）");
         }

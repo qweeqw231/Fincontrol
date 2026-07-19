@@ -19,6 +19,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -41,7 +42,7 @@ public class AiRouter {
 
     private static final Logger log = LoggerFactory.getLogger(AiRouter.class);
 
-    private static final String VISION_CACHE_PREFIX = "v1:vision:";
+    private static final String VISION_CACHE_PREFIX = "v2:vision:";
 
     public enum VisionRoute {
         MINIMAX_PRIMARY,
@@ -113,13 +114,28 @@ public class AiRouter {
         this.chatRetry = chatRetry;
     }
 
+    /** 旧单图入口；保留显式 imageCount 以兼容 1a.8 调用和测试。 */
     public VisionResult callVision(File imageFile, String systemPrompt, String userMessage, int imageCount) {
         Objects.requireNonNull(imageFile, "imageFile");
+        return callVisionInternal(List.of(imageFile), systemPrompt, userMessage, imageCount);
+    }
 
-        String cacheKey = VISION_CACHE_PREFIX + sha256File(imageFile);
+    /** 1a.10 多图入口：路由 imageCount 与实际文件数始终一致。 */
+    public VisionResult callVision(List<File> imageFiles, String systemPrompt, String userMessage) {
+        if (imageFiles == null || imageFiles.isEmpty()) {
+            throw new IllegalArgumentException("imageFiles 至少包含 1 张图");
+        }
+        List<File> copy = List.copyOf(imageFiles);
+        copy.forEach(file -> Objects.requireNonNull(file, "imageFile"));
+        return callVisionInternal(copy, systemPrompt, userMessage, copy.size());
+    }
+
+    private VisionResult callVisionInternal(List<File> imageFiles, String systemPrompt,
+                                            String userMessage, int imageCount) {
+        String cacheKey = VISION_CACHE_PREFIX + orderedImageHashes(imageFiles);
         VisionResult cached = visionCache.getIfPresent(cacheKey);
         if (cached != null) {
-            log.info("vision cache hit key={}", cacheKey);
+            log.info("vision cache hit imageCount={} key={}", imageCount, cacheKey);
             return cached.markCacheHit();
         }
 
@@ -129,7 +145,7 @@ public class AiRouter {
         log.info("vision 路由 imageCount={} threshold={} route={}",
                 imageCount, properties.getRouter().getImageCountThreshold(), route);
 
-        VisionResult result = callWithFallback(imageFile, systemPrompt, userMessage, route);
+        VisionResult result = callWithFallback(imageFiles, systemPrompt, userMessage, route);
 
         try {
             visionCache.put(cacheKey, result);
@@ -139,12 +155,13 @@ public class AiRouter {
         return result;
     }
 
-    private VisionResult callWithFallback(File imageFile, String systemPrompt, String userMessage, VisionRoute route) {
+    private VisionResult callWithFallback(List<File> imageFiles, String systemPrompt,
+                                          String userMessage, VisionRoute route) {
         boolean isMinimaxPrimary = (route == VisionRoute.MINIMAX_PRIMARY);
 
         try {
             String primaryContent = retryWithCircuitBreaker(() ->
-                    visionClient.callRaw(imageFile, systemPrompt, userMessage,
+                    visionClient.callRaw(imageFiles, systemPrompt, userMessage,
                             isMinimaxPrimary ? ApiStyle.OPENAI_CHAT : ApiStyle.OPENAI_RESPONSES));
             return VisionResult.success(
                     isMinimaxPrimary ? ChatHistory.PROVIDER_MINIMAX : ChatHistory.PROVIDER_DOUBAO,
@@ -157,7 +174,7 @@ public class AiRouter {
         }
 
         try {
-            String fallbackContent = visionClient.callRaw(imageFile, systemPrompt, userMessage,
+            String fallbackContent = visionClient.callRaw(imageFiles, systemPrompt, userMessage,
                     isMinimaxPrimary ? ApiStyle.OPENAI_RESPONSES : ApiStyle.OPENAI_CHAT);
             return VisionResult.success(
                     isMinimaxPrimary ? ChatHistory.PROVIDER_DOUBAO : ChatHistory.PROVIDER_MINIMAX,
@@ -224,6 +241,16 @@ public class AiRouter {
         } catch (BusinessException be) {
             throw be;
         }
+    }
+
+    /** 有序组合 hash；固定 64 字符单图 hash + 分隔符避免跨页顺序碰撞。 */
+    private static String orderedImageHashes(List<File> files) {
+        StringBuilder key = new StringBuilder(files.size() * 65);
+        for (int i = 0; i < files.size(); i++) {
+            if (i > 0) key.append(':');
+            key.append(sha256File(files.get(i)));
+        }
+        return key.toString();
     }
 
     private static String sha256File(File file) {

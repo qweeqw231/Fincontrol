@@ -36,6 +36,9 @@ class FincontrolApplicationTests {
 
     /** 替换所有 MyBatis-Plus mapper，避免禁用 MybatisPlusAutoConfiguration 后注入失败 */
     @MockBean
+    private com.fincontrol.mapper.CategoryMasterMapper categoryMasterMapper;
+
+    @MockBean
     private AssetRawMapper assetRawMapper;
 
     @MockBean
