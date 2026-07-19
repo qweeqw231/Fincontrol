@@ -171,10 +171,11 @@ fincontrol:
         api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
       doubao:
         # 豆包 ARK / OpenAI Responses 端点
-        # 2026-07-19 16:56 更换模型：旧 model=doubao-seed-1-8-251228 在用户账户下 404 NotFound
-        # 换为 doubao-seed-2-0-pro-260215（豆包 2.0 Pro 2026-02-15 快照）
+        # 2026-07-19 18:25 用户决定：换用 doubao-1-5-pro-256k-250115
+        # （替代原 doubao-seed-2-0-pro-260215 是为了测试用户账户下其他 model 的可用性）
+        # 若此 model 在你账户下不可用，fallback minimax 仍能完成路径 B
         base-url: https://ark.cn-beijing.volces.com/api/v3
-        model: doubao-seed-2-0-pro-260215
+        model: doubao-1-5-pro-256k-250115
         timeout-seconds: 300
         api-key: ${DOUBAO_VISION_API_KEY:REPLACE_ME_DOUBAO_VISION_API_KEY}
 
