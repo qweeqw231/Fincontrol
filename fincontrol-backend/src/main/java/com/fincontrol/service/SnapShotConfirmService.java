@@ -179,14 +179,28 @@ public class SnapShotConfirmService {
                 row.setFundName(fund.getFundName());
                 row.setCategory(cat.getCategoryName());
                 row.setAmount(fund.getAmount());
-                // 1a.8.7：profit / holdingProfit / cumulativeProfit 三列同步写
-                BigDecimal holding = fund.getHoldingProfit() != null
-                        ? fund.getHoldingProfit()
-                        : (fund.getProfit() != null ? fund.getProfit() : BigDecimal.ZERO);
-                BigDecimal cumulative = fund.getCumulativeProfit() != null
-                        ? fund.getCumulativeProfit()
-                        : holding;
-                row.setProfit(holding);
+                // 1a.10 P2：余额类特例 —— 支付宝「余额类」截图中无「持有收益」列，
+                //   即使模型补 0，service 也要清成 null，保证余额类语义干净。
+                //   cumulative（如 +1.89）透传保留；profit 兼容列也置 null。
+                boolean isBalanceCategory = "余额类".equals(cat.getCategoryName());
+                BigDecimal holding;
+                BigDecimal cumulative;
+                BigDecimal profit;
+                if (isBalanceCategory) {
+                    holding = null;
+                    profit = null;
+                    cumulative = fund.getCumulativeProfit();
+                } else {
+                    // 1a.8.7：profit / holdingProfit / cumulativeProfit 三列同步写
+                    holding = fund.getHoldingProfit() != null
+                            ? fund.getHoldingProfit()
+                            : (fund.getProfit() != null ? fund.getProfit() : BigDecimal.ZERO);
+                    cumulative = fund.getCumulativeProfit() != null
+                            ? fund.getCumulativeProfit()
+                            : holding;
+                    profit = holding;
+                }
+                row.setProfit(profit);
                 row.setHoldingProfit(holding);
                 row.setCumulativeProfit(cumulative);
                 row.setSource("screenshot_manual");

@@ -57,6 +57,20 @@ SET @ddl := (
 );
 PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
+-- 1a.10 P2：profit 兼容列与 holding_profit 同步语义（余额类 holding=NULL 时 profit 也 NULL）
+SET @ddl := (
+    SELECT IF(
+        EXISTS(SELECT 1 FROM information_schema.COLUMNS
+               WHERE TABLE_SCHEMA = @schema
+                 AND TABLE_NAME = 'asset_raw'
+                 AND COLUMN_NAME = 'profit'
+                 AND IS_NULLABLE = 'YES'),
+        'SELECT 1',
+        'ALTER TABLE asset_raw MODIFY COLUMN profit DECIMAL(12,2) NULL COMMENT "1a.8.7 兼容列，与 holding_profit 同步；余额类允许 NULL"'
+    )
+);
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
 SET @ddl := (
     SELECT IF(
         EXISTS(SELECT 1 FROM information_schema.COLUMNS
