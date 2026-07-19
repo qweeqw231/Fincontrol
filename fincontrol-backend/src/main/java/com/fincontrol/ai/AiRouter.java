@@ -139,9 +139,12 @@ public class AiRouter {
                 + ":" + sha256Text(systemPrompt);
         VisionResult cached = visionCache.getIfPresent(cacheKey);
         if (cached != null) {
-            log.info("vision cache hit imageCount={} key={}", imageCount, cacheKey);
+            log.info("vision cache HIT imageCount={} key={} usedProvider={} fallbackTriggered={}（未调上游）",
+                    imageCount, cacheKey, cached.usedProvider(), cached.fallbackTriggered());
             return cached.markCacheHit();
         }
+        log.info("vision cache MISS imageCount={} key={} → 将调上游 provider",
+                imageCount, cacheKey);
 
         VisionRoute route = (imageCount <= properties.getRouter().getImageCountThreshold())
                 ? VisionRoute.MINIMAX_PRIMARY
