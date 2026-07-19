@@ -22,8 +22,10 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 | **1a.8** AI 服务韧性增强（双 provider + Caffeine + resilience4j） | ✅ 架构就绪；豆包 4 model 实测失败（决策 12 暂废） | [1a.8 验收](docs/test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md) |
 | **1a.9** 总资产双轨 + DISCREPANCY 1% 报警 | ✅ prompt v2.6 + DedupEngine 双轨 | [1a.9 报告](docs/test-records/manual-tests/2026-07-18_phase1a8-v3_3-real-data-check.md) |
 | **1a.10** 双路径并存（4×单图+confirm / 1×parse-batch） | ✅ 路径 A 全 PASS；路径 B minimax 4 图 batch 偶发 timeout（PRODUCTION_BLOCKED 已知） | [1a.10 真实 E2E](docs/test-records/manual-tests/2026-07-19_phase1a10-real-e2e.md) |
-| **Phase 1a 整体验收** | ✅ **全部完成**（mvn test 238/238 + 路径 A 真实 confirm 19/7/19 跑通） | [1a 整体验收报告](docs/test-records/manual-tests/2026-07-19_phase1a-acceptance.md) |
-| **1b.1–1b.4** 前端对接 | 🟡 准备启动 | — |
+| **Phase 1a 整体验收** | ✅ **全部完成**（mvn test **241/241** + 路径 A 真实 confirm 19/7/19 跑通） | [1a 整体验收报告](docs/test-records/manual-tests/2026-07-19_phase1a-acceptance.md) |
+| **1a.10 决策 13 实施补全** | ✅ dataTime 覆盖 + Test 1B 同 JVM 重跑 + E2E 验证 | [1a.10-real-e2e §9.8.11](docs/test-records/manual-tests/2026-07-19_phase1a10-real-e2e.md) |
+| **1a.10 缓存验证** | ✅ fresh JVM 4 MISS (32-62s) → 同 JVM 3 HIT (0.08-0.12s) = **460x 加速** | [缓存 + AI vs DeepSeek 验收](docs/test-records/manual-tests/2026-07-20_phase1a10-cache-gray-test-acceptance.md) |
+| **1b.1–1b.4** 前端对接 | 🟡 准备启动 | [Phase 1a 使用说明书](docs/phase-1/USER-MANUAL.md) |
 | **Phase 2** 核心业务 | ⏳ 待启动 | — |
 
 **架构文档**：[技术设计文档 v2.0](docs/architecture/技术设计文档v2.docx)（2026-06-10）
@@ -41,6 +43,7 @@ Fincontrol/
 │   ├── SETUP.md                       ← 本地开发环境搭建指南（含视觉模型 API Key 配置）
 │   ├── phase-0/                       ← Phase 0 决策 / API 契约 / db-schema
 │   ├── phase-1/                       ← Phase 1 验收 / 子阶段计划 / 1a.2 测试教程
+│   │   ├── USER-MANUAL.md             ← 【1a 使用说明书（详细）】  ← NEW
 │   │   ├── checklists/phase-1a.md     ← Phase 1a 实时验收清单（✅ 全部完成）
 │   │   └── work-plans/                ← 1a.8 / 1a.9 / 1a.10 工作计划
 │   └── test-records/manual-tests/     ← 1a.3 / 1a.7 / 1a.8 / 1a.9 / 1a.10 验收报告
@@ -107,6 +110,18 @@ set VISION_API_KEY=eyJxxxxx...
 - resilience4j（重试 + 熔断）
 - Caffeine（vision cache，1024 entries / 24h TTL）
 
+### Phase 1a 关键性能指标（2026-07-19 / 2026-07-20 实测）
+
+| 指标 | 实测值 | 备注 |
+|---|---|---|
+| `mvn test` 通过率 | **241/241** | 单元 + 集成测试无回归 |
+| 真实 4 图灰测 | **19/19 fund 名称 + 19/19 amount = 100% 匹配 DeepSeek** | AI vs 人工 baseline 100% 一致 |
+| 持有 + 累计收益匹配 | **18/19 = 94.7%** | 1 只 5.02 元差异（决策 7 双字段设计）已知 |
+| 总资产 top | **7850.38 元** | 与 DeepSeek 完全一致 |
+| 同 JVM cache HIT 加速 | **460x**（38s → 0.08s）| Caffeine vision cache 24h TTL |
+| 路径 A 真实 confirm | 19/7/19 跑通 | 4×单图 + 后端汇总 |
+| 决策 13 dataTime 覆盖 | ✅ PASS | 前端 EXIF / 用户选择 → 后端 override AI 解析值 |
+
 ---
 
 ## 前端技术栈（1b 准备启动）
@@ -124,13 +139,15 @@ set VISION_API_KEY=eyJxxxxx...
 
 | 文档 | 路径 | 说明 |
 |------|------|------|
-| Phase 0 决策 | [docs/phase-0/decisions.md](docs/phase-0/decisions.md) | 12 项硬约束（决策 1-12） |
+| **Phase 1a 使用说明书** | [docs/phase-1/USER-MANUAL.md](docs/phase-1/USER-MANUAL.md) | 【必读】详细功能 + API + 操作步骤 |
+| Phase 0 决策 | [docs/phase-0/decisions.md](docs/phase-0/decisions.md) | 14 项硬约束（决策 1-14） |
 | Phase 0 API 契约 | [docs/phase-0/api-contract.md](docs/phase-0/api-contract.md) | 30+ 端点 |
 | Phase 1 验收标准 | [docs/phase-1/acceptance-criteria.md](docs/phase-1/acceptance-criteria.md) | 47 项 + 18 项 P0 |
 | Phase 1 子阶段计划 | [docs/phase-1/subphase-plan.md](docs/phase-1/subphase-plan.md) | 1a.1–1a.7 + 1b.1–1b.4 |
-| Phase 1a 实时清单 | [docs/phase-1/checklists/phase-1a.md](docs/phase-1/checklists/phase-1a.md) | ✅ 全部完成（238/238 + 真实 confirm） |
+| Phase 1a 实时清单 | [docs/phase-1/checklists/phase-1a.md](docs/phase-1/checklists/phase-1a.md) | ✅ 全部完成（241/241 + 真实 confirm） |
 | Phase 1a 整体验收 | [docs/test-records/manual-tests/2026-07-19_phase1a-acceptance.md](docs/test-records/manual-tests/2026-07-19_phase1a-acceptance.md) | 5 段式 + 路径 A/B 独立判定 |
-| 1a.10 真实 E2E | [docs/test-records/manual-tests/2026-07-19_phase1a10-real-e2e.md](docs/test-records/manual-tests/2026-07-19_phase1a10-real-e2e.md) | §9.5b/§9.6 minimax 4 图 batch |
+| 1a.10 真实 E2E | [docs/test-records/manual-tests/2026-07-19_phase1a10-real-e2e.md](docs/test-records/manual-tests/2026-07-19_phase1a10-real-e2e.md) | §9.5b/§9.6 + §9.8.11 决策 13 实施补全 |
+| 1a.10 缓存 + AI vs DeepSeek 灰测 | [docs/test-records/manual-tests/2026-07-20_phase1a10-cache-gray-test-acceptance.md](docs/test-records/manual-tests/2026-07-20_phase1a10-cache-gray-test-acceptance.md) | 缓存验证 + DeepSeek 人工对比 |
 | 1a.10 工作计划 | [docs/phase-1/work-plans/2026-07-19_phase1a10-work-plan.md](docs/phase-1/work-plans/2026-07-19_phase1a10-work-plan.md) | 双路径切片 |
 | 1a.8 验收 | [docs/test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md](docs/test-records/manual-tests/2026-07-18_phase1a8-acceptance-report.md) | 方案 C 路由 + 双 provider |
 | 1a.2 测试教程 | [docs/phase-1/testing-guide-1a2.md](docs/phase-1/testing-guide-1a2.md) | curl + mvn test 教程 |
@@ -151,6 +168,8 @@ set VISION_API_KEY=eyJxxxxx...
 - [x] **1a.8**：AI 服务韧性增强（双 provider 路由 + Caffeine cache + resilience4j retry/CB；架构就绪）
 - [x] **1a.9**：总资产双轨 + DISCREPANCY 1% 报警
 - [x] **1a.10**：双路径并存（4×单图 + 1×confirm / 1×parse-batch）
+- [x] **1a.10 决策 13**：dataTime 字段（前端 EXIF / 用户选择 → 后端 override AI 解析值）
+- [x] **1a.10 Test 1B**：同 JVM 重跑（4 MISS + 3 HIT = 460x 加速）
 
 ### Phase 1b 前端（🟡 准备启动）
 
@@ -172,7 +191,7 @@ set VISION_API_KEY=eyJxxxxx...
 mysql -u root -p < docs/phase-0/db-schema.sql
 mysql -u root -p < docs/phase-0/seed-data.sql
 
-:: 2. 编辑 application-local.yml 填 miniMax Key
+:: 2. 编辑 application-local.yml 填 minimax Key
 notepad fincontrol-backend\src\main\resources\application-local.yml
 
 :: 3. 后端启动 + 跑全量测试
@@ -186,7 +205,7 @@ npm install
 npm run dev
 ```
 
-完整说明：[docs/SETUP.md](docs/SETUP.md)。
+完整说明：[docs/SETUP.md](docs/SETUP.md) + [docs/phase-1/USER-MANUAL.md](docs/phase-1/USER-MANUAL.md)。
 
 ---
 
@@ -206,4 +225,5 @@ npm run dev
 
 ---
 
-*Phase 1a 收尾完成时间：2026-07-19 23:00（Asia/Shanghai）*
+*Phase 1a 收尾完成时间：2026-07-20 02:30（Asia/Shanghai）*  
+*最新 commit：`5ac9574`（1a.10 决策 13 实施补全 + Test 1B + E2E 验证）*
