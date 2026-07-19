@@ -18,6 +18,9 @@ import org.springframework.test.context.TestPropertySource;
  * 这里用 {@link MockBean} 替换，使容器可以在没有真实 MySQL 的情况下启动。
  *
  * <p>真实集成测试在 Phase 1a.2+ 引入（Testcontainers / 本地 MySQL）。
+ *
+ * <p>1a.10 cleanup: 原 {@code fincontrol.vision.api-key=placeholder-for-test-only} test-property
+ * 已删除（1a.8 refactor 后该 key 已无任何代码读取，孤立的 @TestPropertySource 反而误导）。
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.NONE,
@@ -29,8 +32,7 @@ import org.springframework.test.context.TestPropertySource;
     }
 )
 @TestPropertySource(properties = {
-    "spring.profiles.active=test",
-    "fincontrol.vision.api-key=placeholder-for-test-only"
+    "spring.profiles.active=test"
 })
 class FincontrolApplicationTests {
 

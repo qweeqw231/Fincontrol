@@ -21,7 +21,7 @@ spring:
   # 1a.2 验收：HikariCP pool size = 10
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:fincontrol}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:fincontrol}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useLegacyDatetimeCode=false&useLegacyDatetimeCode=false
     username: ${DB_USER:root}
     password: ${DB_PASSWORD:root}
     hikari:
@@ -120,22 +120,12 @@ fincontrol:
   dedup:
     discrepancy-threshold-pct: ${FINCONTROL_DEDUP_DISCREPANCY_THRESHOLD_PCT:0.01}
 
-  # 视觉模型配置（Phase 1a.5+，1a.8 保留兼容段 + 新增 fincontrol.ai.vision）
   # ============================================
-  # 1a.8 兼容性说明：
-  #   - fincontrol.vision.* 段：1a.5-1a.7 VisionModelClient @Value 注入使用
-  #   - fincontrol.ai.* 段：1a.8 起 AiProperties @ConfigurationProperties 注入使用
-  #   - 两段当前并存；Commit B 重构 VisionModelClient 后 fincontrol.vision.* 段可弃用
+  # AI 客户端配置（1a.8 统一根段 fincontrol.ai.*，1a.10 重构后唯一配置入口）
   # ============================================
-  vision:
-    base-url: https://api.minimaxi.com/v1
-    model: MiniMax-M3
-    timeout-seconds: 300
-    api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
-
-  # ============================================
-  # AI 客户端配置（1a.8 统一根段 fincontrol.ai.*）
-  # ============================================
+  # 1a.10 cleanup: 原 fincontrol.vision.* 段（1a.5-1a.7 @Value 注入兼容）已删除。
+  # 1a.8 refactor 后 VisionModelClient 改用 AiProperties 构造器注入，无任何代码读
+  # fincontrol.vision.*，该段成为死代码，于 2026-07-19 移除。
   # API Key 加载优先级（任意 provider 都适用）：
   #   1. 环境变量（VISION_API_KEY / DOUBAO_VISION_API_KEY / TEXT_AI_API_KEY / DEEPSEEK_CHAT_API_KEY）
   #   2. application-local.yml（gitignored，本机覆盖）
@@ -163,6 +153,7 @@ fincontrol:
     # 1a.8 视觉模型双 provider 配置
     # 1-2 张图：minimax primary（OpenAI chat completions）；3+ 张图：豆包 primary（OpenAI Responses API）
     # 互为 fallback：minimax 失败 → 豆包；豆包失败 → minimax
+    # 2026-07-19 决策 12：豆包 vision 路径暂时废弃，Phase 1a 按 minimax-only 验收通过
     vision:
       minimax:
         base-url: https://api.minimaxi.com/v1
