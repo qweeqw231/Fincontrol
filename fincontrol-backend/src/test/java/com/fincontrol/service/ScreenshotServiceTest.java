@@ -48,6 +48,7 @@ import static org.mockito.Mockito.*;
  *   <li>[P0-1.4] [3001]：上游返回非 JSON → BusinessException(VISION_INVALID_JSON) + assistant 错误记录</li>
  *   <li>[P0-1.4] [3002]：上游调用超时 → BusinessException(VISION_TIMEOUT) + assistant 错误记录</li>
  *   <li>[P0-1.4] [3003]：上游返回 0 只基金 → BusinessException(VISION_ZERO_FUNDS) + assistant 错误记录</li>
+ *   <li>[P0-1.4] 决策 13：req.dataTime 覆盖 AI 解析的 snapshot_date（3 个单测）</li>
  * </ul>
  */
 @ExtendWith(MockitoExtension.class)
@@ -472,4 +473,76 @@ class ScreenshotServiceTest {
          assertThat(thrown).isNotNull();
          assertThat(thrown.getErrorCode().getCode()).isEqualTo(3003);
      }
-}
+
+     // ================================================================
+     // 1a.10 决策 13：dataTime override 单元测试
+     // 验证 req.dataTime 覆盖 AI 解析的 snapshot_date
+     // ================================================================
+     @Test
+     void parse_dataTimeProvided_overridesAiSnapshotDate() {
+         // 决策 13 场景 1：AI 提取 2026-07-20（上传当天），前端传 2026-07-15（截图真实数据日期）
+         // 期望：asset.snapshotDate = "2026-07-15"（不是 AI 提取值）
+         String raw = "{" +
+                 "\"snapshot_date\":\"2026-07-20\"," +
+                 "\"total_asset\":100.00," +
+                 "\"categories\":[{\"category_name\":\"货币类\"," +
+                 "  \"funds\":[{\"fund_name\":\"中加货币E\",\"amount\":100.00}]," +
+                 "  \"category_total\":100.00}]}";
+         stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
+         stubExtractJson(raw);
+         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+         ScreenshotParseRequest req = new ScreenshotParseRequest();
+         req.setFileId(FILE_ID);
+         req.setUserId(1L);
+         req.setDataTime(LocalDate.of(2026, 7, 15));  // 前端透传真实数据日期
+
+         ParsedAsset asset = service.parse(req);
+
+         assertThat(asset.getSnapshotDate()).isEqualTo("2026-07-15");  // ✅ 被覆盖
+         assertThat(asset.getMatchedFunds()).containsExactly("中加货币E");
+     }
+
+     @Test
+     void parse_dataTimeNull_keepsAiSnapshotDate() {
+         // 决策 13 场景 2：前端不传 dataTime → 保持 AI 解析值
+         String raw = "{" +
+                 "\"snapshot_date\":\"2026-07-09\"," +
+                 "\"total_asset\":100.00," +
+                 "\"categories\":[{\"category_name\":\"货币类\"," +
+                 "  \"funds\":[{\"fund_name\":\"中加货币E\",\"amount\":100.00}]," +
+                 "  \"category_total\":100.00}]}";
+         stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
+         stubExtractJson(raw);
+         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+         ScreenshotParseRequest req = new ScreenshotParseRequest();
+         req.setFileId(FILE_ID);
+         req.setUserId(1L);
+         // req.setDataTime(null)  // 默认就是 null
+
+         ParsedAsset asset = service.parse(req);
+
+         assertThat(asset.getSnapshotDate()).isEqualTo("2026-07-09");  // ✅ 保持 AI 解析值
+     }
+
+     @Test
+     void applyDataTimeOverride_helper_directTest() {
+         // 决策 13：直接测试 helper 方法，覆盖 / null / null asset 三种情况
+         ParsedAsset asset = new ParsedAsset();
+         asset.setSnapshotDate("2026-07-20");
+
+         // 1) dataTime != null → override
+         ScreenshotService.applyDataTimeOverride(asset, LocalDate.of(2026, 7, 15), "test:direct");
+         assertThat(asset.getSnapshotDate()).isEqualTo("2026-07-15");
+
+         // 2) dataTime == null → 保持
+         asset.setSnapshotDate("2026-07-20");
+         ScreenshotService.applyDataTimeOverride(asset, null, "test:direct");
+         assertThat(asset.getSnapshotDate()).isEqualTo("2026-07-20");
+
+         // 3) asset == null → no NPE
+         ScreenshotService.applyDataTimeOverride(null, LocalDate.of(2026, 7, 15), "test:direct");
+         // 不抛异常
+     }
+ }

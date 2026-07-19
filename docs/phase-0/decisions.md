@@ -556,3 +556,58 @@
 - 数据：调用现有 `fund_category_map` 表，source='user_correct' 覆盖 source='ai_guess'
 
 **优先级**：1b+ 必做（mixed-asset 边界 case 影响 ≥1% 用户）
+
+---
+
+## 决策 13 实施补全（2026-07-20 02:00）
+
+**状态**：✅ 已实施
+
+**实施位置**：
+- `ScreenshotParseRequest.java` / `ScreenshotBatchParseRequest.java` / `ScreenshotReparseRequest.java`：新增 `dataTime: LocalDate` 字段（optional）
+- `ScreenshotService.java`：
+  - 新增私有方法 `applyDataTimeOverride(asset, dataTime, ctx)`（单元测试可见）
+  - `parse()` / `parseBatch()` / `reparse()` 三处调用，覆盖 AI 提取的 snapshotDate
+  - 优先级：`req.dataTime`（前端 EXIF / 用户选择） > `mapToParsedAsset` AI 解析值 > `LocalDate.now()`（dedupDate 兜底）
+- `ScreenshotServiceTest.java`：新增 3 个单元测试（dataTime override / null / helper 直接测）
+
+**核心代码**（`ScreenshotService.applyDataTimeOverride`）：
+
+```java
+static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String ctx) {
+    if (asset == null) return;
+    if (dataTime == null) {
+        log.debug("决策13: dataTime=null，ctx={} 保持 AI 解析 snapshot_date={}", ctx, asset.getSnapshotDate());
+        return;
+    }
+    String old = asset.getSnapshotDate();
+    String neu = dataTime.toString();
+    asset.setSnapshotDate(neu);
+    log.info("决策13: dataTime override ctx={} AI={} → 实际={}", ctx, old, neu);
+}
+```
+
+**单元测试**：`mvn test` 241/241 PASS（原 238 + 新增 3）
+
+**E2E 验证**（2026-07-20 02:00 fresh JVM）：
+- dataTime=2026-07-15 + 灰测图 a808：response.snapshotDate=**2026-07-15**（AI 提取 2026-01-24 被覆盖）✅
+- dataTime=2026-07-16 + 灰测图 7ac58b：response.snapshotDate=**2026-07-16**（AI 提取 2026-01-26 被覆盖）✅
+- 同图 + dataTime + cache HIT（Replay 3）：response 时间 0.117s，snapshotDate 仍正确覆盖 ✅
+
+**与 cache 关系**：
+- 缓存键 = (fileId, promptVersion, imageCount)，**不含 dataTime**
+- 缓存内容 = AI 推理结果（含 AI 提取的 snapshotDate）
+- dataTime 在缓存返回后被 override
+- 同图 24h 内 cache HIT，无论 dataTime 传什么，AI 结果一致；dataTime 在返回前覆盖
+- 设计合理性：既保证性能（cache 复用 AI 结果）又保证灵活性（用户可指定任意日期）
+
+**已修复历史债务**：原 `replace_in_file` 工具问题导致 Service 覆盖逻辑未生效（仅 DTO 字段补了），本次通过 `write_to_file` 完整重写 ScreenshotService.java 解决
+
+**灰测仍 PASS**（19/19 fund、19/19 amount、18/19 holding+cumulative、top=7850.38 全部对齐 DeepSeek）
+
+**前端 follow-up**（1b+）：
+- 从 EXIF DateTimeOriginal 提取真实数据日期，透传到 `dataTime` 字段
+- UI 提供日期选择/确认弹窗
+- 用户不选时 fallback 到 today（最差兜底）
+- 远期：支持用户对图加注（"这张是 7-16 的补传"）作为 prompt 上下文
+

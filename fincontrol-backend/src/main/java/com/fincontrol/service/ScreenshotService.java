@@ -33,6 +33,8 @@ import java.util.*;
  *   <li>parse / reparse —— 通过 {@link AiRouter} 调用 vision 模型（minimax primary + 豆包 fallback / cache / retry / CB）
  *       — 1a.8 起统一入口，{@code usedProvider} + {@code fallbackTriggered} 写入 chat_history 审计</li>
  *   <li>1a.8 v3：parse 成功后写 OCR 真实数据日志到 {@code docs/test-records/ocr-results/{date}/}（gitignored）</li>
+ *   <li>1a.10 决策 13：{@code req.dataTime}（前端 EXIF 或用户选择）覆盖 AI 提取的 snapshot_date，
+ *       保证 asset_raw.snapshot_date = 截图真实数据日期（非上传时间）</li>
  *   <li>失败时写 assistant 错误记录（含 provider 字段）</li>
  * </ul>
  *
@@ -144,6 +146,9 @@ public class ScreenshotService {
 
         ParsedAsset asset = mapToParsedAsset(conversationId, raw, json, req.getUserId());
 
+        // 决策 13：req.dataTime 覆盖 AI 提取的 snapshot_date（AI 可能读错或截断日期）
+        applyDataTimeOverride(asset, req.getDataTime(), "parse:" + req.getFileId());
+
         // 1a.8 v3: OCR 真实数据日志写盘
         writeOcrLog(req.getFileId(), usedProvider, fallbackTriggered, raw, asset, null);
 
@@ -242,6 +247,10 @@ public class ScreenshotService {
         }
 
         ParsedAsset parsed = mapToParsedAsset(conversationId, raw, json, req.getUserId());
+
+        // 决策 13：req.dataTime 覆盖 AI 提取的 snapshot_date；dedupDate 也用 dataTime（关键！）
+        applyDataTimeOverride(parsed, req.getDataTime(), "parseBatch:" + conversationId);
+
         if (!hasCompleteFund(parsed)) {
             BusinessException e = new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
                     "视觉模型批量解析返回 0 只完整基金（conversationId=" + conversationId + "）",
@@ -253,6 +262,8 @@ public class ScreenshotService {
             throw e;
         }
 
+        // 决策 13：dedupDate 用 req.dataTime（已 override 写入 parsed.snapshotDate），
+        // 如果 dataTime 仍为 null，则用 AI 解析的 snapshotDate，最后兜底用 today
         LocalDate dedupDate = parseDateOrToday(parsed.getSnapshotDate());
         DedupEngine.DedupResult dedup;
         try {
@@ -342,6 +353,9 @@ public class ScreenshotService {
         }
 
         ParsedAsset asset = mapToParsedAsset(req.getConversationId(), raw, json, userMsg.getUserId());
+
+        // 决策 13：reparse 也支持 dataTime override（可选字段）
+        applyDataTimeOverride(asset, req.getDataTime(), "reparse:" + req.getConversationId());
 
         // 1a.8 v3: OCR 真实数据日志写盘
         writeOcrLog(fileId, usedProvider, fallbackTriggered, raw, asset, null);
@@ -444,6 +458,34 @@ public class ScreenshotService {
     // ===================================================================
     // 内部辅助
     // ===================================================================
+
+    /**
+     * 决策 13：dataTime 覆盖逻辑。
+     * <p>来源优先级：{@code req.dataTime}（前端 EXIF / 用户选择，权威）>
+     * {@code mapToParsedAsset} AI 解析的 snapshot_date（fallback）> {@code LocalDate.now()}（最差兜底）。
+     * <ul>
+     *   <li>如果 {@code dataTime != null}：覆盖 asset.snapshotDate 为 dataTime.toString()，打 INFO 日志</li>
+     *   <li>如果 {@code dataTime == null}：保持 AI 解析值（不动）</li>
+     * </ul>
+     * 注意：缓存键不含 dataTime，所以同图同 prompt 24h 内 cache HIT 时此方法仍会按 req.dataTime 覆盖
+     * （cache 只缓存 AI 推理结果，dataTime 是入参级业务字段）。
+     *
+     * @param asset    待覆盖的 ParsedAsset（已通过 mapToParsedAsset 填好 AI 解析值）
+     * @param dataTime 前端传入的截图真实数据日期（可为 null）
+     * @param ctx      日志上下文（"parse:fileId" / "parseBatch:convId" / "reparse:convId"）
+     */
+    static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String ctx) {
+        if (asset == null) return;
+        if (dataTime == null) {
+            log.debug("决策13: dataTime=null，ctx={} 保持 AI 解析 snapshot_date={}",
+                    ctx, asset.getSnapshotDate());
+            return;
+        }
+        String old = asset.getSnapshotDate();
+        String neu = dataTime.toString();
+        asset.setSnapshotDate(neu);
+        log.info("决策13: dataTime override ctx={} AI={} → 实际={}", ctx, old, neu);
+    }
 
     private static LocalDate parseDateOrToday(String value) {
         if (value == null || value.isBlank()) return LocalDate.now();
