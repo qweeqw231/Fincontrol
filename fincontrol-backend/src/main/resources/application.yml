@@ -1,4 +1,4 @@
-# ============================================
+﻿# ============================================
 # FinControl 后端主配置（Phase 1a.5+，1a.8 重构）
 # ============================================
 # 适用场景：所有 profile 共用此文件
@@ -153,7 +153,7 @@ fincontrol:
       # 1a.8：文本端 DeepSeek V3 fallback（OpenAI 兼容，零代码改动，仅切 baseUrl/apiKey/model）
       # Commit C（1a.8.5）TextAiClient 切 provider 入口时启用
       fallback:
-        base-url: https://api.deepseek.com/v1
+        base-url: https://www.deepseek.com/v1
         model: deepseek-chat
         temperature: 0.7
         max-tokens: 1024
@@ -171,11 +171,12 @@ fincontrol:
         api-key: ${VISION_API_KEY:REPLACE_ME_VISION_API_KEY}
       doubao:
         # 豆包 ARK / OpenAI Responses 端点
-        # 2026-07-19 18:25 用户决定：换用 doubao-1-5-pro-256k-250115
-        # （替代原 doubao-seed-2-0-pro-260215 是为了测试用户账户下其他 model 的可用性）
-        # 若此 model 在你账户下不可用，fallback minimax 仍能完成路径 B
+        # 2026-07-19 19:50 用户决定：换用 doubao-seed-2-1-turbo-260628
+        # （来自 ARK 控制台「视觉理解」→「推荐模型」官方推荐项，user 账户实际可用）
+        # 仍走 /api/v3/responses 端点，先最小改动试一次；若 404 进 Phase B 改 chat/completions
         base-url: https://ark.cn-beijing.volces.com/api/v3
-        model: doubao-1-5-pro-256k-250115
+        model: doubao-seed-2-1-turbo-260628
+        api-style: OPENAI_CHAT
         timeout-seconds: 300
         api-key: ${DOUBAO_VISION_API_KEY:REPLACE_ME_DOUBAO_VISION_API_KEY}
 

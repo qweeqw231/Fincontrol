@@ -19,6 +19,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   <li>每个 provider 都有 primary 与 fallback 双段；字段缺失时填占位符（启动不抛，但首次调用抛 5001/5002）</li>
  *   <li>路由策略独立 {@code fincontrol.ai.router.*} 段，可按场景调节 imageCount 阈值与 cache TTL</li>
  * </ul>
+ *
+ * <p>1a.10 扩展：单 {@code Provider} 加 {@code apiStyle} 字段，让豆包能选 OPENAI_CHAT
+ * （走 ARK /api/v3/chat/completions）而不是默认 OPENAI_RESPONSES。
  */
 @ConfigurationProperties(prefix = "fincontrol.ai")
 public class AiProperties {
@@ -151,6 +154,9 @@ public class AiProperties {
     // ==========================================================
     /**
      * 单 provider 配置（minimax/doubao 共用）。
+     *
+     * <p>1a.10 加 {@code apiStyle} 字段：豆包可显式选 {@code OPENAI_CHAT}（走 /chat/completions），
+     * 不填则用 {@code OPENAI_RESPONSES}（默认 /responses）。minimax 永远用 OPENAI_CHAT。
      */
     public static class Provider {
         private String baseUrl = "https://api.minimaxi.com/v1";
@@ -159,6 +165,8 @@ public class AiProperties {
         private String apiKey;
         private double temperature = 0.7;
         private int maxTokens = 1024;
+        /** 1a.10：单 provider 的 ApiStyle 覆盖（豆包可设 OPENAI_CHAT；minimax 忽略此字段）。 */
+        private ApiStyle apiStyle;
 
         public String getBaseUrl() { return baseUrl; }
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
@@ -172,5 +180,7 @@ public class AiProperties {
         public void setTemperature(double temperature) { this.temperature = temperature; }
         public int getMaxTokens() { return maxTokens; }
         public void setMaxTokens(int maxTokens) { this.maxTokens = maxTokens; }
+        public ApiStyle getApiStyle() { return apiStyle; }
+        public void setApiStyle(ApiStyle apiStyle) { this.apiStyle = apiStyle; }
     }
 }

@@ -58,7 +58,7 @@ public class VisionModelClient {
     private final String minimaxModel;
     private final OkHttpClient minimaxHttp;
 
-    // 豆包 ARK fallback（OpenAI /responses）
+    // 豆包 ARK fallback（OpenAI /responses 或 /chat/completions）
     private final String doubaoApiKey;
     private final String doubaoBaseUrl;
     private final String doubaoModel;
@@ -129,11 +129,35 @@ public class VisionModelClient {
         return callRaw(java.util.Collections.singletonList(imageFile), systemPrompt, userMessage, apiStyle);
     }
 
-    /** 1a.10：一次请求传入有序多图；顺序用于跨页截断补全。 */
+    /**
+     * 1a.10：一次请求传入有序多图；顺序用于跨页截断补全。
+     *
+     * <p>1a.10 扩展：新增 {@code provider} 参数，区分 minimax / doubao。当 provider=null 时按旧逻辑
+     * 用 apiStyle 隐式区分（minimax→OPENAI_CHAT，doubao→OPENAI_RESPONSES）。当 provider 显式传入时，
+     * 该 provider 的 apiStyle 配置覆盖默认。
+     */
     public String callRaw(List<File> imageFiles, String systemPrompt,
                           String userMessage, ApiStyle apiStyle) {
         Objects.requireNonNull(apiStyle, "apiStyle");
+        return callRaw(imageFiles, systemPrompt, userMessage, apiStyle, null);
+    }
+
+    /**
+     * 1a.10 扩展入口：明确 provider + apiStyle。
+     * <ul>
+     *   <li>minimax primary：provider="minimax" + apiStyle=OPENAI_CHAT</li>
+     *   <li>豆包 OPENAI_CHAT（chat/completions）：provider="doubao" + apiStyle=OPENAI_CHAT</li>
+     *   <li>豆包 OPENAI_RESPONSES（默认）：provider="doubao" + apiStyle=OPENAI_RESPONSES</li>
+     * </ul>
+     */
+    public String callRaw(List<File> imageFiles, String systemPrompt,
+                          String userMessage, ApiStyle apiStyle, String provider) {
+        Objects.requireNonNull(apiStyle, "apiStyle");
         List<File> validated = validateImageFiles(imageFiles);
+        // 1a.10 派发：provider="doubao" + apiStyle=OPENAI_CHAT 走豆包 chat completions 路径
+        if ("doubao".equalsIgnoreCase(provider) && apiStyle == ApiStyle.OPENAI_CHAT) {
+            return callOpenAiChatDoubao(validated, systemPrompt, userMessage);
+        }
         switch (apiStyle) {
             case OPENAI_CHAT:
                 return callOpenAiChat(validated, systemPrompt, userMessage);
@@ -146,16 +170,6 @@ public class VisionModelClient {
 
     /**
      * 从不受控模型响应中选择完整的资产 JSON 根对象。
-     *
-     * <p>MiniMax 可能返回 {@code <think>}、Markdown、schema 示例、局部 fund JSON，最后才给出
-     * 完整 {@code categories[].funds[]}。旧实现返回“第一个可解析对象”，会误选局部 fund，
-     * 导致后续得到 {@code categories=[]}。1a.10 改为：
-     *
-     * <ol>
-     *   <li>若整个响应就是 JSON，保持原有直返行为；</li>
-     *   <li>否则以字符串/转义感知的方式提取所有平衡花括号候选；</li>
-     *   <li>按资产根 schema 和完整基金数量评分，得分相同时选择后出现的候选。</li>
-     * </ol>
      */
     public JsonNode extractFirstJsonObject(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -178,7 +192,6 @@ public class VisionModelClient {
                 JsonNode parsed = objectMapper.readTree(candidate);
                 if (parsed == null || !parsed.isObject()) continue;
                 int score = assetRootScore(parsed);
-                // >=：相同 schema/基金数时优先最终输出，而不是前面的示例。
                 if (score >= bestScore) {
                     best = parsed;
                     bestScore = score;
@@ -295,44 +308,63 @@ public class VisionModelClient {
     }
 
     // ===================================================================
-    // 内部：OPENAI_RESPONSES（豆包 ARK，1a.8 Commit C 实现）
+    // 1a.10 内部：OPENAI_CHAT（豆包 ARK /api/v3/chat/completions）
     // ===================================================================
     /**
-     * 豆包 ARK /api/v3/responses 实现（1a.8 Commit C）。
-     * <p>请求体（OpenAI Responses 形态）：
-     * <pre>
-     * {
-     *   "model": "doubao-seed-1-8-251228",
-     *   "input": [
-     *     {
-     *       "role": "user",
-     *       "content": [
-     *         { "type": "input_text", "text": "请解析以下截图" },
-     *         { "type": "input_image", "image_url": "data:image/png;base64,..." }
-     *       ]
-     *     }
-     *   ],
-     *   "stream": false
-     * }
-     * </pre>
-     * <p>响应体（抽 {@code output[0].content[0].text}）：
-     * <pre>
-     * {
-     *   "output": [
-     *     { "content": [ { "type": "output_text", "text": "..." } ] }
-     *   ]
-     * }
-     * </pre>
+     * 豆包 ARK /api/v3/chat/completions 实现（1a.10 Phase B）。
+     * <p>与 minimax OPENAI_CHAT 同样的消息体格式（messages[] + image_url parts），
+     * 但使用豆包 doubaoApiKey/doubaoBaseUrl/doubaoModel/doubaoHttp。
+     * <p>适用场景：豆包 ARK 控制台「视觉理解」→「推荐模型」（如 doubao-seed-2-1-turbo-260628）
+     * 走的是 {@code /chat/completions}，不是 {@code /responses}。{@code /responses} 对这些推荐
+     * model 仍返回 404 InvalidEndpointOrModel.NotFound。
      */
+    private String callOpenAiChatDoubao(List<File> imageFiles, String systemPrompt, String userMessage) {
+        validateProviderConfig("doubao", doubaoApiKey, doubaoBaseUrl, doubaoModel);
+
+        String body;
+        try {
+            List<Map<String, Object>> messages = new ArrayList<>();
+            if (systemPrompt != null && !systemPrompt.isBlank()) {
+                messages.add(Map.of("role", "system", "content", systemPrompt));
+            }
+            String userText = (userMessage != null && !userMessage.isBlank()) ? userMessage : "请解析以下截图";
+            List<Map<String, Object>> parts = new ArrayList<>();
+            parts.add(Map.of("type", "text", "text", userText));
+            for (File imageFile : imageFiles) {
+                parts.add(Map.of("type", "image_url",
+                        "image_url", Map.of("url", readImageAsDataUrl(imageFile))));
+            }
+            messages.add(Map.of("role", "user", "content", parts));
+
+            Map<String, Object> req = new LinkedHashMap<>();
+            req.put("model", doubaoModel);
+            req.put("messages", messages);
+            req.put("stream", false);
+            body = objectMapper.writeValueAsString(req);
+        } catch (JsonProcessingException e) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "构造请求体失败: " + e.getMessage());
+        }
+
+        Request request = new Request.Builder()
+                .url(doubaoBaseUrl + "/chat/completions")
+                .addHeader("Authorization", "Bearer " + doubaoApiKey)
+                .addHeader("Content-Type", "application/json")
+                .post(RequestBody.create(body, MediaType.parse("application/json")))
+                .build();
+
+        return executeRequest(doubaoHttp, request, "doubao ARK chat completions");
+    }
+
+    // ===================================================================
+    // 内部：OPENAI_RESPONSES（豆包 ARK /api/v3/responses，1a.8 Commit C 旧路径，1a.10 保留兼容）
+    // ===================================================================
     private String callOpenAiResponses(List<File> imageFiles, String systemPrompt, String userMessage) {
         validateProviderConfig("doubao", doubaoApiKey, doubaoBaseUrl, doubaoModel);
 
-        // 构造 OpenAI Responses 形态 body（input[] + 有序 input_image parts）
         String body;
         try {
             String userText = (userMessage != null && !userMessage.isBlank()) ? userMessage : "请解析以下截图";
 
-            // input[] 单元素，role=user，content=[input_text, input_image]
             Map<String, Object> userInput = new LinkedHashMap<>();
             userInput.put("role", "user");
             List<Map<String, Object>> contentParts = new ArrayList<>();
@@ -348,7 +380,6 @@ public class VisionModelClient {
             req.put("input", List.of(userInput));
             req.put("stream", false);
 
-            // 1a.8：豆包 system prompt 通过 instructions 字段传递（如 ARK 支持）
             if (systemPrompt != null && !systemPrompt.isBlank()) {
                 req.put("instructions", systemPrompt);
             }
@@ -439,9 +470,6 @@ public class VisionModelClient {
 
     /**
      * 1a.10 P1（§9.3 修复）：provider 失败时落盘结构化审计日志。
-     * <p>路径 {@code docs/test-records/ocr-results/{date}/}（与 OCR 成功日志同目录，gitignored），
-     * 文件名 {@code {provider}-failure-{ts}.json}，含 provider / errorClass / statusCode / errorMessage / latencyMs / timestamp。
-     * <p>这样豆包 primary 失败后 5 秒内能定位原因（401 鉴权？429 限流？408 实际超时？网络断？）。
      */
     private void writeProviderFailureAudit(String provider, String errorClass,
                                             int statusCode, String errorMessage, long latencyMs) {
@@ -507,11 +535,6 @@ public class VisionModelClient {
     // 静态工具：默认 OkHttp + 默认 Provider（1a.7 测试 + 占位启动兼容）
     // ===================================================================
 
-    /**
-     * 1a.10 P1（§9.2 修复）：OkHttp client 读 {@code timeoutSeconds}（来自 {@code AiProperties.Provider}）。
-     * 之前两个 static 方法写死 60/120s，导致配置 {@code fincontrol.ai.vision.{minimax|doubao}.timeout-seconds=300} 不生效。
-     * 现在 read/write/connect 三个超时都用 {@code timeoutSeconds}，与 application.yml 配置一致。
-     */
     private static OkHttpClient buildHttp(int timeoutSeconds) {
         int t = Math.max(1, timeoutSeconds);
         return new OkHttpClient.Builder()
@@ -521,12 +544,10 @@ public class VisionModelClient {
                 .build();
     }
 
-    /** 1a.7 老单测兼容：60s readTimeout 写死（仅供 VisionModelClientTest 旧版构造器）。 */
     private static OkHttpClient defaultMinimaxHttp() {
         return buildHttp(60);
     }
 
-    /** 1a.7 老单测兼容：120s readTimeout 写死（仅供 VisionModelClientTest 旧版构造器）。 */
     private static OkHttpClient defaultDoubaoHttp() {
         return buildHttp(120);
     }
