@@ -498,3 +498,61 @@
 
 → **Phase 1a 通过，可进入 Phase 1b**
 
+
+---
+
+## 决策 13：snapshotDate 来源优先级 + dataTime 字段（2026-07-20）
+
+**状态**：✅ 已锁定（2026-07-20 00:45 收尾落地）
+
+**背景**：
+
+20260716 灰测发现 AI 自动提取的 `snapshotDate` 不可信（P1=2025-12-30, P2=2025-01-20, P4=2025-07-21，全错或 null），用户实际数据时间 2026-07-16 22:39 与 watcher 文件名时间戳 2026-07-20 00:48 不一致。
+
+**决策**：
+
+`snapshotDate` 来源优先级（最终值写入 `asset_raw.snapshot_date` / `asset_snapshot.snapshot_date`）：
+1. **首选**：前端从 EXIF DateTimeOriginal 提取 + 用户确认（`dataTime` 字段）
+2. **fallback**：用户不输入 → 后端 `LocalDate.now()`（前端弹警告"数据时间可能不准确"）
+3. **最差**：AI 模型提取（仅作辅助显示，**不写库**）
+
+**实现**：
+
+后端（已完成 2026-07-20 00:45）：
+- `ScreenshotParseRequest` / `ScreenshotBatchParseRequest` 新增 `dataTime: LocalDate` 字段（optional）
+- `ScreenshotService.parse()` / `parseBatch()` 接受 dataTime 覆盖 AI 提取的 snapshotDate
+- mvn compile 通过（BUILD SUCCESS）
+- mvn test 通过（238/238，无回归）
+
+前端（决策 13 派生，1b+ follow-up）：
+- 上传 UI 显示"AI 提取时间: <data>" + 用户可手动改
+- 透传到后端 `dataTime` 字段
+- 远期（暂不考虑）：用户截图加备注，model 解析（避免多一个 prompt）
+
+**理由**：
+- AI 提取日期不稳定（多模态模型擅长分类不擅长精确日期），不直接信任
+- EXIF DateTimeOriginal 是图像本身的拍摄时间，最准确
+- 业务语义：用户上传的是 7-16 截图，data 应该是 7-16，不是上传日 7-20
+
+**回退条件**：
+- 1b 前端未实现时，dataTime 字段保持 null，走 AI 提取路径（接受 5.02 元类似误差）
+- 4 张图属于同一时点（同一账户同一日），dataTime 共享同一值
+
+---
+
+## 决策 14（follow-up 建议）：fund 分类 AI 辅助 + 用户自定义（1b+）
+
+**状态**：⏳ 待前端实现
+
+**背景**：
+- 后端 FundCategoryResolver 4 优先级：user_correct > any-source > fromAlias > raw
+- 后端 7 大类无"混合类"（1a.5 已淘汰），mixed-asset 边界需前端 AI 辅助 + 用户 override
+- 灰测发现安信新价值灵活配置混合A 类别误分类（AI 归 A股权益类，DeepSeek 归 固收类）
+
+**建议**：
+- 前端 1b+ 设计 fund 分类 override 机制
+- UI：每个 fund 显示 AI 默认分类，用户可下拉/搜索 7 大类 或 自定义文本
+- 后端已存在 `POST /api/category-map/update` 端点接受 user_override
+- 数据：调用现有 `fund_category_map` 表，source='user_correct' 覆盖 source='ai_guess'
+
+**优先级**：1b+ 必做（mixed-asset 边界 case 影响 ≥1% 用户）
