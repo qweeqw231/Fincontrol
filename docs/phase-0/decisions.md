@@ -611,3 +611,82 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 - 用户不选时 fallback 到 today（最差兜底）
 - 远期：支持用户对图加注（"这张是 7-16 的补传"）作为 prompt 上下文
 
+
+---
+
+## 决策 15：Chat prompt 已知缺陷（1a.10 实测发现，待 1b+ 聚合修复）
+
+**状态**：📝 记录中（1a.10 真实 E2E + 灰测 3 例 chat 用例发现）
+
+### ⚠️ 重要澄清：两个 prompt 版本空间
+
+项目内有**两套独立的 prompt 版本空间**，决策 15 涉及的是 **chat prompt（文本对话模型）**，**不是 vision prompt（截图解析）**：
+
+| prompt_name | 用途 | 模型 | 当前版本 | 版本号常数位置 |
+|---|---|---|---|---|
+| `ai_assistant` | **Chat 文本对话**（决策 15 相关）| minimax 文本 | **v1.0**（硬编码 `ChatService.PROMPTVersion="ai_assistant v1.0"`）| `ChatService.java:40` |
+| `screenshot_parser` | 截图解析（1a.9 升级）| minimax 多模态 | **v2.7.1**（1a.10 过程性验收报告迭代）| DB `prompt_versions` 表（SELECT ORDER BY id DESC LIMIT 1）|
+
+> **2026-07-20 21:42 用户澄清**：之前我混淆了这两个 prompt 空间。**vision prompt (screenshot_parser) v2.7.1 是真的**（1a.10 过程性验收报告已升级），但 **chat prompt (ai_assistant) v1.0 是另一个独立版本号**。本次决策 15 全部关于 chat prompt。
+
+### 触发场景（2026-07-20 17:08 复测 chat API）
+
+| # | 用户输入 | intent | routedTo | promptVersion | AI 回复要点 |
+|---|---|---|---|---|---|
+| 1 | "我的黄金持续低迷，我应该怎么办，割肉吗？" | ✅ true | main_loop | ai_assistant v1.0 | "规则系统只按比例调配，不预测市场，**不建议割肉**..." |
+| 2 | "今天星期几？" | ❌ false | garbage_loop | garbage_loop | "抱歉无法得知当前日期" |
+| 3 | "我们这个系统是做什么的？" | ❌ false | garbage_loop | garbage_loop | "由上海稀宇科技开发的 MiniMax AI..."（**答非所问**） |
+
+**复测响应原始数据**（`fincontrol-backend/logs/chat-test-{1,2,3}-resp.json`）：
+- promptVersion: `ai_assistant v1.0`（确认当前版本）
+- intent.classification.latencyMs: 600-833ms
+- assistantMessage.latency: 2.3-7.7s
+
+### 根因分析（2 个独立问题，针对 chat prompt `ai_assistant v1.0`）
+
+#### 问题 A：Prompt v1.0 缺 FinControl 系统上下文
+- **现状**：`ai_assistant v1.0` prompt 内容存于 DB `prompt_versions` 表（`prompt_name='ai_assistant'`），由 `ChatService` 通过 `PromptLoaderService` 加载
+- **内容**：未含"你是 FinControl..."的角色定义（pure investment model）
+- **后果**：AI 答"我是 MiniMax"（minimax 训练数据来源），用户无法识别 FinControl 系统
+- **优先级**：**中**（仅影响 meta 类问题；正常投资类问题回答正确）
+
+#### 问题 B：IntentClassifier 不识别 self-intro 类
+- **现状**：IntentClassifier 训练样本缺 "我们这个系统是做什么的" → 应识别为 `system_intro` 路由
+- **后果**：meta 问题被误判为 `garbage_loop`，走 fallback prompt（"我无法回答"）
+- **优先级**：**中**
+
+### 不立即修复的原因（2026-07-20 与用户达成共识）
+
+1. prompt 反复改会污染 vision cache（cache 键含 promptVersion）
+2. 单元测试 mock AI 客户端不易覆盖真实 prompt 行为
+3. **1b+ 真实用户流量才能定 prompt 优化方向**（避免凭空设计）
+4. 节省开发时间（3-4 小时临时优化 vs 0 小时记录 + 1b+ 聚合）
+
+### 修复时机
+
+**1b+ 前端完成后聚合修复**（届时已具备端到端测试能力 + 真实用户流量）。
+
+### 修复内容
+
+| 修改 | 详情 |
+|---|---|
+| **Prompt v1.0 → v1.1** | DB 表 `prompt_versions` 插入新行 `prompt_name='ai_assistant', version='v1.1'`，在 system prompt 头部添加："你是 FinControl（个人资产配置控制系统），基于控制论反馈环帮助用户做资产配置分析。..."（~50 tokens）|
+| **ChatService.PROMPTVersion** | 同步更新为 `"ai_assistant v1.1"` |
+| **IntentClassifier 训练样本** | 补充：self-intro / 闲聊 / 命令类 50+ 样本，新增 `system_intro` intent 类别 |
+| **单测覆盖** | 补 3 个用例（黄金类 / 星期类 / 系统介绍类）|
+
+### 延迟项（**非本次范围**）
+
+- **系统时钟问题**（用例 2）：用户 2026-07-20 决定推 **Phase 4 UX 优化**再处理
+  - 阶段 4 短期方案：1a.11+ 注入 `LocalDate.now().toString()` 到 prompt 上下文
+  - 阶段 4 远期方案：1b+ 前端传时间
+  - **本决策 15 不含此项**（单独追踪）
+
+### 详细跟踪
+
+见 `docs/phase-1/chat-prompt-issues.md`（聚合所有 chat prompt 缺陷 + 修复 checklist + 后续新增问题登记表）
+
+### 完成判定
+
+1b+ 前端完成 + 真实流量跑 2 周 + 聚合 ≥ 5 类相似问题后统一修复
+

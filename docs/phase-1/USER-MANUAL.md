@@ -1268,6 +1268,8 @@ curl -X POST -H "X-User-Id: 1" -H "Content-Type: application/json" \
 | 1a.11+ | 豆包 vision 重新评估 | 决策 12 |
 | 1a.11+ | 异步任务 + 进度查询（避免 HTTP 长连接）| 决策 1 |
 | 1a.11+ | 多用户支持（当前 X-User-Id 写死为 1）| 决策 1 |
+| 1b+ 聚合 | 决策 15：Chat prompt 缺陷（`ai_assistant` v1.0 → v1.1 + IntentClassifier 训练样本）| 决策 15 |
+| Phase 4 UX | 系统时钟问题（用例 2 答不上来；注入 LocalDate.now + 1b+ 前端传时间）| 用户 2026-07-20 决定延后 |
 
 ---
 
