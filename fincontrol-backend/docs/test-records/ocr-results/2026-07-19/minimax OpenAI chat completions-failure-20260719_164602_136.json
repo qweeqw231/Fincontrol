@@ -1,0 +1,1 @@
+{"event":"provider_failure","provider":"minimax OpenAI chat completions","errorClass":"TIMEOUT","statusCode":0,"errorMessage":"timeout","latencyMs":301541,"timestamp":"2026-07-19T16:46:02.136814900"}
