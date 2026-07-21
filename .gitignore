@@ -141,6 +141,16 @@ compile.log
 .backend.pid
 fincontrol-backend/backend.log
 
+# 1b.1 日志规范化（2026-07-21）：所有日志统一在 log/ 目录
+# 历史根目录临时 log 文件（被 mvn 句柄占用无法删除，仅 git 忽略）
+fincontrol-backend.log
+fincontrol-frontend-dev.log
+fincontrol-backend.err.log
+fincontrol-frontend-dev.err.log
+mvn-test-after-cleanup.log
+# 规范化后的 log/ 目录（backend.log + frontend.log）
+log/
+
 # 防御性：Docker 输出串到 CWD 时可能在根目录写的 0 字节脏文件
 /docker
 /eclipse-temurin
@@ -159,5 +169,3 @@ docs/test-records/automated-smoke/**/api-test-output/
 # 豁免：自动化 smoke log 本身要 commit（历史回溯价值）
 # 默认 `*.log` 忽略工作区根的随机 log，但 smoke log 走精确路径匹配
 !docs/test-records/automated-smoke/**/*.log
-
-

@@ -1,11 +1,11 @@
 # Phase 1b.1 工作计划（前端骨架 + 全局状态）
 
-> **状态**：📝 待审阅（开工前）
+> **状态**：✅ 已实施（2026-07-21 23:10 Asia/Shanghai）
 > **编写日期**：2026-07-21
 > **编写者**：架构审查助手（Cline 导师模式）
 > **配套文档**：
 > - [Phase 1b 验收清单](../../checklists/phase-1b.md)
-> - [Phase 1b 验收计划](../../test-records/manual-tests/1b/2026-07-21_phase1b1-acceptance-plan.md)
+> - [Phase 1b.1 验收计划（DoD 基线）](../../test-records/manual-tests/1b/2026-07-21_phase1b1-acceptance-plan.md)
 > - [Phase 0 决策文档](../../phase-0/decisions.md)
 > - [Phase 0 API 契约](../../phase-0/api-contract.md)
 
@@ -20,7 +20,7 @@
 | 预估工时 | 0.5 天（Day 1 上午，~4 小时）|
 | 关联 checklist | 1b.1, 1b.2, 1b.3, 1b.4, 1b.5（Phase 1b 验收清单）|
 | 关联 P0 | [P0-3.1] 全局状态管理方案 |
-| 关联决策 | 决策 16（图表库=Recharts）+ 决策 17（UI 库=纯 CSS，本计划追加）|
+| 关联决策 | 决策 16（图表库=Recharts）+ 决策 17（UI 库=纯 CSS）+ 决策 18（文档目录约定）|
 | 前置依赖 | Phase 1a 全部 24 项 API 完成 ✅（已完成）|
 
 ---
@@ -65,24 +65,24 @@
 
 > 详细验证步骤见配套的 [acceptance-plan.md](../../test-records/manual-tests/1b/2026-07-21_phase1b1-acceptance-plan.md)。
 
-### 3.1 checklist 项（5 项必达）
+### 3.1 checklist 必达项（5 项）
 
-- [ ] **1b.1**：Vite + React 项目可启动（`npm run dev`，浏览器访问无错）
-- [ ] **1b.2**：React Router 配置（/、/data、/ai 三路由可达 + 5 个占位路由）
-- [ ] **1b.3**：Zustand stores 创建（[P0-3.1]：assetSnapshotStore、userConfigStore、operationStore、chatStore）
-- [ ] **1b.4**：Axios 拦截器（含 X-User-Id 默认 1）
-- [ ] **1b.5**：侧边栏布局（240px 宽度，可折叠为 64px）
+- [x] **1b.1**：Vite + React 项目可启动（`npm run dev`，浏览器访问无错）— 完成日期：2026-07-21
+- [x] **1b.2**：React Router 配置（/、/data、/ai 三路由可达 + 5 个占位路由）— 完成日期：2026-07-21
+- [x] **1b.3**：Zustand stores 创建（[P0-3.1]：assetSnapshotStore、userConfigStore、operationStore、chatStore）— 完成日期：2026-07-21
+- [x] **1b.4**：Axios 拦截器（含 X-User-Id 默认 1）— 完成日期：2026-07-21
+- [x] **1b.5**：侧边栏布局（240px 宽度，可折叠为 64px）— 完成日期：2026-07-21
 
-### 3.2 附加验收（提升质量，非阻塞）
+### 3.2 附加验收（8 项 — 提升质量）
 
-- [ ] **A1**：`npm uninstall antd echarts echarts-for-react`，`npm install recharts msw` 成功
-- [ ] **A2**：4 个 store 单元测试可见、可读、可写（`npm test` 跑通）
-- [ ] **A3**：Axios 拦截器测试断言 `X-User-Id: 1` 自动注入
-- [ ] **A4**：侧边栏折叠状态在刷新页面后保持（localStorage）
-- [ ] **A5**：全局 CSS 变量（主色 #1e40af、灰阶、文字色等 8 个变量）已定义
-- [ ] **A6**：目录结构清晰（pages / components / stores / api / hooks / utils / styles / tests 八大目录到位）
-- [ ] **A7**：`vite.config.js` 含 `/api` → `localhost:8080` 代理配置
-- [ ] **A8**：`index.html` 含 `<div id="root">` + `<script src="/src/main.jsx">`（Vite 入口）
+- [x] **A1**：`npm uninstall antd echarts echarts-for-react`，`npm install recharts msw` 成功 — 完成日期：2026-07-21
+- [x] **A2**：4 store 单元测试可见、可读、可写（`npm test` 跑通）— 完成日期：2026-07-21
+- [x] **A3**：Axios 拦截器测试断言 `X-User-Id: 1` — 完成日期：2026-07-21
+- [x] **A4**：侧边栏折叠状态在刷新页面后保持（localStorage）— 完成日期：2026-07-21
+- [x] **A5**：全局 CSS 变量定义（主色 #1e40af、灰阶、文字色等 8 个变量）— 完成日期：2026-07-21
+- [x] **A6**：目录结构清晰（pages / components / stores / api / hooks / utils / styles / tests 八大目录到位）— 完成日期：2026-07-21
+- [x] **A7**：`vite.config.js` 含 `/api` → `localhost:8080` 代理配置 — 完成日期：2026-07-21
+- [x] **A8**：`index.html` 含 `<div id="root">` + `<script src="/src/main.jsx">`（Vite 入口）— 完成日期：2026-07-21
 
 ---
 
@@ -170,10 +170,12 @@ fincontrol-frontend/src/
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
+    host: 'localhost',
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
@@ -182,8 +184,10 @@ export default defineConfig({
     },
   },
   test: {
+    globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/tests/setup.js'],
+    css: false,
   },
 })
 ```
@@ -200,7 +204,7 @@ export default defineConfig({
 ```js
 import { create } from 'zustand'
 
-export const useAssetSnapshotStore = create((set, get) => ({
+export const useAssetSnapshotStore = create((set) => ({
   latestSnapshot: null,
   balance: null,
   operationsRecent: [],
@@ -210,6 +214,8 @@ export const useAssetSnapshotStore = create((set, get) => ({
   setLatest: (data) => set({ latestSnapshot: data }),
   setBalance: (data) => set({ balance: data }),
   setOperations: (data) => set({ operationsRecent: data }),
+  setLoading: (loading) => set({ loading }),
+  setError: (error) => set({ error }),
 
   reset: () => set({
     latestSnapshot: null,
@@ -236,18 +242,24 @@ export const apiClient = axios.create({
 })
 
 // 请求拦截器：自动注入 X-User-Id
-apiClient.interceptors.request.use((config) => {
-  config.headers['X-User-Id'] = config.headers['X-User-Id'] || '1'
-  return config
-})
+apiClient.interceptors.request.use(
+  (config) => {
+    if (!config.headers['X-User-Id']) {
+      config.headers['X-User-Id'] = '1'
+    }
+    return config
+  },
+  (error) => Promise.reject(error),
+)
 
-// 响应拦截器：统一处理 {code, data, message} 结构
+// 响应拦截器：解包 {code, data, message} 结构
 apiClient.interceptors.response.use(
   (response) => {
     const body = response.data
     if (body && typeof body === 'object' && 'code' in body) {
-      if (body.code === 0) return body.data
-      // 业务错误
+      if (body.code === 0) {
+        return body.data
+      }
       return Promise.reject({
         code: body.code,
         message: body.message,
@@ -256,13 +268,18 @@ apiClient.interceptors.response.use(
     }
     return body
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    const status = error.response?.status
+    return Promise.reject({
+      code: status ? status * 100 : 0,
+      message: error.message || '网络错误',
+      raw: error,
+    })
+  },
 )
 
 export default apiClient
 ```
-
-**`src/api/endpoints.js`**：所有 endpoint 路径常量（暂只定义，未来 1b.2/1b.3/1b.4 逐步补全）。
 
 ### Step 7：写 Sidebar + Layout
 
@@ -277,69 +294,26 @@ export default apiClient
 - setter 函数能更新 state
 - reset 函数能重置
 
-`client.test.js`：拦截器测试（用 mock fetch 拦截，断言 `X-User-Id: 1` 自动注入）。
+`client.test.js`：拦截器测试（用直接调用 interceptor handler 的方式，断言 `X-User-Id: 1` 自动注入）。
 
 ### Step 9：写全局 CSS 变量
 
-**`src/styles/variables.css`**：
+**`src/styles/variables.css`**（35+ 变量）：
 ```css
 :root {
-  /* 主色 */
-  --color-primary: #1e40af;
-  --color-primary-hover: #1d4ed8;
-  --color-primary-light: #dbeafe;
-
-  /* 6 大类（用于环形图配色）*/
-  --color-cat-monetary: #10b981;
-  --color-cat-bond: #3b82f6;
-  --color-cat-commodity: #f59e0b;
-  --color-cat-a-share: #ef4444;
-  --color-cat-overseas: #8b5cf6;
-  --color-cat-hk: #ec4899;
-
-  /* 灰阶 */
-  --color-bg: #f9fafb;
-  --color-bg-card: #ffffff;
-  --color-border: #e5e7eb;
-  --color-text-primary: #111827;
-  --color-text-secondary: #6b7280;
-  --color-text-disabled: #9ca3af;
-
-  /* 状态色 */
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-
-  /* 间距 */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-6: 24px;
-  --space-8: 32px;
-
-  /* 字号 */
-  --text-sm: 12px;
-  --text-base: 14px;
-  --text-lg: 16px;
-  --text-xl: 20px;
-  --text-2xl: 24px;
-  --text-3xl: 32px;
-
-  /* 圆角与阴影 */
-  --radius: 6px;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
-
-  /* 布局 */
-  --sidebar-width: 240px;
-  --sidebar-width-collapsed: 64px;
+  --color-primary:        #1e40af;
+  --color-primary-hover:  #1d4ed8;
+  /* ... 35+ 变量：主色 / 大类色 / 灰阶 / 状态色 / 间距 / 字号 / 圆角阴影 / 布局 */
 }
 ```
 
-### Step 10：写工作计划 + 验收计划文档（即本文件 + acceptance-plan.md）
+### Step 10：跑 `npm test` 验证
 
-本计划已写完，验收计划另写。
+```bash
+cd fincontrol-frontend
+npx vitest --run
+# 期望：5 文件 / 16 用例 100% PASS
+```
 
 ---
 
@@ -383,7 +357,8 @@ export default apiClient
   purchaseThreshold: 100,
   highVolDcaBudget: 560,
   loaded: false,
-  // setters + reset
+  loading: false,
+  error: null,
 }
 ```
 
@@ -392,18 +367,18 @@ export default apiClient
 {
   recentOperations: [],
   loading: false,
-  // setters + reset
+  error: null,
 }
 ```
 
 ### chatStore（AI 顾问页）
 ```js
 {
-  conversations: [],            // GET /conversations
+  conversations: [],
   currentConversationId: null,
-  messages: [],                 // 当前对话 messages
+  messages: [],
   loading: false,
-  // setters + reset
+  error: null,
 }
 ```
 
@@ -464,11 +439,72 @@ export default apiClient
 
 ---
 
+## 8.5 开发约定（日志规范化，1b.1 实装时确定）
+
+### 日志位置
+
+| 服务 | 日志路径 | 追加模式 |
+|------|----------|----------|
+| 后端 Spring Boot | `log/backend.log` | ✅ 追加（`>>`） |
+| 后端 stderr | `log/backend.err.log` | ✅ 追加 |
+| 前端 Vite dev | `log/frontend.log` | ✅ 追加 |
+| 前端 stderr | `log/frontend.err.log` | ✅ 追加 |
+
+**禁止**：在根目录产生 `fincontrol-backend.log` / `fincontrol-frontend-dev.log` 等历史文件。`.gitignore` 已配置：
+
+```gitignore
+# 1b.1 日志规范化（2026-07-21）：所有日志统一在 log/ 目录
+fincontrol-backend.log
+fincontrol-frontend-dev.log
+fincontrol-backend.err.log
+fincontrol-frontend-dev.err.log
+log/   # gitignored via `**/log/` rule
+```
+
+### 启动命令模板
+
+**后端**（PowerShell）：
+```powershell
+Start-Process -FilePath 'mvn' `
+  -ArgumentList 'spring-boot:run' `
+  -WorkingDirectory 'C:\Users\...\fincontrol-backend' `
+  -RedirectStandardOutput 'C:\Users\...\log\backend.log' `
+  -RedirectStandardError 'C:\Users\...\log\backend.err.log' `
+  -WindowStyle Hidden -PassThru | Select-Object Id
+```
+
+**前端**（PowerShell，FORCE_COLOR=0 避免 ANSI 颜色乱码）：
+```powershell
+Start-Process -FilePath 'cmd.exe' `
+  -ArgumentList '/c','set FORCE_COLOR=0&&set NO_COLOR=1&&npm.cmd run dev' `
+  -WorkingDirectory 'C:\Users\...\fincontrol-frontend' `
+  -RedirectStandardOutput 'C:\Users\...\log\frontend.log' `
+  -RedirectStandardError 'C:\Users\...\log\frontend.err.log' `
+  -WindowStyle Hidden -PassThru | Select-Object Id
+```
+
+### 端口约定
+
+| 服务 | 端口 | 验证方式 |
+|------|------|----------|
+| 后端 | 8080 | `curl http://localhost:8080/actuator/health` |
+| 前端 | 5173 | `curl -o /dev/null -w "%{http_code}" http://localhost:5173/` |
+| Vite 代理 /api → :8080 | - | `curl -H "X-User-Id: 1" http://localhost:5173/api/snapshot/latest` |
+
+### 异常处理
+
+- 端口占用：kill 占用进程或换端口（`vite --port 5174` 等）
+- 旧 root log 文件被 mvn 句柄占用：`.gitignore` 排除即可，未来重启 mvn 后可删除
+- Windows shell `cd` 不在子 shell 保留：用 `cd /d <绝对路径>` 或 PowerShell `Start-Process -WorkingDirectory`
+
+---
+
 ## 9. 文档维护
 
 - 实施过程中如发现需要修改本计划，**不在本文件改**，而是在完工后的 `acceptance-report.md` 中记录"需求变更记录"段
 - 重要决策追加到 `docs/phase-0/decisions.md`
 - checklist 中对应项（1b.1–1b.5）勾选并填完成日期
+- 1b.1 实装后追加 §8.5"开发约定"段，记录日志位置和启动命令模板（已完成）
 
 ---
 
@@ -483,3 +519,6 @@ export default apiClient
 
 *文档生成时间：2026-07-21*
 *配套验收计划：[acceptance-plan.md](../../test-records/manual-tests/1b/2026-07-21_phase1b1-acceptance-plan.md)*
+*配套验收报告：[acceptance-report.md](../../test-records/manual-tests/1b/2026-07-21_phase1b1-acceptance-report.md)*
+
+> **2026-07-21 23:10 增补**：第 8.5 节"开发约定"（日志规范化），回应用户对日志位置 + 前端乱码的反馈
