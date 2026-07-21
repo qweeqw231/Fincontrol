@@ -690,68 +690,118 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 
 1b+ 前端完成 + 真实流量跑 2 周 + 聚合 ≥ 5 类相似问题后统一修复
 
- 
- 
-"## ���� 16��ͼ����ѡ�� = Recharts��2026-07-21��"  
-"**״̬**��? ������"  
-""  
-"**����**��Phase 1a ʱǰ�˽��ּ������� ECharts������ͼ��������ã���Phase 1b ����ʱ���֣�"  
-"- ECharts API �� option ��������ʽ����React ���Ǹ�����"  
-"- �����~1MB�����빤�Ʒ� + ���ԭ�򲻷�"  
-"- Recharts �� React-native ���������ʽ������ React ����һ��"  
-"- ����С��~100KB��"  
-""  
-"**����**��Phase 1b ��֮��ͼ��ͳһ�� Recharts���Ƴ� echarts + echarts-for-react��"  
-""  
-"**Ӱ��**��"  
-"- package.json���Ƴ� 2 ���������� recharts"  
-"- 1b.2 ��ҳ����ͼ���� PieChart / Pie ���"  
-"- Phase 3 ��ֵ�������� Recharts"  
-""  
-"---"  
-""  
-"## ���� 17��UI ��ѡ�� = �� CSS��2026-07-21��"  
-"**״̬**��? ������"  
-""  
-"**����**��Phase 0 ʱǰ�˽��ּ�װ�� antd��Ant Design 5.x��~700KB����Phase 1b ����ʱ���֣�"  
-"- antd ��ʽ�빤�Ʒ粻����Բ�Ǵ���ɫ�ʣ�"  
-"- �����~700KB��"  
-"- ������ֵ����д CSS չʾǰ�˹���"  
-"- Phase 1b ֻ�輫����������� CSS < 50 �п�ʵ��"  
-""  
-"**����**��Phase 1b �������κ� UI ����⣬����д CSS���Ƴ� antd��"  
-""  
-"**Ӱ��**��"  
-"- package.json���Ƴ� antd��~700KB��"  
-"- ��ʵ�� Button / Toast / Modal �Ȼ��������ÿ�� < 50 �� CSS + JSX��"  
-"- Phase 2/3 �Լ�ִ�ԭ�򣨳��� antd �ĸ�������� DatePicker / Table ���������͹�������"  
-""  
-"---"  
-""  
-"## ���� 18��Phase 1b �ĵ�Ŀ¼Լ����2026-07-21��"  
-"**״̬**��? ������"  
-""  
-"**����**��Phase 1a �׶ε� work-plan �� acceptance �ĵ�ɢ���� docs/phase-1/work-plans/ �� docs/test-records/manual-tests/ ��Ŀ¼���ļ��಻����ҡ�"  
-""  
-"**����**��Phase 1b ��������Ŀ¼���룺"  
-"- docs/phase-1/work-plans/0/ = Phase 0 �����ƻ���������"  
-"- docs/phase-1/work-plans/1a/ = Phase 1a �����ƻ����Ѵ��� 10 �ݣ�"  
-"- docs/phase-1/work-plans/1b/ = Phase 1b �����ƻ����½���"  
-"- docs/test-records/manual-tests/0/ = Phase 0 ���ձ���"  
-"- docs/test-records/manual-tests/1a/ = Phase 1a ���ձ��棨�Ѵ��� 30+ �ݣ�"  
-"- docs/test-records/manual-tests/1b/ = Phase 1b ���ձ��棨�½���"  
-""  
-"**Ӱ��**������δ�� Phase ������Լ��������Ŀ¼�ṹ������"  
-"**ע**��phase-0/decisions.md ���������ļ�λ�ã�������Ŀ¼������Ϊȫ�־��ߵĵ�һȨ��Դ��"  
-"1b.1 ʵװȷ�ϣ�? ����ɣ�59 �ļ� rename��8 �����ļ�������"  
-""  
-"---"  
-""  
-"## �����ܽ��������׷�ӣ�"  
-""  
-"| # | ���� | ״̬ | ������������ |"  
-"|---|------|------|------------|"  
-"| 16 | ͼ���� = Recharts | ? | 1b.7 ������ ECharts��Recharts ���� |"  
-"| 17 | UI �� = �� CSS���Ƴ� antd�� | ? | ���Ʒ� + ѧϰ��ֵ |"  
-"| 18 | Phase 1b �ĵ�Ŀ¼��Ŀ¼���� | ? | �ļ��������Ӻ�Ŀ�ά���� |"  
-| 19 | 阶段验收必更新 README | (done) | 1b.1 完成时 README 未及时更新 |
+---
+
+---
+
+## 决策 16：图表库选型 = Recharts（2026-07-21）
+
+**状态**：✅ 已锁定
+
+**背景**：Phase 1a 时前端脚手架沿用了 ECharts（与后端图表组件复用）。Phase 1b 启动时发现：
+- ECharts API 是 option 对象（命令式），React 心智负担重
+- 包体大（~1MB），与"工科风 + 简洁"原则不符
+- Recharts 是 React-native 组件（声明式），与 React 心智一致
+- 包体小（~100KB）
+
+**决策**：Phase 1b 及之后图表统一用 Recharts。移除 `echarts` + `echarts-for-react`。
+
+**影响**：
+- package.json：移除 2 个包，新增 `recharts`
+- 1b.2 首页环形图改用 `<PieChart><Pie data={...} />`
+- 1b.3 数据管理无影响
+- Phase 3 净值曲线仍用 Recharts（趋势线、面积图）
+
+---
+
+## 决策 17：UI 库选型 = 纯 CSS（2026-07-21）
+
+**状态**：✅ 已锁定
+
+**背景**：Phase 0 时前端脚手架装了 `antd`（Ant Design），是 antd 5.x（~700KB）。Phase 1b 启动时发现：
+- antd 样式与"工科风"不符（圆角大、颜色鲜）
+- 包体大（~700KB）
+- 简历价值：手写 CSS 展示前端功底
+- Phase 1b 只需极少量组件（Toast / Modal / Button），纯 CSS < 50 行可实现
+
+**决策**：Phase 1b 不引入任何 UI 组件库，纯手写 CSS。移除 `antd`。
+
+**影响**：
+- package.json：移除 `antd`
+- 自实现：`Button` / `Toast` / `Modal` 等基础组件（每个 < 50 行 CSS + JSX）
+- Phase 2/3 仍坚持此原则（除非 antd 的复杂组件如 DatePicker / Table 能显著降低工作量）
+
+---
+
+## 决策 18：Phase 1b 文档目录约定（2026-07-21）
+
+**状态**：✅ 已锁定
+
+**背景**：Phase 1a 阶段的 work-plan 和 acceptance 文档散落在 docs/phase-1/work-plans/ 和 docs/test-records/manual-tests/ 根目录，文件多不便查找。
+
+**决策**：Phase 1b 起按以下子目录隔离：
+- docs/phase-1/work-plans/0/ = Phase 0 工作计划（暂留）
+- docs/phase-1/work-plans/1a/ = Phase 1a 工作计划（已存在 10 份）
+- docs/phase-1/work-plans/1b/ = Phase 1b 工作计划（新建）
+- docs/test-records/manual-tests/0/ = Phase 0 验收报告
+- docs/test-records/manual-tests/1a/ = Phase 1a 验收报告（已存在 30+ 份）
+- docs/test-records/manual-tests/1b/ = Phase 1b 验收报告（新建）
+
+**影响**：所有未来 Phase 继续此约定，保持目录结构清晰。
+
+**注**：phase-0/decisions.md 本身保持文件位置（不在子目录），作为全局决策的单一权威源。
+1b.1 实装确认：✅ 已完成，59 文件 rename，8 个新文件创建。
+
+---
+
+## 决策总结表（持续追加）
+
+| # | 决策 | 状态 | 关联评审问题 |
+|---|------|------|------------|
+| 1 | REST API 契约完成 | ✅ | 第四轮 3.3.5 |
+| 2 | target_ratio 同步策略 = 解读 4 | ✅ | 第四轮 2.2.1 |
+| 3 | profit 字段读取 = 首页明细表 | ✅ | 第四轮 2.1.1 |
+| 4 | 累计收益率卡片 Phase 1 隐藏 | ✅ | 第四轮 3.3.1 |
+| 5 | Phase 1 验收标准追加 P0 | ✅ | 第四轮 4.3.1 / 4.3.2 |
+| 6 | Phase 计划修订（新增 Phase 0）| ✅ | 第四轮 4.3.3 / 4.3.4 / 4.3.7 / 4.3.8 |
+| 7 | profit 字段拆分 holding_profit / cumulative_profit | ✅ | 1a.8.7 实测发现 |
+| 8 | fund 分类归一化 + 双向 cache | ✅ | 1a.8.8 |
+| 9 | 总资产双轨 + DISCREPANCY 1% 报警 | ✅ | 1a.9 |
+| 10 | 双路径并存（4×单图+confirm / 1×parse-batch）| ✅ | 1a.10 |
+| 11 | 缓存验证（同 JVM 3 HIT 加速 460x）| ✅ | 1a.10 缓存 |
+| 12 | 豆包 vision 路径暂时废弃（minimax-only）| ✅ | 1a 收官 |
+| 13 | snapshotDate 来源优先级 + dataTime 字段 | ✅ | 1a.10 |
+| 14 | fund 分类 AI 辅助 + 用户自定义（1b+）| ⏳ | 1b+ |
+| 15 | Chat prompt 已知缺陷（1b+ 聚合修复）| 📝 | 1a.10 |
+| 16 | 图表库 = Recharts | ✅ | 1b.7 验收项 ECharts→Recharts 调整 |
+| 17 | UI 库 = 纯 CSS（移除 antd）| ✅ | 工科风 + 学习价值 |
+| 18 | Phase 1b 文档目录子目录隔离 | ✅ | 文件数量增加后的可维护性 |
+| 19 | 阶段验收必更新 README | ✅ | 1b.1 完成时 README 未及时更新 |
+
+---
+
+## 决策 19 详述：阶段验收必更新根目录 README（2026-07-21）
+
+**状态**：✅ 已锁定
+
+**背景**：1b.1 实装完成（commit `60f90eb`，34 文件 / 16 用例 100% PASS / 联调 HTTP 200）时，根目录 `README.md` 的"项目状态"表未及时更新（仍显示"🟡 准备启动"），导致对外展示与实际进度脱节。
+
+**决策**：未来每次**阶段性质验收完成时**（如 1b.1 / 1b.2 / 1b.3 / 1b.4 / Phase 2 整体等），必须同步更新根目录 `README.md` 的"项目状态"段，包括：
+- 当前所处阶段
+- 验收日期
+- 验收报告链接
+- 下一阶段状态（⏳ 待启动 / 🟡 进行中 / ✅ 已完成）
+
+**影响**：
+- 文档驱动开发的纪律强化
+- 任何协作者打开仓库根目录就能看到最新进度
+- 与"工作流：文档优先 → 计划 → 实施 → 验收 → 追加文档"的工作公约一致
+
+**触发时机清单**：
+- 1b.1 实装完毕（✅ 已补 1b.1/2/3/4 行 + 整体行）
+- 1b.2 / 1b.3 / 1b.4 完成时
+- Phase 1b 整体完成时
+- Phase 2 / 3 / 4 / 5 各阶段完成时
+- 任何子仓库级别的重要变更
+
+**实装参照**：1b.1 完成时 README 行 28 从单行 "1b.1–1b.4 前端对接 | 🟡 准备启动" 拆为 5 行（1b.1/2/3/4 + 整体），准确反映完成度。
