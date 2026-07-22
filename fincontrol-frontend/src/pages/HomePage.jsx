@@ -167,7 +167,9 @@ function CategoryGroup({ cat }) {
           <td className={f.cumulativeProfit == null ? 'neutral' : Number(f.cumulativeProfit) >= 0 ? 'pos' : 'neg'}>
             {f.cumulativeProfit == null ? '—' : Number(f.cumulativeProfit).toFixed(2)}
           </td>
-          <td>{Number(f.amount ?? 0) / Number(snapTotal(snap) || 1) * 100 | 0}%</td>
+          <td>{cat.fundCount > 0 && f.amount != null && total > 0
+            ? (Number(f.amount) / total * 100).toFixed(1) + '%'
+            : '—'}</td>
         </tr>
       ))}
       <tr className="total-row">
