@@ -1031,9 +1031,130 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 
 ---
 
-## 决策 25 v2：累计 + 持有 收益 + 双保险 + 历史查询（2026-07-22）
+## 决策 25 v3：累计 + 持有 收益 + 双保险 + 展示层 Smart Fallback（2026-07-22）
 
-**状态**：✅ 已锁定（v1：累计 + 双保险 / v2：扩展持有 + 双列 + 历史）
+**状态**：✅ 已锁定（v1：累计 + 双保险 / v2：扩展持有 + 双列 + 历史 / v3：展示层余额宝 Smart Fallback）
+
+**v2 → v3 变更动机**（2026-07-22 15:20）：
+- 1b.2 step7 联调发现：接口返 holdingProfit = -36.55，**用户人工核对认为应是 -34.65**（差 1.90 = 余额宝 cumulative 1.90）
+- 根因：原图解析时**余额宝的「持有收益」字段显示为空**（用户尊重原图 → holding=NULL），但累计 1.90
+- 1a 解析层设计原则：尊重原图（holding=NULL 不补 0 也不补 cumulative），但展示时需校正
+- Phase 2 重构：写库层 confirm 时对「余额类 + holding IS NULL」自动补 holding=cumulative
+- 1b.2 范围内：只在 Service 层做"展示层 smart fallback"，不动数据层，确保 Phase 2 重构时不影响调用方
+
+**背景**：
+- 1b.2 累计收益接口在 step7 端到端联调中暴露**测试数据污染**问题：
+  - `asset_raw` 表共 38 行 is_latest=1
+  - 拆分：`user_id=1` 19 行（2026-07-16）+ `user_id=19999` 19 行（2026-07-19）
+  - mapper SQL 查 `user_id=1`，所以接口返 -29.63（正确）
+  - 但未来如果 confirm 流程漏 user_id 过滤、或测试数据混用 user_id=1，会导致**累计收益混入旧数据**
+- 1a.3 confirm 流程的 `SnapShotConfirmService.writeAssetRaw` line 210 直接 `assetRawMapper.insert(row)`，**缺前置** `UPDATE asset_raw SET is_latest=0 WHERE user_id=? AND snapshot_date<>?`（防同 user 旧 snapshot_date 残留）
+- 用户明令："**应该把已经确认的 is_latest 置为零**（假设用户不会回补曾经的数据，这个点也要明确）"
+- 1b.2 实装后用户反馈：累计 vs 持有 概念不清，**前端需双列展示 + ℹ️ 弹窗**让用户理解两个概念
+  - 累计 = Σcumulative_profit（含已实现，自建仓以来所有盈亏）
+  - 持有 = Σholding_profit（仅当前持仓的浮盈/亏，不含已实现）
+- 未来实现历史查询：不需要加 asset 字段，靠 `snapshot_date` 区分历史（`is_latest=0` 即历史）
+- **未来 is_latest 扩展**（Phase 2）：对于一个自然日允许多次上传时，需要 (user_id, snapshot_date, version) 三元组；多个自然日之间需要标定"哪天是最新上传"——但 1b.2 暂不动
+
+**决策**：
+累计收益查询采用**数据层 0 改动 + 展示层 smart fallback**机制（v3 一次性定稿）：
+
+1. **数据层 0 改动**（已完成）：`asset_raw` 表 + `is_latest` 字段 + confirm 流程都不动。1a 解析时**尊重原图**（余额宝 holding=NULL 不补 0）。
+2. **算法层双保险**（已完成）：`AssetRawMapper.sumReturnFieldsByUser` SQL 加 `snapshot_date = (SELECT MAX(snapshot_date) FROM ...)` 子查询过滤 + `snapshot_date = MAX(snapshot_date)` 返回。即使 is_latest 标错，也只取最新一天。
+3. **DTO 扩展**（已完成）：`CumulativeReturnResponse` 加 4 字段：
+   - `totalHoldingProfit`：校正后持有 = raw + adjustment
+   - `rawHoldingProfit`：原值 = -36.55
+   - `balanceFundAdjustment`：余额宝校正值 = +1.90
+   - `balanceFundStatus`：`'normal'` / `'included'` / `'excluded_unknown'`
+4. **展示层 Smart Fallback**（v3 新增）：`AssetQueryService.computeBalanceAdjustment()` 私有方法查余额类：
+   - 余额类 + holding IS NULL + cumulative 非空 → adjustment=cumulative, status=`included`
+   - 余额类 + holding IS NULL + cumulative IS NULL → adjustment=0, status=`excluded_unknown`
+   - 余额类 + holding 非空 → adjustment=0, status=`normal`
+   - 没余额类持仓（清仓/从未持有）→ adjustment=0, status=`normal`
+5. **前端双列 + ℹ️ 弹窗**（已完成）：`CumulativeReturnCard` 拆"累计 / 持有"两列，每列显示"率 + 额"，4 个 ℹ️ 按钮弹 InfoModal。
+6. **ℹ️ 弹窗行为**（v3 新增）：
+   - 持有收益的 ℹ️ 弹窗**根据 status 动态显示**：
+     - `status='normal'`：不显示提示（正常展示，无调整）
+     - `status='included'`：「原持有收益 X 元，加上余额宝的累计收益 Y 元，持有收益更正为 Z 元」
+     - `status='excluded_unknown'`：「余额宝未解析（可能清仓或解析错误），请检查您的持仓」
+   - 累计收益的 ℹ️ 弹窗不变（始终显示累计定义）
+7. **测试数据清理**（已完成）：`DELETE FROM asset_raw WHERE user_id != 1`（2026-07-22 已执行）。
+8. **不回补假设**：用户**不会**要求从已删除/已标记的 snapshot 恢复数据。累计收益永远按"最新一天"算，历史回放由 1a.4 `/api/snapshot/{date}` 接口承担。
+
+**v3 vs v2 关键区别**：
+- v2：直接返 `totalHoldingProfit`（原 SUM 值）
+- v3：返 `totalHoldingProfit`（校正后）+ `rawHoldingProfit`（原值）+ `balanceFundAdjustment`（调整值）+ `balanceFundStatus`（状态）。前端展示用 `totalHoldingProfit`，ℹ️ 弹窗根据 `status` 决定显示内容。
+
+**算法层 SQL**（当前生效，v2 含 holding + 元数据）：
+```sql
+SELECT 
+  COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit,
+  COALESCE(SUM(holding_profit), 0) AS total_holding_profit,
+  COALESCE(SUM(amount), 0) AS total_amount,
+  COUNT(*) AS fund_count,
+  MAX(snapshot_date) AS snapshot_date
+FROM asset_raw
+WHERE user_id = #{userId}
+  AND is_latest = 1
+  AND snapshot_date = (SELECT MAX(snapshot_date) FROM asset_raw
+                       WHERE user_id = #{userId} AND is_latest = 1)
+```
+
+**累计 vs 持有 区别**（前端双列定义弹窗）：
+| 指标 | 公式 | 定义 |
+|---|---|---|
+| 累计收益率 | Σcumulative_profit / Σamount | 自建仓以来所有盈亏（含已实现，partial sell 也算入）|
+| 累计收益 | Σcumulative_profit（元）| 累计盈亏绝对值 |
+| 持有收益率 | Σholding_profit / Σamount | 当前仍持仓的浮盈率（不含已实现）|
+| 持有收益 | Σholding_profit（元）| 当前持仓的浮盈/亏绝对值 |
+
+**Phase 2 重构路径**（不阻碍此次实现）：
+- **写库层修正**（Phase 2）：`SnapShotConfirmService.writeAssetRaw` 对 `category='余额类' AND holding_profit IS NULL` 自动 `holding=cumulative`
+- **is_latest 扩展**（Phase 2）：从单一 bool 字段升级为 `(user_id, snapshot_date, version)` 三元组表，多次上传不再冲突
+- **历史查询接口**（Phase 2）：`GET /api/asset/cumulative-return/at-date?userId=&snapshotDate=` 按 `snapshot_date = ?` 过滤（不限 is_latest）
+- **Service 方法替换路径**（Phase 2）：`computeBalanceAdjustment()` 改方法体即可（调用方不变），因为展示层 fallback 始终冗余防护
+
+**写库层 SQL**（Phase 2 实施，本决策待补）：
+```java
+// 在 SnapShotConfirmService.writeAssetRaw 函数 insert 前
+assetRawMapper.updateIsLatestByUserExcludingDate(userId, req.getSnapshotDate());
+// + 余额类 fallback（Phase 2）
+assetRawMapper.fillMissingBalanceHolding(userId);  // UPDATE asset_raw SET holding_profit=cumulative_profit WHERE category='余额类' AND holding_profit IS NULL AND cumulative_profit IS NOT NULL
+```
+
+**历史查询接口**（Phase 2 实施，本决策预留）：
+```java
+// 新增 mapper 方法（Phase 2）
+@Select("SELECT ... FROM asset_raw WHERE user_id = #{userId} AND snapshot_date = #{snapshotDate}")
+Map<String, Object> sumReturnFieldsByUserAndDate(...);
+```
+
+**未来扩展**：
+- Phase 3 升级为 Modified Dietz / XIRR 时，DTO 字段 `algorithm` 从 `phase1_simple` 改为 `phase3_dietz` / `phase3_xirr`
+- 净值曲线（`/nav-history` 页面）调用 `at-date` 接口画历史曲线
+
+**影响范围**：
+- 1b.2 联调：累计收益接口稳定返 7 字段（-29.63 / -36.55 / -34.65 / 1.90 / 'included' / 7850.38 / 2026-07-16 / 19）
+- 1b.3/1b.4：写库层加固 + 历史接口 + is_latest 扩展 Phase 2 补，不阻塞 1b 推进
+- Phase 2：必须实现写库层加固（移除展示层 fallback）+ 累计收益每天接口 + is_latest 三元组
+
+**理由**：
+- 数据层 0 改动：保护原图解析语义，Phase 2 重构时不破已存储数据
+- 展示层 smart fallback：1b.2 立刻可用，不等 Phase 2
+- Service 方法封装：Phase 2 替换简单（只改方法体，不动调用方）
+- 不阻碍 is_latest 扩展：未来三元组化时本补丁不破
+
+**回退条件**：无（用户不补旧 snapshot，决策 25 v3 永久生效）
+
+**实现位置**：
+- `fincontrol-backend/src/main/java/com/fincontrol/mapper/AssetRawMapper.java`（已修：方法名 `sumReturnFieldsByUser` + 加 fund_count + snapshot_date）
+- `fincontrol-backend/src/main/java/com/fincontrol/dto/asset/CumulativeReturnResponse.java`（v3 加 4 字段：rawHoldingProfit / balanceFundAdjustment / adjustedHoldingProfit / balanceFundStatus + totalHoldingProfit 改用校正后值）
+- `fincontrol-backend/src/main/java/com/fincontrol/service/AssetQueryService.java`（v3 加 `computeBalanceAdjustment()` 私有方法）
+- `fincontrol-frontend/src/components/CumulativeReturnCard.jsx`（v3 持有 ℹ️ 弹窗按 status 动态显示）
+- `fincontrol-frontend/src/styles/cumulative-return.css`（新建：双列网格 + 模态框 + 通用 .card）
+
+*最近更新：2026-07-22 升级决策 25 → v3（数据层 0 改动 + 展示层 smart fallback） + Phase A 已 commit+push*
+*触发：1b.2 step7 联调发现 holding=-36.55 与用户预期 -34.65 差 1.90 元，根因是余额宝 holding 字段原图为 NULL；用户确认"不修解析结果，只在展示层做校正 + 提示文案"*
 
 **背景**：
 - 1b.2 累计收益接口在 step7 端到端联调中暴露**测试数据污染**问题：
