@@ -10,6 +10,8 @@ import com.fincontrol.dto.snapshot.SnapshotConfirmResult;
 import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.entity.AssetSnapshot;
 import com.fincontrol.entity.FundCategoryMap;
+import com.fincontrol.entity.SnapshotMeta;
+import com.fincontrol.mapper.SnapshotMetaMapper;
 import com.fincontrol.mapper.AssetRawMapper;
 import com.fincontrol.mapper.AssetSnapshotMapper;
 import com.fincontrol.mapper.FundCategoryMapMapper;
@@ -52,15 +54,18 @@ public class SnapShotConfirmService {
     private final AssetSnapshotMapper assetSnapshotMapper;
     private final FundCategoryMapMapper fundCategoryMapMapper;
     private final DedupEngine dedupEngine;
+    private final SnapshotMetaMapper snapshotMetaMapper; // 1b.3.2 决策 27
 
     public SnapShotConfirmService(AssetRawMapper assetRawMapper,
                                  AssetSnapshotMapper assetSnapshotMapper,
                                  FundCategoryMapMapper fundCategoryMapMapper,
-                                 DedupEngine dedupEngine) {
+                                 DedupEngine dedupEngine,
+                                 SnapshotMetaMapper snapshotMetaMapper) {
         this.assetRawMapper = assetRawMapper;
         this.assetSnapshotMapper = assetSnapshotMapper;
         this.fundCategoryMapMapper = fundCategoryMapMapper;
         this.dedupEngine = dedupEngine;
+        this.snapshotMetaMapper = snapshotMetaMapper;
     }
 
     /**
@@ -113,12 +118,14 @@ public class SnapShotConfirmService {
         int assetRawInserted = writeAssetRaw(req, dedup);
         int assetSnapshotUpserted = writeAssetSnapshot(req, dedup);
         int fundMapUpserted = writeFundCategoryMap(req, dedup);
+        // 1b.3.2 决策 27：写 snapshot_meta 元数据（per-date is_latest + cross-date is_current）
+        int snapshotMetaUpserted = writeSnapshotMeta(req, dedup);
 
         // ============ Step 3: 镜像校验（事务内，失败则回滚） ============
         verifyMirror(req, dedup);
 
-        log.info("1a.3 confirm done: raw={} snapshot={} map={}",
-                assetRawInserted, assetSnapshotUpserted, fundMapUpserted);
+        log.info("1b.3.2 confirm done: raw={} snapshot={} map={} meta={}",
+                assetRawInserted, assetSnapshotUpserted, fundMapUpserted, snapshotMetaUpserted);
 
         // ============ Step 4: 构造响应 + 1a.8 撤销钩子 ============
         LocalDateTime deadline = LocalDateTime.now().plusSeconds(ROLLBACK_WINDOW_SECONDS);
@@ -272,6 +279,30 @@ public class SnapShotConfirmService {
             }
         }
         return count;
+    }
+
+    /**
+     * 1b.3.2 决策 27：写 snapshot_meta 元数据。
+     * <p>每次 confirm 都自动：
+     * <ol>
+     *   <li>清 (user_id) 全部 is_current=false（确保唯一 current）</li>
+     *   <li>UPSERT (user_id, snapshot_date) is_latest=true, is_current=true</li>
+     * </ol>
+     * <p>注：snapshot_meta 表的 is_latest 与 asset_raw.is_latest 同步，
+     * 旧行 is_latest 翻 false 已在 writeAssetRaw 前置（assertAssetRaw mapper 调用）
+     * 这里只需维护 snapshot_meta 表本身的最新状态。
+     */
+    private int writeSnapshotMeta(SnapshotConfirmRequest req, DedupResult dedup) {
+        // Step 1：翻 (user_id) 全部 is_current=false（保证唯一 current）
+        snapshotMetaMapper.clearCurrentForUser(req.getUserId());
+
+        // Step 2：UPSERT (user_id, snapshot_date) is_latest=true, is_current=true
+        SnapshotMeta meta = new SnapshotMeta();
+        meta.setUserId(req.getUserId());
+        meta.setSnapshotDate(req.getSnapshotDate());
+        meta.setConfirmedAt(LocalDateTime.now());
+        // is_latest 与 is_current 都为 true（UPSERT 内已写死）
+        return snapshotMetaMapper.upsertOnConfirm(meta);
     }
 
     // ========================================================================
