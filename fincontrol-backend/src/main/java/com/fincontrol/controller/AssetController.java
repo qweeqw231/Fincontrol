@@ -2,6 +2,7 @@ package com.fincontrol.controller;
 
 import com.fincontrol.common.ApiResponse;
 import com.fincontrol.dto.asset.AssetBalanceResponse;
+import com.fincontrol.dto.asset.CumulativeReturnResponse;
 import com.fincontrol.dto.asset.OperationsRecentResponse;
 import com.fincontrol.service.AssetQueryService;
 import org.slf4j.Logger;
@@ -12,8 +13,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * 1a.4 首页辅助 API（[api-contract.md §9](#)）。
@@ -58,16 +57,15 @@ public class AssetController {
     }
 
     /**
-     * 1a.4 累计收益率占位（[api-contract.md §9.3](#)）。
-     * <p>Phase 1 固定返回 {@code available:false}；Phase 3 再实现算法。
+     * 1b.2 累计收益率（[api-contract.md §9.3](#) / 决策 4 v2 / 2026-07-22）。
+     * <p>调用 AssetQueryService.getCumulativeReturn(userId) 返回口径 A 简化算法结果。
      */
     @GetMapping("/cumulative-return")
-    public ApiResponse<Map<String, Object>> cumulativeReturn() {
-        log.info("1a.4 cumulative-return: returning phase1 placeholder");
-        AssetQueryService.CumulativeReturnPlaceholder body = assetQueryService.getCumulativeReturnPlaceholder();
-        Map<String, Object> data = new HashMap<>();
-        data.put("available", body.available());
-        data.put("message", body.message());
-        return ApiResponse.success(data);
+    public ApiResponse<CumulativeReturnResponse> cumulativeReturn(
+            @RequestHeader(name = "X-User-Id", defaultValue = "1") Long userId) {
+        log.info("1b.2 cumulative-return: userId={}", userId);
+        return ApiResponse.success(assetQueryService.getCumulativeReturn(userId));
     }
 }
+
+

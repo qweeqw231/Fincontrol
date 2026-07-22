@@ -89,4 +89,16 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
             "AND is_latest = true " +
             "ORDER BY snapshot_date DESC, id DESC")
     List<AssetRaw> selectBalanceByUser(@Param("userId") Long userId);
+
+    /**
+     * 1b.2 累计收益率（决策 4 v2 / 口径 A / 2026-07-22）：Σcumulative_profit 与 Σamount，按 user 全部 is_latest=true 行计算。
+     * <p>口径 A = 全口径含余额类（user 拍板），与决策 7 / 8 / 13 一致：分母不去余额类，分子也含余额类（如余额宝 cumulative）。
+     */
+    @Select("SELECT COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit, " +
+            "COALESCE(SUM(amount), 0) AS total_amount " +
+            "FROM asset_raw " +
+            "WHERE user_id = #{userId} AND is_latest = 1")
+    java.util.Map<String, Object> sumCumProfitAndAmountByUser(@Param("userId") Long userId);
 }
+
+

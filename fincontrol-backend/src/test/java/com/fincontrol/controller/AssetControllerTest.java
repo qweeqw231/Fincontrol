@@ -164,16 +164,25 @@ class AssetControllerTest {
     }
 
     @Test
-    void cumulativeReturn_phase1_returnsPlaceholder() throws Exception {
-        // @MockBean 会把 AssetQueryService 整体替换为 mock，所以这里 stub 占位 record
-        when(assetQueryService.getCumulativeReturnPlaceholder())
-                .thenReturn(new AssetQueryService.CumulativeReturnPlaceholder(
-                        "false", "累计收益率功能将在 Phase 3 上线"));
+    void cumulativeReturn_phase1Simple_returnsAlgorithmFields() throws Exception {
+        // 1b.2 决策 4 v2：累计收益率算法 = Σcumulative/Σamount，algorithm=phase1_simple
+        com.fincontrol.dto.asset.CumulativeReturnResponse body = com.fincontrol.dto.asset.CumulativeReturnResponse.builder()
+                .available(true)
+                .algorithm("phase1_simple")
+                .totalCumulativeProfit(new java.math.BigDecimal("100.00"))
+                .totalAmount(new java.math.BigDecimal("2000.00"))
+                .returnRate(new java.math.BigDecimal("0.050000"))
+                .message(null)
+                .build();
+        when(assetQueryService.getCumulativeReturn(anyLong())).thenReturn(body);
 
-        mockMvc.perform(get("/api/asset/cumulative-return"))
+        mockMvc.perform(get("/api/asset/cumulative-return").header("X-User-Id", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.available").value("false"))
-                .andExpect(jsonPath("$.data.message").value("累计收益率功能将在 Phase 3 上线"));
+                .andExpect(jsonPath("$.data.available").value(true))
+                .andExpect(jsonPath("$.data.algorithm").value("phase1_simple"))
+                .andExpect(jsonPath("$.data.returnRate").value(0.05));
     }
 }
+
+

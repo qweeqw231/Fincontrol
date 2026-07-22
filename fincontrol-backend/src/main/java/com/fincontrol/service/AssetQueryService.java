@@ -4,8 +4,10 @@ import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
 import com.fincontrol.dto.asset.AssetBalanceItem;
 import com.fincontrol.dto.asset.AssetBalanceResponse;
+import com.fincontrol.dto.asset.CumulativeReturnResponse;
 import com.fincontrol.dto.asset.OperationRecentItem;
 import com.fincontrol.dto.asset.OperationsRecentResponse;
+
 import com.fincontrol.dto.screenshot.ParseLogItem;
 import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.mapper.AssetRawMapper;
@@ -105,22 +107,41 @@ public class AssetQueryService {
     }
 
     // ========================================================================
-    // A4-S08 累计收益率占位
+    // 1b.2 A4-S08 累计收益率（决策 4 v2 / 口径 A / 2026-07-22）
     // ========================================================================
 
     /**
-     * 累计收益率占位（[api-contract.md §9.3](#)）。
-     * <p>Phase 1 固定返回 {@code available:false}；Phase 3 再实现。
+     * 累计收益率（[api-contract.md §9.3](#) / 决策 4 v2 / 2026-07-22）。
+     * <p>算法：{@code totalCumulativeProfit / totalAmount}，分子分母都包含余额类（口径 A / 全口径）。
+     * <p>依赖 {@link AssetRawMapper#sumCumProfitAndAmountByUser} 查 user 全部 {@code is_latest=1} 行的 Σ。
+     * <p>totalAmount=0 时 returnRate=0（避免除零）。
+     * <p>Phase 3 升级为 Modified Dietz / XIRR 时，{@link AssetQueryService#getCumulativeReturn} 改为分支计算，
+     * 且算法标识从 {@code phase1_simple} 改为 {@code phase3_dietz} / {@code phase3_xirr}。
      */
-    public CumulativeReturnPlaceholder getCumulativeReturnPlaceholder() {
-        return CumulativeReturnPlaceholder.PHASE1;
+    public CumulativeReturnResponse getCumulativeReturn(Long userId) {
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
+        }
+        java.util.Map<String, Object> row = assetRawMapper.sumCumProfitAndAmountByUser(userId);
+        BigDecimal totalCum = row == null || row.get("total_cumulative_profit") == null
+                ? BigDecimal.ZERO
+                : new BigDecimal(row.get("total_cumulative_profit").toString());
+        BigDecimal totalAmt = row == null || row.get("total_amount") == null
+                ? BigDecimal.ZERO
+                : new BigDecimal(row.get("total_amount").toString());
+        BigDecimal returnRate = totalAmt.signum() == 0
+                ? BigDecimal.ZERO
+                : totalCum.divide(totalAmt, 6, java.math.RoundingMode.HALF_UP);
+        return CumulativeReturnResponse.builder()
+                .available(true)
+                .algorithm("phase1_simple")
+                .totalCumulativeProfit(totalCum)
+                .totalAmount(totalAmt)
+                .returnRate(returnRate)
+                .message(null)
+                .build();
     }
 
-    /** 累计收益率占位响应体（无 message 字段、遵循 §9.3） */
-    public record CumulativeReturnPlaceholder(String available, String message) {
-        public static final CumulativeReturnPlaceholder PHASE1 =
-                new CumulativeReturnPlaceholder("false", "累计收益率功能将在 Phase 3 上线");
-    }
 
     private static BigDecimal nz(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;
