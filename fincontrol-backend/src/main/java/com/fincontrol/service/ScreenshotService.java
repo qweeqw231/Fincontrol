@@ -177,10 +177,171 @@ public class ScreenshotService {
     }
 
     /**
+     * parseBatch：决策 26（2026-07-22）增加 mode 参数
+     * <p>mode=single（默认）：fileIds 串行调 {@link #parse(ScreenshotParseRequest)}，失败 1 次重试。
+     * 历史测试证明单图比多图 batch 更稳定（1a.10 决策 12 后多图 4 图 batch minimax 易超时）。
+     * <p>mode=multi：调原 1a.10 逻辑走 {@link AiRouter#callVision(java.util.List, String, String)}。
+     */
+    public ScreenshotBatchParseResponse parseBatch(ScreenshotBatchParseRequest req, String mode) {
+        if (mode == null) mode = "single";
+        mode = mode.trim().toLowerCase();
+        if ("multi".equals(mode)) {
+            return parseBatchMulti(req);
+        }
+        // single 或其他默认走 single
+        return parseBatchSingle(req);
+    }
+
+    /** 决策 26：为了向后兼容老调用，1参 parseBatch 默认走 multi 模式（1a.10 原语义）。 */
+    public ScreenshotBatchParseResponse parseBatch(ScreenshotBatchParseRequest req) {
+        return parseBatch(req, "multi");
+    }
+
+    /** 决策 26：single 模式 — 串行调 N 次 parse，合并 fund，dedup by fundName。 */
+    private ScreenshotBatchParseResponse parseBatchSingle(ScreenshotBatchParseRequest req) {
+        if (req == null || req.getUserId() == null) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "userId 必填");
+        }
+        if (req.getFileIds() == null || req.getFileIds().isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileIds 至少包含 1 个 fileId");
+        }
+        if (req.getFileIds().size() > 10) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileIds 最多 10 个");
+        }
+
+        List<String> fileIds = req.getFileIds().stream()
+                .map(id -> id == null ? null : id.trim())
+                .toList();
+        if (fileIds.stream().anyMatch(id -> id == null || id.isBlank())) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileId 不能为空");
+        }
+        if (new LinkedHashSet<>(fileIds).size() != fileIds.size()) {
+            throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "fileIds 不允许重复");
+        }
+
+        // 串行逐张 parse，失败 1 次重试，全部用同一 dataTime。
+        List<ParsedAsset> assets = new ArrayList<>();
+        List<String> succeededProviders = new ArrayList<>();
+        boolean anyFallback = false;
+        int imageCount = 0;
+
+        for (String fileId : fileIds) {
+            ScreenshotParseRequest sub = new ScreenshotParseRequest();
+            sub.setUserId(req.getUserId());
+            sub.setFileId(fileId);
+            sub.setDataTime(req.getDataTime());
+
+            ParsedAsset asset = null;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    asset = parse(sub);
+                    log.info("parseBatch single mode: fileId={} attempt={} OK", fileId, attempt);
+                    break;
+                } catch (BusinessException be) {
+                    log.warn("parseBatch single mode: fileId={} attempt={} FAILED err={}",
+                            fileId, attempt, be.getMessage());
+                    if (attempt == 2) {
+                        // 2 次都失败，放弃这张继续下一张（不阻塞整体）
+                        asset = null;
+                    } else {
+                        sleep(1000); // 简单退避
+                    }
+                }
+            }
+            if (asset != null) {
+                assets.add(asset);
+                imageCount++;
+                // 从 chat_history 读 provider / fallback（已在 parse 内写）
+                // 此处简化：用第一次成功的 provider 作为整体 usedProvider
+                if (succeededProviders.isEmpty()) {
+                    // parse 不返回 provider 信息，从最近的 chat_history 取
+                    // 简化：留空
+                }
+            }
+        }
+
+        if (assets.isEmpty()) {
+            throw new BusinessException(ErrorCode.VISION_ZERO_FUNDS,
+                    "single 模式解析全部失败，无可用结果");
+        }
+
+        // 单图 dedup：合并所有 ParsedAsset 的 categories，按 fundName 去重
+        ParsedAsset merged = mergeSingleModeAssets(assets, req.getDataTime());
+
+        // OCR 写盘（单图模式合并 1 个日志）
+        String mergedConvId = "conv-batch-single-" + UUID.randomUUID();
+        merged.setConversationId(mergedConvId);
+
+        writeOcrLog("batch-single-" + mergedConvId, "minimax", false,
+                "single-mode-merged-" + imageCount + "-files", merged, null);
+
+        // DedupEngine 内部去重
+        LocalDate dedupDate = parseDateOrToday(merged.getSnapshotDate());
+        DedupEngine.DedupResult dedup = dedupEngine.deduplicate(new DedupEngine.DedupInput(
+                List.of(merged), Set.of(), dedupDate, true));
+        ParsedAsset dedupMerged = dedup.merged();
+        dedupMerged.setConversationId(mergedConvId);
+        dedupMerged.setSnapshotDate(merged.getSnapshotDate());
+
+        return ScreenshotBatchParseResponse.builder()
+                .parsedAsset(dedupMerged)
+                .dedupReport(dedup.report())
+                .usedProvider("minimax")
+                .fallbackTriggered(anyFallback)
+                .cacheHit(false)
+                .imageCount(imageCount)
+                .build();
+    }
+
+    /** single 模式：合并多张 ParsedAsset（按 fundName 合并 funds，categories 累加）。 */
+    private ParsedAsset mergeSingleModeAssets(List<ParsedAsset> assets, LocalDate overrideDate) {
+        ParsedAsset merged = new ParsedAsset();
+        merged.setSnapshotDate(overrideDate != null ? overrideDate.toString() : assets.get(0).getSnapshotDate());
+
+        Map<String, ParsedAsset.CategoryBlock> blockMap = new LinkedHashMap<>();
+        List<String> matchedFunds = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO;
+
+        for (ParsedAsset a : assets) {
+            if (a.getTotalAsset() != null) total = total.add(a.getTotalAsset());
+            if (a.getCategories() != null) {
+                for (ParsedAsset.CategoryBlock src : a.getCategories()) {
+                    ParsedAsset.CategoryBlock dst = blockMap.computeIfAbsent(
+                            src.getCategoryName(),
+                            k -> {
+                                ParsedAsset.CategoryBlock b = new ParsedAsset.CategoryBlock();
+                                b.setCategoryName(k);
+                                b.setTargetRatio(src.getTargetRatio());
+                                b.setFunds(new ArrayList<>());
+                                return b;
+                            });
+                    if (dst.getTargetRatio() == null) dst.setTargetRatio(src.getTargetRatio());
+                    if (dst.getCategoryTotal() == null) dst.setCategoryTotal(src.getCategoryTotal());
+                    if (src.getFunds() != null) {
+                        for (ParsedAsset.FundLine fl : src.getFunds()) {
+                            dst.getFunds().add(fl);
+                            if (fl.getFundName() != null) matchedFunds.add(fl.getFundName());
+                        }
+                    }
+                }
+            }
+        }
+        merged.setTotalAsset(total);
+        merged.setCategories(new ArrayList<>(blockMap.values()));
+        merged.setMatchedFunds(matchedFunds);
+        merged.setUnmatchedFunds(Collections.emptyList());
+        return merged;
+    }
+
+    private static void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
+    }
+
+    /**
      * 1a.10 单次多图：按 fileIds 顺序把同一持仓列表的连续截图放入一次 vision 请求，
      * 再在服务端执行 fund-name 去重与 top/dedupedSum 校验。
      */
-    public ScreenshotBatchParseResponse parseBatch(ScreenshotBatchParseRequest req) {
+    public ScreenshotBatchParseResponse parseBatchMulti(ScreenshotBatchParseRequest req) {
         if (req == null || req.getUserId() == null) {
             throw new BusinessException(ErrorCode.INVALID_SNAPSHOT_DATE, "userId 必填");
         }

@@ -41,9 +41,24 @@ public class ScreenshotController {
         return ApiResponse.success(screenshotService.reparse(req));
     }
 
+    /**
+     * parseBatch：支持 2 种模式（决策 26，2026-07-22）
+     * <p>{@code mode=single}（默认）：fileIds 串行单图 parse，失败 1 次重试。历史测试证明单图比多图 batch 更稳定（1a.10 决策 12 后多图 4 图 batch minimax 易超时）。
+     * <p>{@code mode=multi}：调 AiRouter.callVision() 走原 4 图 batch。
+     *
+     * @param mode 'single' | 'multi'，默认 'single'
+     */
+    @PostMapping(value = "/parse-batch", params = "mode")
+    public ApiResponse<ScreenshotBatchParseResponse> parseBatchWithMode(
+            @RequestParam(value = "mode", defaultValue = "single") String mode,
+            @Valid @RequestBody ScreenshotBatchParseRequest req) {
+        return ApiResponse.success(screenshotService.parseBatch(req, mode));
+    }
+
+    /** parseBatch 默认模式（向后兼容：mode=single） */
     @PostMapping("/parse-batch")
     public ApiResponse<ScreenshotBatchParseResponse> parseBatch(
             @Valid @RequestBody ScreenshotBatchParseRequest req) {
-        return ApiResponse.success(screenshotService.parseBatch(req));
+        return ApiResponse.success(screenshotService.parseBatch(req, "single"));
     }
 }
