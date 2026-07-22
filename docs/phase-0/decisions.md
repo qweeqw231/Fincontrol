@@ -992,8 +992,41 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 | 21 | \`uploads/screenshots/\` 缓存清理规范 | ✅ | 1b.2 测试文件依赖 |
 | **22** | 决策总结表位置约定（末尾单一份）| ✅ | 2026-07-22 用户明令规定 |
 | **23** | 文档更新必 commit + push | ✅ | 2026-07-22 用户明令规定 |
+| **24** | 后端 restart 必须用 scripts/1b/restart-backend.ps1 | ✅ | 1b.2 联调 jar 重建暴露 file lock |
 
 ---
 
-*最近更新：2026-07-22 追加决策 22 + 删除中间旧汇总表块（详见 bd88d87..HEAD 范围 git log）*
-*触发：决策 20、21 追加后用户发现中间出现旧表块，重整为"末尾单一份"*
+## 决策 24：后端 restart 必须用 `scripts/1b/restart-backend.ps1`（2026-07-22）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- 1b.2 step 7 端到端联调发现：手动 `Start-Process java -jar` 启动的后端进程（PID 40308）持锁 `target/fincontrol-backend.jar`
+- 后续 `mvn package` 反复在 `spring-boot-maven-plugin:repackage` 阶段失败：`Unable to rename ... to .jar.original` (file lock)
+- 用户洞察："1b.3、1b.4 都要联调，jar 绕不过去，这是把雷放到后面炸了"
+
+**决策**：
+所有后端代码改动后，**必须**用 `scripts/1b/restart-backend.ps1` 脚本重启后端，**禁止**手动 `Start-Process java -jar` 或 `mvn spring-boot:run`。脚本保证以下 5 步幂等：
+
+1. 杀 java.exe（**只杀 fincontrol 后端，保留 VSCode JDT-LS**）
+2. 清 `fincontrol-backend/target/`
+3. `mvn -f pom.xml package -B -DskipTests`（rebuild）
+4. 启动新后端（重定向 stdout/stderr 到 `log/`）
+5. 30s 内 healthcheck（`GET /actuator/health` = UP）
+
+**影响范围**：
+- 1b.3 / 1b.4 联调：每次改后端代码后必须用脚本，jar 失败风险 → 0
+- Phase 2/3：所有后端改动继承此规范
+- 文档要求：任何新 dev 必须先看 `scripts/README.md` 了解此 SOP
+
+**理由**：
+- 手动操作幂等性差（容易漏杀进程、忘清 target、忘健康检查）
+- 脚本化后**单点失败可重试**（每次跑都从干净状态开始）
+- 决策 23（commit + push）要求所有文档化，SOP 写在脚本 + decisions.md 两处
+
+**回退条件**：无（jar 重建是 Phase 1+ 所有联调的基础设施）
+
+**实现位置**：`scripts/1b/restart-backend.ps1`（纯 ASCII 版，避免 Windows GBK 解析错误）
+
+*最近更新：2026-07-22 追加决策 24（后端 restart SOP） + 1b.2 step 7 端到端联调通过*
+*触发：1b.2 联调 jar 重建暴露 file lock，用户洞察"1b.3/1b.4 都要联调，jar 绕不过去"*
