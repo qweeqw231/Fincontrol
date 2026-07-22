@@ -993,6 +993,7 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 | **22** | 决策总结表位置约定（末尾单一份）| ✅ | 2026-07-22 用户明令规定 |
 | **23** | 文档更新必 commit + push | ✅ | 2026-07-22 用户明令规定 |
 | **24** | 后端 restart 必须用 scripts/1b/restart-backend.ps1 | ✅ | 1b.2 联调 jar 重建暴露 file lock |
+| **25** | 累计收益查询双保险（snapshot_date = MAX 过滤） | ✅ | 1b.2 联调发现测试数据 user_id=19999 混入 |
 
 ---
 
@@ -1028,5 +1029,64 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 
 **实现位置**：`scripts/1b/restart-backend.ps1`（纯 ASCII 版，避免 Windows GBK 解析错误）
 
-*最近更新：2026-07-22 追加决策 24（后端 restart SOP） + 1b.2 step 7 端到端联调通过*
-*触发：1b.2 联调 jar 重建暴露 file lock，用户洞察"1b.3/1b.4 都要联调，jar 绕不过去"*
+---
+
+## 决策 25：累计收益查询双保险 + 不回补假设（2026-07-22）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- 1b.2 累计收益接口在 step7 端到端联调中暴露**测试数据污染**问题：
+  - `asset_raw` 表共 38 行 is_latest=1
+  - 拆分：`user_id=1` 19 行（2026-07-16）+ `user_id=19999` 19 行（2026-07-19）
+  - mapper SQL 查 `user_id=1`，所以接口返 -29.63（正确）
+  - 但未来如果 confirm 流程漏 user_id 过滤、或测试数据混用 user_id=1，会导致**累计收益混入旧数据**
+- 1a.3 confirm 流程的 `SnapShotConfirmService.writeAssetRaw` line 210 直接 `assetRawMapper.insert(row)`，**缺前置** `UPDATE asset_raw SET is_latest=0 WHERE user_id=? AND snapshot_date<>?`（防同 user 旧 snapshot_date 残留）
+- 用户明令："**应该把已经确认的 is_latest 置为零**（假设用户不会回补曾经的数据，这个点也要明确）"
+
+**决策**：
+累计收益查询采用**双保险**机制（临时打补丁）：
+1. **算法层加固（已完成）**：`AssetRawMapper.sumCumProfitAndAmountByUser` SQL 加 `snapshot_date = (SELECT MAX(snapshot_date) FROM ...)` 子查询过滤。即使 is_latest 标错，也只取最新一天。
+2. **写库层加固（Phase 2 实施）**：`SnapShotConfirmService.writeAssetRaw` 写新 batch 前先 `UPDATE asset_raw SET is_latest=0 WHERE user_id=? AND snapshot_date<>?`。
+3. **测试数据清理（已完成）**：`DELETE FROM asset_raw WHERE user_id != 1`（2026-07-22 已执行）。
+4. **不回补假设**：用户**不会**要求从已删除/已标记的 snapshot 恢复数据。累计收益永远按"最新一天"算，历史回放由 1a.4 `/api/snapshot/{date}` 接口承担。
+
+**算法层 SQL**（当前生效）：
+```sql
+SELECT COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit,
+       COALESCE(SUM(amount), 0) AS total_amount
+FROM asset_raw
+WHERE user_id = #{userId}
+  AND is_latest = 1
+  AND snapshot_date = (SELECT MAX(snapshot_date) FROM asset_raw
+                       WHERE user_id = #{userId} AND is_latest = 1)
+```
+
+**写库层 SQL**（Phase 2 实施，本决策待补）：
+```java
+// 在 writeAssetRaw 函数 insert 前
+int oldCount = assetRawMapper.updateIsLatestByUserExcludingDate(
+    userId, req.getSnapshotDate(), isLatest = true
+);
+```
+
+**未来扩展**：
+- 「每一天的累计收益」需新增 `getCumulativeReturnAtDate(userId, snapshotDate)` 接口
+- Phase 3 升级为 Modified Dietz / XIRR 时，算法标识从 phase1_simple 改为 phase3_dietz
+
+**影响范围**：
+- 1b.2 联调：累计收益接口稳定返 -29.63（19 行 user_id=1，2026-07-16）
+- 1b.3/1b.4：写库层加固 Phase 2 补，不阻塞 1b 推进
+- Phase 2：必须实现写库层加固 + 累计收益每天接口
+
+**理由**：
+- 算法层双保险：写库层 bug 时仍正确
+- 不回补假设：累计收益只看最新一天，避免历史数据干扰
+- 测试数据清理：38 → 19 行（user_id=1 单 user），消除污染
+
+**回退条件**：无（用户不补旧 snapshot，决策 25 永久生效）
+
+**实现位置**：`fincontrol-backend/src/main/java/com/fincontrol/mapper/AssetRawMapper.java`（已修）
+
+*最近更新：2026-07-22 追加决策 24（后端 restart SOP） + 决策 25（累计收益双保险） + 1b.2 step 7 端到端联调通过 + user_id=19999 污染清理*
+*触发：1b.2 联调 jar 重建暴露 file lock + 测试数据 user_id 污染暴露累计收益查询鲁棒性不足*

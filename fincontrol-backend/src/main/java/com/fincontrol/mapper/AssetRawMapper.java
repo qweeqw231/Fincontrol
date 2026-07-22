@@ -91,13 +91,20 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
     List<AssetRaw> selectBalanceByUser(@Param("userId") Long userId);
 
     /**
-     * 1b.2 累计收益率（决策 4 v2 / 口径 A / 2026-07-22）：Σcumulative_profit 与 Σamount，按 user 全部 is_latest=true 行计算。
+     * 1b.2 累计收益率（决策 4 v2 / 口径 A / 2026-07-22）：Σcumulative_profit 与 Σamount，
+     * 按 user 全部 is_latest=true 行计算。**双保险**：额外加 `snapshot_date = MAX(snapshot_date)` 过滤，
+     * 避免 is_latest 标记错乱时混入旧数据。
      * <p>口径 A = 全口径含余额类（user 拍板），与决策 7 / 8 / 13 一致：分母不去余额类，分子也含余额类（如余额宝 cumulative）。
+     * <p>Phase 3 升级为 Modified Dietz / XIRR 时，本方法改为分支计算，且算法标识从 phase1_simple 改为 phase3_dietz / phase3_xirr。
+     * <p>未来实现「每一天的累计收益」需新增方法 `getCumulativeReturnAtDate(userId, snapshotDate)`。
      */
     @Select("SELECT COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit, " +
             "COALESCE(SUM(amount), 0) AS total_amount " +
             "FROM asset_raw " +
-            "WHERE user_id = #{userId} AND is_latest = 1")
+            "WHERE user_id = #{userId} " +
+            "AND is_latest = 1 " +
+            "AND snapshot_date = (SELECT MAX(snapshot_date) FROM asset_raw " +
+            "                       WHERE user_id = #{userId} AND is_latest = 1)")
     java.util.Map<String, Object> sumCumProfitAndAmountByUser(@Param("userId") Long userId);
 }
 
