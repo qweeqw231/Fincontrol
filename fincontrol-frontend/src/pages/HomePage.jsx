@@ -11,14 +11,15 @@ import { RecentOperationsTimeline } from '../components/RecentOperationsTimeline
  * HomePage — 首页（1b.2 实装）
  * <p>三卡片（余额 / 六大类总值 / 累计收益率）+ 环形图 + 明细表 + 时间线。
  * <p>挂载时调 useAssetSnapshotStore.fetchLatest() 触发 4 个 API 并行获取。
- * <p>全部数据来自决策 4 v2 累计收益率简化算法 + 现有 GET /asset/* 端点。
+ * <p>1b.2 Step 6：useEffect 依赖 refreshCounter，DataPage confirm 后 bump 触发重拉。
  */
 export default function HomePage() {
   const fetchLatest = useAssetSnapshotStore((s) => s.fetchLatest)
+  const refreshCounter = useAssetSnapshotStore((s) => s.refreshCounter)
 
   useEffect(() => {
     fetchLatest(1)
-  }, [fetchLatest])
+  }, [fetchLatest, refreshCounter])
 
   return (
     <div className="home-page">

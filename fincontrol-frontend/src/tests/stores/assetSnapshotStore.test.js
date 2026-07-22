@@ -11,7 +11,8 @@ describe('assetSnapshotStore', () => {
     expect(state.latestSnapshot).toBeNull()
     expect(state.balance).toBeNull()
     expect(state.operationsRecent).toEqual([])
-    expect(state.cumulativeReturn).toBeNull()       // 1b.2 新增
+    expect(state.cumulativeReturn).toBeNull()
+    expect(state.refreshCounter).toBe(0)            // 1b.2 Step 6 新增
     expect(state.loading).toBe(false)
     expect(state.error).toBeNull()
   })
@@ -39,14 +40,29 @@ describe('assetSnapshotStore', () => {
     expect(s.latestSnapshot).toEqual(snap)
     expect(s.balance).toEqual(bal)
     expect(s.operationsRecent).toEqual(ops)
-    expect(s.cumulativeReturn).toEqual(cum)         // 1b.2 新增
+    expect(s.cumulativeReturn).toEqual(cum)
   })
 
-  it('reset() 能重置全部 state', () => {
+  it('bumpRefresh() 单调递增 refreshCounter（1b.2 Step 6 全局联动）', () => {
+    const store = useAssetSnapshotStore.getState()
+    expect(store.refreshCounter).toBe(0)
+
+    store.bumpRefresh()
+    expect(useAssetSnapshotStore.getState().refreshCounter).toBe(1)
+
+    store.bumpRefresh()
+    expect(useAssetSnapshotStore.getState().refreshCounter).toBe(2)
+
+    store.bumpRefresh()
+    expect(useAssetSnapshotStore.getState().refreshCounter).toBe(3)
+  })
+
+  it('reset() 能重置全部 state（含 refreshCounter）', () => {
     const store = useAssetSnapshotStore.getState()
     store.setLatest({ x: 1 })
     store.setBalance({ y: 2 })
     store.setCumulativeReturn({ available: true, returnRate: 0.05 })
+    store.bumpRefresh()
     store.setLoading(true)
     store.setError('err')
     store.reset()
@@ -55,7 +71,8 @@ describe('assetSnapshotStore', () => {
     expect(s.latestSnapshot).toBeNull()
     expect(s.balance).toBeNull()
     expect(s.operationsRecent).toEqual([])
-    expect(s.cumulativeReturn).toBeNull()           // 1b.2 新增
+    expect(s.cumulativeReturn).toBeNull()
+    expect(s.refreshCounter).toBe(0)             // 1b.2 Step 6 新增
     expect(s.loading).toBe(false)
     expect(s.error).toBeNull()
   })
