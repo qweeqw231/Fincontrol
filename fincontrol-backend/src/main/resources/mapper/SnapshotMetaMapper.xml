@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fincontrol.mapper.SnapshotMetaMapper">
+
+    <!--
+        决策 27 — snapshot_meta UPSERT（confirm 流程）
+        双方言统一（参考 AssetSnapshotMapper.xml §1a.3.5）：
+        MySQL 8.0.20+ / H2 1.4+ 均支持 INSERT ... ON DUPLICATE KEY UPDATE / ON CONFLICT
+        - 唯一键：uk_user_date (user_id, snapshot_date)
+        - 写：是_latest=true, is_current=true, confirmed_at=now
+        - 旧行：被覆盖（同 id 行为 upsert）
+        - call site 前置：clearCurrentForUser + clearLatestForUser（保证唯一 is_current=true 行）
+    -->
+    <insert id="upsertOnConfirm" parameterType="com.fincontrol.entity.SnapshotMeta">
+        INSERT INTO snapshot_meta
+            (user_id, snapshot_date, is_latest, is_current, confirmed_at, created_at, updated_at)
+        VALUES
+            (#{userId}, #{snapshotDate}, true, true, #{confirmedAt},
+             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON DUPLICATE KEY UPDATE
+            is_latest    = true,
+            is_current   = true,
+            confirmed_at = #{confirmedAt},
+            updated_at   = CURRENT_TIMESTAMP
+    </insert>
+
+</mapper>
