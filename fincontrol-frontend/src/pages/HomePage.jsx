@@ -29,7 +29,7 @@ export default function HomePage() {
     <div className="home-page">
       <header className="app-header">
         <div className="brand">
-          <div className="logo">F</div>
+          <div className="logo">💰</div>
           <div className="brand-text">
             <h1>FinControl</h1>
             <div className="sub">个人资产配置全景 · 支付宝快照</div>
@@ -44,7 +44,8 @@ export default function HomePage() {
       <main className="container">
         {/* stat-row：六大类总值 / 余额类 / 累计收益率 */}
         <div className="stat-row">
-          <TotalAssetCard />
+          <TotalAssetWithBalanceCard />
+          <SixCategoriesTotalCard />
           <BalanceCardStat />
           <CumulativeReturnCard />
         </div>
@@ -78,6 +79,35 @@ function SnapshotDate() {
   const snap = useAssetSnapshotStore((s) => s.latestSnapshot)
   const date = snap?.snapshotDate ?? '—'
   return <div className="date">{date}</div>
+}
+
+/** 1b.3.6 总资产卡（含余额类） */
+function TotalAssetWithBalanceCard() {
+  const snap = useAssetSnapshotStore((s) => s.latestSnapshot)
+  const loading = useAssetSnapshotStore((s) => s.loading)
+  const total = snap?.totalAssetWithBalance ?? snap?.sixCategoriesTotal ?? 0
+  const date = snap?.snapshotDate ?? '—'
+  if (loading) return <div className="stat-card">加载中...</div>
+  return (
+    <div className="stat-card highlight">
+      <div className="label">总资产（含余额类）· 截至 {date}</div>
+      <div className="value">¥{Number(total).toFixed(2)}</div>
+    </div>
+  )
+}
+
+/** 1b.3.6 六大类总值卡（不含余额类） */
+function SixCategoriesTotalCard() {
+  const snap = useAssetSnapshotStore((s) => s.latestSnapshot)
+  const loading = useAssetSnapshotStore((s) => s.loading)
+  if (loading) return <div className="stat-card">加载中...</div>
+  const total = snap?.sixCategoriesTotal ?? 0
+  return (
+    <div className="stat-card">
+      <div className="label">六大类总值</div>
+      <div className="value">¥{Number(total).toFixed(2)}</div>
+    </div>
+  )
 }
 
 /** 余额类 1 张卡（hero 已经放过，这里再放 stat-row 保持视觉布局） */
