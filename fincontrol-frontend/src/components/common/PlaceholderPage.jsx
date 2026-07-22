@@ -8,7 +8,7 @@ import { useLocation } from 'react-router-dom'
  * @param {string} props.phase - 启用阶段（如 'Phase 1b'）
  * @param {boolean} props.disabled - 是否灰显（未启用）
  */
-export default function PlaceholderPage({ title, description, phase, disabled = false }) {
+export function PlaceholderPage({ title, description, phase, disabled = false }) {
   const location = useLocation()
   return (
     <div className={`page-placeholder ${disabled ? 'is-disabled' : ''}`}>
@@ -28,3 +28,6 @@ export default function PlaceholderPage({ title, description, phase, disabled = 
     </div>
   )
 }
+
+// 同时支持 default export（兼容 7 个 page 文件用 default import 的写法）
+export default PlaceholderPage

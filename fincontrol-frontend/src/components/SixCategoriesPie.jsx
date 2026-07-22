@@ -1,4 +1,4 @@
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, Sector, Tooltip, ResponsiveContainer } from 'recharts'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
 
 /**
@@ -47,6 +47,19 @@ export const SixCategoriesPie = () => {
                 cy="50%"
                 outerRadius={100}
                 label={(d) => `${d.name} ${((d.percent || 0) * 100).toFixed(1)}%`}
+                activeShape={({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill }) => (
+                  <Sector
+                    cx={cx}
+                    cy={cy}
+                    innerRadius={innerRadius}
+                    outerRadius={outerRadius + 6}
+                    startAngle={startAngle}
+                    endAngle={endAngle}
+                    fill={fill}
+                    stroke="#fff"
+                    strokeWidth={2}
+                  />
+                )}
               >
                 {data.map((d) => (
                   <Cell key={d.name} fill={COLORS[d.name] || '#94a3b8'} />
