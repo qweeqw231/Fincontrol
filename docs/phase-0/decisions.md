@@ -274,17 +274,6 @@ WHERE is_latest = 1   -- 全口径：分子分母都包含余额类（2026-07-22
 
 ---
 
-## 决策总结表
-
-| # | 决策 | 状态 | 关联评审问题 |
-|---|------|------|------------|
-| 1 | REST API 契约完成 | ✅ | 第四轮 3.3.5 |
-| 2 | target_ratio 同步策略 = 解读 4 | ✅ | 第四轮 2.2.1 |
-| 3 | profit 字段读取 = 首页明细表 | ✅ | 第四轮 2.1.1 |
-| 4 | 累计收益率卡片 Phase 1 隐藏 | ✅ | 第四轮 3.3.1 |
-| 5 | Phase 1 验收标准追加 P0 | ✅ | 第四轮 4.3.1 / 4.3.2 |
-| 6 | Phase 计划修订（新增 Phase 0）| ✅ | 第四轮 4.3.3 / 4.3.4 / 4.3.7 / 4.3.8 |
-
 ---
 
 ## Phase 0 → Phase 1a 启动清单
@@ -1250,3 +1239,77 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 
 *最近更新：2026-07-22 追加决策 25 v2（累计 + 持有 + 双列 + 历史查询） + 1b.2 累计/持有双列实装完成*
 *触发：1b.2 step 7 端到端联调 + 用户对累计/持有概念澄清需求 + 未来历史查询架构明确*
+---
+
+## 决策 27 详述：is_latest 双层语义 + 跨日期 is_current（2026-07-22）
+
+**状态**：🚧 设计稿（1b.2 补完后端实施 + 1b.3 前端 UI）
+
+**背景**：
+- 1b.2 验收签字后 0.72.0 workaround 测试覆盖 0716 19-fund 状态（5 只基金残留）
+- 1b.2 补完阶段发现 Bug 1：`SnapShotConfirmService.writeAssetRaw` 缺少 `updateIsLatestBySnapshotDate` 调用，旧行 is_latest 不翻
+- Bug 2：`AssetRawMapper.sumAmountByUserAndDateAndCategory` 等 verifyMirror SQL 不加 `AND is_latest=true`，触发 5001 镜像校验
+
+**决策**：
+1. **双层 is_latest 语义**：`asset_raw.is_latest` 改为 per-date（每自然日最多 1 行 true），跨日期通过新表 `snapshot_meta.is_current` 表达
+2. **新表 `snapshot_meta`**：(id, user_id, snapshot_date, is_latest, is_current, confirmed_at, created_at, updated_at)，UNIQUE (user_id, snapshot_date)
+3. **新 API `POST /api/snapshot/set-current`**：切换跨日期当前快照，前端 UI 可手动选择
+4. **`GET /api/snapshot/latest` 改为 is_current 查询**（不再 MAX(snapshot_date)）
+
+**Bug 修复（本次 commit 同步上线）**：
+- `SnapShotConfirmService.writeAssetRaw` 加 `assetRawMapper.updateIsLatestBySnapshotDate(userId, snapshotDate)` 调用
+- `AssetRawMapper.sumAmountByUserAndDateAndCategory` 加 `AND is_latest = true`
+- `AssetRawMapper.selectFundNamesByUserAndDate` 加 `AND is_latest = true`
+
+**影响范围**：
+- 1b.2 补完：DB 清理 + Bug 修复 + 决策 文档（同 commit f42b323）
+- 1b.3：前端上传 UI + toggle + date picker + is_latest 按钮（决策 27 §2.5）
+- 1b.4+：snapshot_meta 表新增 + Service 接入 + set-current API
+
+**理由**：
+- 避免 1b.2 验收后 5-Fund 状态覆盖 19-Fund 状态的错误重现
+- 按用户手动确认日期切换（不要全靠 MAX 推断）
+- 维持历史可追溯（旧行 is_latest=false 保留）
+- 与 §2.1 设计文档 [decision-27-is-latest-dual-layer.md](../phase-1/decisions/decision-27-is-latest-dual-layer.md) 配套
+
+**实现位置**：
+- `fincontrol-backend/src/main/java/com/fincontrol/service/SnapShotConfirmService.java`（Bug 1 修复，commit f42b323）
+- `fincontrol-backend/src/main/java/com/fincontrol/mapper/AssetRawMapper.java`（Bug 2 修复，commit f42b323）
+- `docs/phase-1/decisions/decision-27-is-latest-dual-layer.md`（设计文档，commit f42b323）
+
+**回退条件**：无（决策 27 永久生效）
+
+*最近更新：2026-07-22 追加决策 27（is_latest 双层语义） + 1b.2 补完 Bug 修复*
+*触发：1b.2 验收后 5-Fund 状态覆盖 + 用户对 upload/dedup 校验机制质疑 + 决策 22 末尾汇总表约定*
+
+---
+
+## 决策总结表（追加后）
+
+> 决策 22 规定：本汇总表始终位于文档最末尾。
+> 每次新增决策须就地追加一行（按决策顺序）。
+
+| # | 决策 | 状态 | 关联评审 | 触发 commit |
+|---|------|------|----------|-------------|
+| 1 | REST API 契约完成 | ✅ | 第四轮 3.3.5 | Phase 0 |
+| 2 | target_ratio 同步策略 = 解读 4 | ✅ | 第四轮 2.2.1 | Phase 0 |
+| 3 | profit 字段读取 = 首页明细表 | ✅ | 第四轮 2.1.1 | Phase 0 |
+| 4 v2 | 累计收益率卡片两阶段实现 | ✅ | 第四轮 3.3.1 | 1b.2 |
+| 5 | Phase 1 验收标准追加 P0 | ✅ | 第四轮 4.3.1 / 4.3.2 | Phase 0 |
+| 6 | Phase 计划修订（新增 Phase 0）| ✅ | 第四轮 4.3.3 / 4.3.4 / 4.3.7 / 4.3.8 | Phase 0 |
+| 7 | profit 字段拆分 holding_profit / cumulative_profit（1a.8.7）| ✅ | 1a.8 语义混合 | 1a.8.7 |
+| 8 | 基金类别归一化 + 双向 cache + 清仓可恢复（1a.8.8）| ✅ | 1a.8 category 映射 | 1a.8.8 |
+| 12 | 豆包 vision 路径暂时废弃（Phase 1a minimax-only）| ✅ | 1a.10 阶段 | 1a.10 |
+| 13 | snapshotDate 来源优先级 + dataTime 字段 | ✅ | 1a.10 EXIF 覆盖 | 1a.10 |
+| 14 | fund 分类 AI 辅助 + 用户自定义（follow-up）| 🚧 | 1b+ follow-up | 1b+ |
+| 15 | Chat prompt 已知缺陷（待 1b+ 聚合修复）| 🚧 | 1a.10 实测 | 1a.10 |
+| 16 | 图表库选型 = Recharts（决策 16）| ✅ | 1b.1 | 1b.1 |
+| 17 | UI 库选型 = 纯 CSS（决策 17）| ✅ | 1b.1 | 1b.1 |
+| 18 | Phase 1b 文档目录约定 | ✅ | 1b.1 | 1b.1 |
+| 19 | 阶段验收必更新根目录 README | ✅ | 1b.1 | 1b.1 |
+| 20 | 根目录 `test/` 文件夹规范 | ✅ | 1b.2 | 1b.2 |
+| 21 | `uploads/screenshots/` 缓存清理规范 | ✅ | 1b.2 | 1b.2 |
+| 22 | 决策总结表位置约定（末尾 + 追加新行）| ✅ | 1b.2 | 1b.2 |
+| 25 v3 | 持有收益 Smart Fallback（余额宝 holding=NULL 用 cumulative 替代）| ✅ | 1b.2 累计/持有双列 | 1b.2 |
+| 26 | parse 模式开关 single | multi（前端 toggle）| ✅ | 1b.2 验证稳定性 | 1b.2 |
+| 27 | is_latest 双层语义 + 跨日期 is_current | 🚧 | 1b.2 5-Fund 状态覆盖 Bug | f42b323 |
