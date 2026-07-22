@@ -8,6 +8,7 @@ import com.fincontrol.dto.snapshot.SnapshotHistoryResponse;
 import com.fincontrol.dto.snapshot.SnapshotLatestResponse;
 import com.fincontrol.dto.snapshot.SnapshotSetCurrentRequest;
 import com.fincontrol.dto.snapshot.SnapshotSetCurrentResult;
+import com.fincontrol.entity.SnapshotMeta;
 import com.fincontrol.service.SnapshotMetaService;
 import com.fincontrol.service.SnapShotConfirmService;
 import com.fincontrol.service.SnapshotQueryService;
@@ -162,6 +163,14 @@ public class SnapshotController {
         log.info("1a.8 rollback: snapshotId={} userId={}", snapshotId, userId);
         RollbackResult result = snapshotRollbackService.rollback(snapshotId, userId);
         return ApiResponse.success(result);
+    }
+
+    // 1b.3.9 决策 27: GET /api/snapshot/meta-list
+    @GetMapping("/meta-list")
+    public ApiResponse<List<SnapshotMeta>> metaList(@RequestHeader(name="X-User-Id", defaultValue="1") Long userId) {
+        log.info("1b.3.9 meta-list: userId={}", userId);
+        List<SnapshotMeta> list = snapshotMetaService.listByUser(userId);
+        return ApiResponse.success(list);
     }
 
     // ========================================================================

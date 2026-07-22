@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 1b.3.3 决策 27：snapshot_meta 业务编排。
@@ -76,5 +77,10 @@ public class SnapshotMetaService {
                 .newCurrent(snapshotDate)
                 .message("快照切换成功")
                 .build();
+        /**
+     * 1b.3.9 决策 27：列 (user_id) 所有 snapshot_meta 行（按日期 desc）。
+     */
+    public List<SnapshotMeta> listByUser(Long userId) {
+        return snapshotMetaMapper.selectAllByUser(userId);
     }
 }

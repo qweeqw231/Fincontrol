@@ -22,6 +22,9 @@ export const ENDPOINTS = {
   SNAPSHOT_HISTORY: '/snapshot/history',
   SNAPSHOT_CONFIRM: '/snapshot/confirm',
   SNAPSHOT_CONFIRM_DELETE: (id) => `/snapshot/confirm/${id}`,
+  // 1b.3.3 决策 27：set-current + meta list
+  SNAPSHOT_SET_CURRENT: '/snapshot/set-current',
+  SNAPSHOT_META_LIST: '/snapshot/meta-list',
 
   // 月度校正（5.x，Phase 2）
   CORRECTION_DEFAULTS: '/correction/defaults',
