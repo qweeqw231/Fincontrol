@@ -28,6 +28,8 @@ button {
   font-family: inherit;
   font-size: inherit;
   cursor: pointer;
+  border: none;
+  background: none;
 }
 
 input, textarea, select {
@@ -47,6 +49,8 @@ img {
 table {
   border-collapse: collapse;
   width: 100%;
+  z-index: 1;
+  position: relative;
 }
 
 /* 滚动条 */
@@ -63,6 +67,82 @@ table {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* App 布局：左侧 Sidebar + 右侧 main */
+.app-layout {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+.app-main {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--color-bg);
+  padding: var(--space-6);
+}
+
+/* Page Placeholder 通用样式 */
+.page-placeholder {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-8);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.page-placeholder__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.page-placeholder__header h1 {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.page-placeholder__badge {
+  padding: 2px 10px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: 999px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.page-placeholder__desc {
+  font-size: var(--text-lg);
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+  margin-bottom: var(--space-4);
+}
+
+.page-placeholder__path {
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-4);
+}
+
+.page-placeholder__notice {
+  padding: var(--space-3);
+  background: #fef3c7;
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius);
+  color: #92400e;
+  font-size: var(--text-sm);
+}
+
+.page-placeholder.is-disabled .page-placeholder__header h1 {
+  color: var(--color-text-disabled);
 }
 
 /* 1b.3 DataPage 样式 */
@@ -160,7 +240,8 @@ table {
 .modal-body .overview-chart h3 { font-size: 14px; margin-bottom: 12px; color: #1f2937; }
 .modal-body .overview-detail h3 { font-size: 14px; margin-bottom: 12px; color: #1f2937; }
 
-/* 1b.3.6 HomePage 修复 */
+/* HomePage 修复 */
+.home-page { padding: 24px; max-width: 1200px; }
 .home-page .home-meta {
   display: flex; gap: 16px; align-items: center; font-size: 13px; color: var(--color-text-secondary);
 }
