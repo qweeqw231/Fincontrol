@@ -77,7 +77,9 @@ public class SnapshotMetaService {
                 .newCurrent(snapshotDate)
                 .message("快照切换成功")
                 .build();
-        /**
+    }
+
+    /**
      * 1b.3.9 决策 27：列 (user_id) 所有 snapshot_meta 行（按日期 desc）。
      */
     public List<SnapshotMeta> listByUser(Long userId) {
