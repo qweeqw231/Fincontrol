@@ -86,3 +86,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_snap_user_date_cat_latest
     ON asset_snapshot(user_id, snapshot_date, category, is_latest);
 CREATE UNIQUE INDEX IF NOT EXISTS uk_map_user_fund
     ON fund_category_map(user_id, fund_name);
+-- 1b.3.1 决策 27：snapshot_meta 表（跨日期 is_current 元数据）
+CREATE TABLE IF NOT EXISTS snapshot_meta (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  snapshot_date DATE NOT NULL,
+  is_latest BOOLEAN NOT NULL DEFAULT FALSE,
+  is_current BOOLEAN NOT NULL DEFAULT FALSE,
+  confirmed_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_snap_meta_user_date ON snapshot_meta(user_id, snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_snap_meta_user_current ON snapshot_meta(user_id, is_current);
+CREATE INDEX IF NOT EXISTS idx_snap_meta_user_latest ON snapshot_meta(user_id, is_latest);

@@ -7,6 +7,7 @@ import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.entity.AssetSnapshot;
 import com.fincontrol.mapper.AssetRawMapper;
 import com.fincontrol.mapper.AssetSnapshotMapper;
+import com.fincontrol.mapper.SnapshotMetaMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +15,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -25,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,6 +37,7 @@ import static org.mockito.Mockito.when;
  * 1a.4 Slice A：SnapshotQueryService 业务测试（A4-S01–S03）。
  */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class SnapshotQueryServiceTest {
 
     private static final Long USER_ID = 1L;
@@ -43,6 +48,8 @@ class SnapshotQueryServiceTest {
 
     @Mock
     private AssetRawMapper assetRawMapper;
+    @Mock
+    private SnapshotMetaMapper snapshotMetaMapper; // 1b.3.4
 
     @InjectMocks
     private SnapshotQueryService service;
@@ -77,7 +84,9 @@ class SnapshotQueryServiceTest {
 
     @BeforeEach
     void setUp() {
-        // 默认 no-op；每个 case 自己打桩
+        // 1b.3.4 决策 27：change getLatest 用 is_current 查询
+        // 默认 stub snapshotMetaMapper.selectCurrentDateByUser(USER_ID) = SNAP_DATE
+        when(snapshotMetaMapper.selectCurrentDateByUser(USER_ID)).thenReturn(SNAP_DATE);
     }
 
     @Test

@@ -13,6 +13,7 @@ import com.fincontrol.mapper.ChatHistoryMapper;
 import com.fincontrol.mapper.FundCategoryMapMapper;
 import com.fincontrol.service.SnapShotConfirmService;
 import com.fincontrol.service.SnapshotQueryService;
+import com.fincontrol.service.SnapshotMetaService;
 import com.fincontrol.service.SnapshotRollbackService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,6 +68,8 @@ class SnapshotControllerTest {
 
     @MockBean
     private SnapshotRollbackService snapshotRollbackService;
+    @MockBean
+    private SnapshotMetaService snapshotMetaService; // 1b.3.3
 
     @MockBean
     private AssetRawMapper assetRawMapper;
