@@ -45,6 +45,10 @@ export default function DataPage() {
   const [metaList, setMetaList] = useState([])
   const [metaLoading, setMetaLoading] = useState(false)
 
+  // 1b.3.10 确认入库弹窗
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [parsedSummary, setParsedSummary] = useState(null)
+
   useEffect(() => {
     fetchLatest(1)
     fetchMetaList()
@@ -132,6 +136,24 @@ export default function DataPage() {
       setError(e?.message || '上传或解析失败')
       setStep('error')
     }
+  }
+
+  // 1b.3.10 打开确认入库弹窗（数据预览）
+  function openConfirmModal() {
+    if (!parsedAsset) return
+    const cats = parsedAsset.categories || []
+    const funds = cats.flatMap((c) => (c.funds || []))
+    const totalSix = cats.filter((c) => c.categoryName !== '余额类').reduce((s, c) => s + Number(c.categoryTotal || 0), 0)
+    const balance = cats.find((c) => c.categoryName === '余额类')
+    const totalWithBalance = totalSix + Number(balance?.categoryTotal || 0)
+    setParsedSummary({
+      sixCategoriesTotal: totalSix,
+      balanceFundTotal: Number(balance?.categoryTotal || 0),
+      totalWithBalance,
+      fundCount: funds.length,
+      categories: cats,
+    })
+    setShowConfirmModal(true)
   }
 
   // 1b.3.8 confirm
@@ -243,12 +265,12 @@ export default function DataPage() {
         <h2>3. 确认入库</h2>
         <p className="hint">确认将 19-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
         <button
-          onClick={confirm}
+          onClick={openConfirmModal}
           disabled={step !== 'parsed' && step !== 'confirmed'}
           className="primary-btn"
           data-testid="confirm-btn"
         >
-          {step === 'confirming' ? '入库中…' : '确认入库'}
+          {step === 'confirming' ? '入库中…' : '确认入库（先预览）'}
         </button>
         {step === 'confirmed' && (
           <div className="success-banner">✓ 入库成功！首页应已显示 19 只基金</div>
@@ -287,6 +309,94 @@ export default function DataPage() {
           ))}
         </div>
       </section>
+
+      {/* 1b.3.10 确认入库弹窗（解析数据预览） */}
+      {showConfirmModal && parsedSummary && (
+        <div className="modal-backdrop" onClick={() => setShowConfirmModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>📊 资产入库预览</h2>
+              <button className="modal-close" onClick={() => setShowConfirmModal(false)} aria-label="关闭">×</button>
+            </div>
+            <div className="modal-body">
+              {/* 概览卡片 */}
+              <div className="overview-summary">
+                <div className="overview-card highlight">
+                  <div className="label">总资产（含余额类）</div>
+                  <div className="value">¥{Number(parsedSummary.totalWithBalance).toFixed(2)}</div>
+                </div>
+                <div className="overview-card">
+                  <div className="label">六大类</div>
+                  <div className="value">¥{Number(parsedSummary.sixCategoriesTotal).toFixed(2)}</div>
+                </div>
+                <div className="overview-card">
+                  <div className="label">余额类</div>
+                  <div className="value">¥{Number(parsedSummary.balanceFundTotal).toFixed(2)}</div>
+                </div>
+                <div className="overview-card">
+                  <div className="label">基金数</div>
+                  <div className="value">{parsedSummary.fundCount}</div>
+                </div>
+                <div className="overview-card">
+                  <div className="label">快照日期</div>
+                  <div className="value">{snapshotDate}</div>
+                </div>
+              </div>
+
+              {/* 各类小计 + 占比 */}
+              <div className="overview-detail">
+                <h3>各类小计</h3>
+                <table className="data-table">
+                  <thead><tr><th>类别</th><th>金额（元）</th><th>占六大类 %</th><th>基金数</th></tr></thead>
+                  <tbody>
+                    {parsedSummary.categories.map((c) => {
+                      const pct = parsedSummary.sixCategoriesTotal > 0
+                        ? (Number(c.categoryTotal || 0) / parsedSummary.sixCategoriesTotal * 100).toFixed(1)
+                        : '0'
+                      return (
+                        <tr key={c.categoryName}>
+                          <td>{c.categoryName}</td>
+                          <td>¥{Number(c.categoryTotal || 0).toFixed(2)}</td>
+                          <td>{pct}%</td>
+                          <td>{c.fundCount || 0}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 基金明细 */}
+              <div className="overview-detail"
+                style={{ marginTop: '16px' }}>
+                <h3>基金明细（{parsedSummary.fundCount} 只）</h3>
+                <table className="data-table">
+                  <thead><tr><th>基金名称</th><th>类别</th><th>金额（元）</th></tr></thead>
+                  <tbody>
+                    {parsedSummary.categories.flatMap((c) => (c.funds || []).map((f) => (
+                      <tr key={`${c.categoryName}-${f.fundName}`}>
+                        <td>{f.fundName}</td>
+                        <td>{c.categoryName}</td>
+                        <td>¥{Number(f.amount || 0).toFixed(2)}</td>
+                      </tr>
+                    )))}
+                  </tbody>
+                </table>
+              </div>
+
+              <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '16px' }}>
+                提示：仅做资产概览。后续大类的精确确认（每个 asset_raw 行的目标比例/实际比例）会在 Phase 3 实施。
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="secondary-btn" onClick={() => setShowConfirmModal(false)}>取消</button>
+              <button className="primary-btn" onClick={() => { setShowConfirmModal(false); confirm(); }}>
+                {step === 'confirming' ? '入库中…' : '确认入库'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
