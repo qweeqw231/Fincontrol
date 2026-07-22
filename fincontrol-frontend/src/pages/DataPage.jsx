@@ -98,14 +98,21 @@ export default function DataPage() {
     setError(null)
     setStep('uploading')
     try {
-      const fd = new FormData()
-      for (const f of files) fd.append('file', f)
-      const uploadResp = await apiClient.post(ENDPOINTS.SCREENSHOT_UPLOAD, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      const fileIds = uploadResp.fileIds
-      if (!fileIds || fileIds.length === 0) {
-        throw new Error('upload 返回无 fileIds')
+      // 1b.3.6 修复：上传端点单文件，多文件循环调用
+      const fileIds = []
+      for (const f of files) {
+        const fd = new FormData()
+        fd.append('file', f)
+        const r = await apiClient.post(ENDPOINTS.SCREENSHOT_UPLOAD, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        if (!r.fileId) {
+          throw new Error('upload 返回无 fileId: ' + JSON.stringify(r));
+        }
+        fileIds.push(r.fileId);
+      }
+      if (fileIds.length !== 4) {
+        throw new Error('upload 部分失败: ' + fileIds.length + '/4');
       }
       setStep('parsing')
       const parseResp = await apiClient.post(
