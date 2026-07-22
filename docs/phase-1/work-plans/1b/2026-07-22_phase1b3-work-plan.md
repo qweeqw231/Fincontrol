@@ -1,8 +1,11 @@
 # Phase 1b.3 工作计划（2026-07-22）
 
-> **状态**：🚧 启动中
+> **状态**：原始交付计划（保留历史）
 > **配套验收计划**：[2026-07-22_phase1b3-acceptance-plan.md](../../../test-records/manual-tests/1b/2026-07-22_phase1b3-acceptance-plan.md)
 > **关联决策**：决策 27（is_latest 双层语义 + 跨日期 is_current）
+> **后续补救**：[1b.3 补救工作计划](./2026-07-22_phase1b3-remediation-plan.md) · [补救验收计划](../../../test-records/manual-tests/1b/2026-07-22_phase1b3-remediation-acceptance-plan.md)
+>
+> ⚠️ 本计划记录最初上传/确认/snapshot_meta 交付，不覆盖后续发现的解析历史计数、比例加载、跨日期余额及首页视觉问题；这些问题统一进入补救计划，避免改写原交付历史。
 
 ---
 

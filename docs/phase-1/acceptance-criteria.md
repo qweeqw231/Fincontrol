@@ -3,6 +3,8 @@
 > Phase 0 产出。本文档基于第八章原始 Phase 1 验收标准，**追加第一轮与第三轮评审中需要在 Phase 1 完成的 P0 项**。
 >
 > 原始 Phase 1 验收标准保留并标记；新增 P0 验收项标记为 **[P0-追加]**。
+>
+> **2026-07-22 补充说明**：本文件保留历史 Phase 1 验收语境。页面展示、样式、占比口径与当前累计/持有收益标准，以 [FinControl 全站页面需求说明书](../requirements/2026-07-22_fincontrol-page-requirements.md) 和 [1b.3 补救验收计划](../test-records/manual-tests/1b/2026-07-22_phase1b3-remediation-acceptance-plan.md) 为准。下文“Phase 1 隐藏累计收益率”已被后续决策 4 v2 / 决策 25 与现行成熟实现取代：当前要求累计收益率、持有收益率、累计收益额、持有收益额按 2 行 × 2 列显示，并保留 Info 与 fallback 逻辑。
 
 ---
 
@@ -199,7 +201,9 @@
 
 **来源**：第四轮 P0 2.2.1 + [decisions.md](../phase-0/decisions.md) 决策 2
 
-#### [P0-4.3] 累计收益率卡片 Phase 1 隐藏
+#### [P0-4.3] 累计收益率卡片 Phase 1 隐藏（历史要求，已被后续现行标准取代）
+
+> **现行标准**：累计/持有收益卡必须显示；四项数据按 2 行 × 2 列呈现，并沿用现有算法、Info 标注与余额宝 fallback。以下 checkbox 仅保留历史，不用于当前验收。
 
 - [ ] 首页顶部从三卡片改为两卡片（余额类 + 六大类总值）
 - [ ] "累计收益率"卡片用 `isPhase1Mode` 标志控制，Phase 1 默认隐藏
@@ -240,7 +244,7 @@
 | 1a.12 | `GET /api/snapshot/history` 实现 | — |
 | 1a.13 | `GET /api/asset/balance` 实现 | [P0-1.1] |
 | 1a.14 | `GET /api/asset/operations/recent` 实现（Phase 1 临时方案）| — |
-| 1a.15 | `GET /api/asset/cumulative-return` 实现（返回 available=false）| [P0-4.3] |
+| 1a.15 | `GET /api/asset/cumulative-return` 实现（历史要求 available=false；现行标准为可用并展示累计/持有四值）| [P0-4.3] |
 | 1a.16 | `GET /api/category-map/match` 实现 | — |
 | 1a.17 | `POST /api/category-map/update` 实现 | [P0-1.3] |
 | 1a.18 | `POST /api/chat/send` 实现（含 3.6 prompt 切换）| [P0-3.5] [P0-3.6] |
@@ -260,7 +264,7 @@
 | 1b.3 | Zustand stores 创建 | [P0-3.1] |
 | 1b.4 | Axios 拦截器（含 X-User-Id 默认 1）| — |
 | 1b.5 | 侧边栏布局（240px 宽度，可折叠）| — |
-| 1b.6 | 首页两卡片（余额类 + 六大类总值）| [P0-4.3] |
+| 1b.6 | 首页资产卡片（历史两卡；现行标准为六大类 + 余额类 + 累计/持有收益三卡）| [P0-4.3] |
 | 1b.7 | 首页六大类环形图（ECharts/Recharts）| — |
 | 1b.8 | 首页六大类明细表格（含 profit 列）| [P0-4.1] |
 | 1b.9 | 首页最近操作时间线 | — |
@@ -323,7 +327,7 @@
 |------|----------|----------|
 | Phase 1 时间 | 3-4 天 | 拆分为 Phase 1a（3-4 天）+ Phase 1b（3-4 天）|
 | Phase 1 验收项数 | 6 项 | 6 项原始 + 18 项 P0 追加 = 24 项 |
-| 累计收益率卡片 | 卡片在首页显示 | **Phase 1 隐藏**，Phase 3 显示 |
+| 累计收益率卡片 | 卡片在首页显示 | 历史曾要求 Phase 1 隐藏；**现行标准为累计/持有四值可见** |
 | profit 字段 | 写入但无读取位置 | **首页明细表读取**（决策 3）|
 | target_ratio 同步 | 同步更新 asset_snapshot | **仅写 user_config**（决策 2）|
 | 大类确认面板 | 基础确认 | + 二次确认 + 10 秒撤销 + 忽略按钮 + 余额类 |

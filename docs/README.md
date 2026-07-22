@@ -12,6 +12,8 @@
 docs/
 ├── README.md                                    ← 本文件
 ├── SETUP.md                                     ← 【通用】本地开发环境搭建指南
+├── requirements/                                ← 跨阶段产品与页面需求基线
+│   └── 2026-07-22_fincontrol-page-requirements.md ← 八页面、样式、数据口径宪法
 │
 ├── architecture/                                ← 架构相关（基线 + 评审 + 决策记录）
 │   ├── FinControl 技术设计文档v2.docx           ← 设计基线（v2.0，2026-06-10）
@@ -98,15 +100,23 @@ docs/
 | **[phase-0/db-schema.sql](./phase-0/db-schema.sql)** | 数据库 Schema（7 张表 + 索引 + 注释 + 初始化数据）|
 | **[phase-0/seed-data.sql](./phase-0/seed-data.sql)** | fund_category_map 预录 20 条（18 只基金 + 余额类）|
 
+### 产品与页面需求（跨阶段）
+
+| 文档 | 用途 |
+|------|------|
+| **[requirements/2026-07-22_fincontrol-page-requirements.md](./requirements/2026-07-22_fincontrol-page-requirements.md)** | 侧边栏八页面需求、全局样式、数据口径宪法、成熟逻辑保护边界 |
+
 ### Phase 1 交付物（核心闭环）
 
 | 文档 | 用途 |
 |------|------|
-| **[phase-1/acceptance-criteria.md](./phase-1/acceptance-criteria.md)** | Phase 1 验收标准（47 项 + 18 项 P0）|
+| **[phase-1/acceptance-criteria.md](./phase-1/acceptance-criteria.md)** | Phase 1 验收标准（历史基线；当前页面标准以全站页面需求为准）|
 | **[phase-1/subphase-plan.md](./phase-1/subphase-plan.md)** | Phase 1 子阶段划分 + DoD（含 1a.8 增补）|
-| **[phase-1/work-plans/2026-07-18_phase1a8-work-plan.md](./phase-1/work-plans/2026-07-18_phase1a8-work-plan.md)** | 1a.8 AI 韧性增强工作计划（豆包/DeepSeek fallback）|
+| **[phase-1/work-plans/1a/2026-07-18_phase1a8-work-plan.md](./phase-1/work-plans/1a/2026-07-18_phase1a8-work-plan.md)** | 1a.8 AI 韧性增强工作计划（豆包/DeepSeek fallback）|
 | **[phase-1/checklists/phase-1a.md](./phase-1/checklists/phase-1a.md)** | Phase 1a 后端 24 项 API + 8 项 P0 实时验收（含 1a.8 进度）|
-| **[phase-1/checklists/phase-1b.md](./phase-1/checklists/phase-1b.md)** | Phase 1b 前端 23 项 UI + 4 项 P0 实时验收 |
+| **[phase-1/checklists/phase-1b.md](./phase-1/checklists/phase-1b.md)** | Phase 1b 前端验收 + 1b.3 补救门禁 |
+| **[phase-1/work-plans/1b/2026-07-22_phase1b3-remediation-plan.md](./phase-1/work-plans/1b/2026-07-22_phase1b3-remediation-plan.md)** | 1b.3 重大数据加载 Bug 与首页/数据页视觉补救计划 |
+| **[test-records/manual-tests/1b/2026-07-22_phase1b3-remediation-acceptance-plan.md](./test-records/manual-tests/1b/2026-07-22_phase1b3-remediation-acceptance-plan.md)** | 1b.3 补救验收矩阵与 2026-07-16 数据 Oracle |
 
 **Phase 1 现状（2026-07-18）**：1a.1–1a.7 闭环，1a.8 进行中（补 vision 4/4 = 100%），1b 待启动。
 
@@ -131,6 +141,7 @@ docs/
 | 子阶段工作计划 | `<日期>_<phase>-work-plan.md`（在 `phase-1/work-plans/` 下） | `phase-1/work-plans/2026-07-16_phase1a4-work-plan.md` |
 | API 契约 | `api-contract.md`（在 phase-N/ 内）| `phase-0/api-contract.md` |
 | 数据库脚本 | `<类型>-schema.sql`（在 phase-N/ 内）| `phase-0/db-schema.sql` |
+| 跨阶段需求 | `<日期>_<主题>-requirements.md`（在 `requirements/` 下） | `2026-07-22_fincontrol-page-requirements.md` |
 | 补充设计 | `<主题>-<版本>.md` | `data-model-supplement-v1.md` |
 | 搭建指南 | `SETUP.md`（根目录，跨阶段）| `SETUP.md` |
 

@@ -1,7 +1,11 @@
 # Phase 1b.3 验收计划（2026-07-22）
 
-> **状态**：🚧 启动中
+> **状态**：原始交付验收计划（保留历史）
 > **配套工作计划**：[2026-07-22_phase1b3-work-plan.md](../../../phase-1/work-plans/1b/2026-07-22_phase1b3-work-plan.md)
+> **后续补救验收**：[2026-07-22_phase1b3-remediation-acceptance-plan.md](./2026-07-22_phase1b3-remediation-acceptance-plan.md)
+> **补救需求基线**：[FinControl 全站页面需求说明书](../../../requirements/2026-07-22_fincontrol-page-requirements.md)
+>
+> ⚠️ 本文件只验收原始 1b.3 上传与 snapshot_meta 主路径；解析历史计数、实际/目标比例、当前快照一致性、首页与数据页视觉统一由补救验收计划负责。
 
 ---
 
@@ -12,7 +16,7 @@
 | 子阶段 | 1b.3 数据管理页 |
 | 验收日期 | 2026-07-22 ~ |
 | 验收人 | 刘博丞 + Cline |
-| 关联 commit | 1b.3.1 → 1b.3.10 | 
+| 关联 commit | 1b.3.1 → 1b.3.10 |
 | 关联决策 | 决策 27 |
 
 ---
