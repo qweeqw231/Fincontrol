@@ -179,6 +179,80 @@ class AssetQueryServiceTest {
         assertThat(body.getHoldingReturnRate()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(body.getAvailable()).isTrue();
     }
+
+    // ============================================================
+    // 决策 25 v3：余额宝 fallback 校正测试
+    // ============================================================
+
+    @Test
+    @DisplayName("1b.2 决策25v3: 余额宝 holding=NULL+cumulative=1.90 → fallback → status=included, totalHolding = raw + 1.90")
+    void cumulativeReturn_balanceFundFallback_included() {
+        java.util.Map<String, Object> row = new java.util.HashMap<>();
+        row.put("total_cumulative_profit", new BigDecimal("-50.00"));
+        row.put("total_holding_profit",    new BigDecimal("-36.55"));  // 不含余额宝（已 SUM 但余额宝 holding=NULL 不计入）
+        row.put("total_amount",             new BigDecimal("1000.00"));
+        row.put("fund_count",               19);
+        row.put("snapshot_date",            "2026-07-16");
+        when(assetRawMapper.sumReturnFieldsByUser(USER_ID)).thenReturn(row);
+
+        // 模拟 selectBalanceByUser 返余额宝行（holding=NULL, cumulative=1.90）
+        com.fincontrol.entity.AssetRaw baoBao = new com.fincontrol.entity.AssetRaw();
+        baoBao.setCategory("余额类");
+        baoBao.setAmount(new BigDecimal("308.86"));
+        baoBao.setHoldingProfit(null);  // 关键：NULL
+        baoBao.setCumulativeProfit(new BigDecimal("1.90"));
+        when(assetRawMapper.selectBalanceByUser(USER_ID)).thenReturn(List.of(baoBao));
+
+        com.fincontrol.dto.asset.CumulativeReturnResponse body = service.getCumulativeReturn(USER_ID);
+        assertThat(body.getBalanceFundStatus()).isEqualTo("included");
+        assertThat(body.getBalanceFundAdjustment()).isEqualByComparingTo(new BigDecimal("1.90"));
+        assertThat(body.getRawHoldingProfit()).isEqualByComparingTo(new BigDecimal("-36.55"));
+        // 校正后: -36.55 + 1.90 = -34.65
+        assertThat(body.getTotalHoldingProfit()).isEqualByComparingTo(new BigDecimal("-34.65"));
+        // holdingReturnRate 重新算: -34.65 / 1000 = -0.034650
+        assertThat(body.getHoldingReturnRate()).isEqualByComparingTo(new BigDecimal("-0.034650"));
+    }
+
+    @Test
+    @DisplayName("1b.2 决策25v3: 余额宝两项都 NULL → status=excluded_unknown, adjustment=0")
+    void cumulativeReturn_balanceFundFallback_excludedUnknown() {
+        java.util.Map<String, Object> row = new java.util.HashMap<>();
+        row.put("total_cumulative_profit", new BigDecimal("-50.00"));
+        row.put("total_holding_profit",    new BigDecimal("-36.55"));
+        row.put("total_amount",             new BigDecimal("1000.00"));
+        when(assetRawMapper.sumReturnFieldsByUser(USER_ID)).thenReturn(row);
+
+        // 模拟 selectBalanceByUser 返余额宝行（两项都 NULL）
+        com.fincontrol.entity.AssetRaw baoBao = new com.fincontrol.entity.AssetRaw();
+        baoBao.setCategory("余额类");
+        baoBao.setAmount(new BigDecimal("308.86"));
+        baoBao.setHoldingProfit(null);
+        baoBao.setCumulativeProfit(null);  // 也 NULL
+        when(assetRawMapper.selectBalanceByUser(USER_ID)).thenReturn(List.of(baoBao));
+
+        com.fincontrol.dto.asset.CumulativeReturnResponse body = service.getCumulativeReturn(USER_ID);
+        assertThat(body.getBalanceFundStatus()).isEqualTo("excluded_unknown");
+        assertThat(body.getBalanceFundAdjustment()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(body.getTotalHoldingProfit()).isEqualByComparingTo(new BigDecimal("-36.55"));
+    }
+
+    @Test
+    @DisplayName("1b.2 决策25v3: 没余额类持仓 → status=normal, 不校正")
+    void cumulativeReturn_balanceFundFallback_normal() {
+        java.util.Map<String, Object> row = new java.util.HashMap<>();
+        row.put("total_cumulative_profit", new BigDecimal("-50.00"));
+        row.put("total_holding_profit",    new BigDecimal("20.00"));
+        row.put("total_amount",             new BigDecimal("1000.00"));
+        when(assetRawMapper.sumReturnFieldsByUser(USER_ID)).thenReturn(row);
+
+        // 模拟 selectBalanceByUser 返空（无余额类持仓）
+        when(assetRawMapper.selectBalanceByUser(USER_ID)).thenReturn(Collections.emptyList());
+
+        com.fincontrol.dto.asset.CumulativeReturnResponse body = service.getCumulativeReturn(USER_ID);
+        assertThat(body.getBalanceFundStatus()).isEqualTo("normal");
+        assertThat(body.getBalanceFundAdjustment()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(body.getTotalHoldingProfit()).isEqualByComparingTo(new BigDecimal("20.00"));  // 不校正
+    }
 }
 
 

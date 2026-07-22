@@ -126,11 +126,15 @@ public class AssetQueryService {
         java.util.Map<String, Object> row = assetRawMapper.sumReturnFieldsByUser(userId);
 
         BigDecimal totalCum = toBigDecimal(row, "total_cumulative_profit");
-        BigDecimal totalHold = toBigDecimal(row, "total_holding_profit");
+        BigDecimal rawHolding = toBigDecimal(row, "total_holding_profit");
         BigDecimal totalAmt  = toBigDecimal(row, "total_amount");
         BigDecimal returnRate = totalAmt.signum() == 0
                 ? BigDecimal.ZERO
                 : totalCum.divide(totalAmt, 6, java.math.RoundingMode.HALF_UP);
+
+        // 决策 25 v3：余额宝 fallback（展示层 smart fallback，不动数据层）
+        BalanceAdjustment adj = computeBalanceAdjustment(userId);
+        BigDecimal totalHold = rawHolding.add(adj.amount());
         BigDecimal holdingReturnRate = totalAmt.signum() == 0
                 ? BigDecimal.ZERO
                 : totalHold.divide(totalAmt, 6, java.math.RoundingMode.HALF_UP);
@@ -146,14 +150,65 @@ public class AssetQueryService {
                 .available(true)
                 .algorithm("phase1_simple")
                 .totalCumulativeProfit(totalCum)
+                .rawHoldingProfit(rawHolding)
+                .balanceFundAdjustment(adj.amount())
                 .totalHoldingProfit(totalHold)
                 .totalAmount(totalAmt)
                 .returnRate(returnRate)
                 .holdingReturnRate(holdingReturnRate)
+                .balanceFundStatus(adj.status())
                 .snapshotDate(snapshotDate)
                 .fundCount(fundCount)
                 .message(null)
                 .build();
+    }
+
+    /**
+     * 决策 25 v3：余额宝 fallback 计算（展示层，不改数据层）。
+     * <p>余额宝原图 holding 字段通常为 NULL（1a 解析层尊重原图不补 0 也不补 cumulative），
+     * 但累计 1.90 元（"持有 = 累计"在余额宝这种活期/类货基上成立）。
+     * <p>Phase 2 重构时：把此逻辑下沉到 confirm 流程（写库时自动补 holding=cumulative），
+     * 本方法体可改为"信任数据层"实现（直接 sum holding 即可），调用方不变。
+     *
+     * @return BalanceAdjustment 包含 adjustment 金额 + status 标签
+     */
+    private BalanceAdjustment computeBalanceAdjustment(Long userId) {
+        // 找 category='余额类' 且 amount > 0（仍持仓）的第一行
+        List<AssetRaw> balanceRows = Optional.ofNullable(assetRawMapper.selectBalanceByUser(userId))
+                .orElse(Collections.emptyList());
+        AssetRaw baoBao = balanceRows.stream()
+                .filter(r -> "余额类".equals(r.getCategory()))
+                .filter(r -> r.getAmount() != null && r.getAmount().signum() > 0)
+                .findFirst()
+                .orElse(null);
+        if (baoBao == null) {
+            // 没余额类持仓（清仓 / 从未持有 / 数据缺失）
+            return new BalanceAdjustment(BigDecimal.ZERO, "normal");
+        }
+        BigDecimal holding = baoBao.getHoldingProfit();
+        BigDecimal cumulative = baoBao.getCumulativeProfit();
+        if (holding == null && cumulative != null) {
+            // 原图没解析出持有，cumulative 有效 → fallback
+            return new BalanceAdjustment(cumulative, "included");
+        }
+        if (holding == null && cumulative == null) {
+            // 两项都 null
+            return new BalanceAdjustment(BigDecimal.ZERO, "excluded_unknown");
+        }
+        // holding 非 null（已解析） → 不校正
+        return new BalanceAdjustment(BigDecimal.ZERO, "normal");
+    }
+
+    /** 内部值对象：余额宝校正值 + 状态 */
+    private static class BalanceAdjustment {
+        private final BigDecimal amount;
+        private final String status;
+        BalanceAdjustment(BigDecimal amount, String status) {
+            this.amount = amount == null ? BigDecimal.ZERO : amount;
+            this.status = status == null ? "normal" : status;
+        }
+        BigDecimal amount() { return amount; }
+        String status() { return status; }
     }
 
     private static BigDecimal toBigDecimal(java.util.Map<String, Object> row, String key) {
