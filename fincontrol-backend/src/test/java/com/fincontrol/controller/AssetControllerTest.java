@@ -56,7 +56,17 @@ class AssetControllerTest {
     private AssetQueryService assetQueryService;
     // 不在这里用 @MockBean 占位；测试 body=null 时，MockMvc 会调用真实 Bean。
     @MockBean
-    private AssetRawMapper assetRawMapper;
+    private com.fincontrol.mapper.AssetRawQueryMapper assetRawQueryMapper;
+    @MockBean
+    private com.fincontrol.mapper.AssetRawMapper assetRawMapper;
+    @MockBean
+    private com.fincontrol.mapper.UserConfigMapper userConfigMapper;
+    @MockBean
+    private com.fincontrol.service.CurrentSnapshotContext currentSnapshotContext;
+    @MockBean
+    private com.fincontrol.service.ParseLogQueryService parseLogQueryService;
+    @MockBean
+    private com.fincontrol.service.VisionModelClient visionModelClient;
 
     @MockBean
     private AssetSnapshotMapper assetSnapshotMapper;

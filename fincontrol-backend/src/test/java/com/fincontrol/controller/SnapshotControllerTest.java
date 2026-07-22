@@ -72,6 +72,13 @@ class SnapshotControllerTest {
     private SnapshotMetaService snapshotMetaService; // 1b.3.3
 
     @MockBean
+    private com.fincontrol.mapper.AssetRawQueryMapper assetRawQueryMapper;
+    @MockBean
+    private com.fincontrol.mapper.UserConfigMapper userConfigMapper;
+    @MockBean
+    private com.fincontrol.service.CurrentSnapshotContext currentSnapshotContext;
+
+    @MockBean
     private AssetRawMapper assetRawMapper;
 
     @MockBean

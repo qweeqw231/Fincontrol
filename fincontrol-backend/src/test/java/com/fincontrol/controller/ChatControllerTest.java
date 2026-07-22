@@ -58,8 +58,14 @@ class ChatControllerTest {
     @MockBean private FundCategoryMapMapper fundCategoryMapMapper;
     @MockBean private com.fincontrol.mapper.CategoryMasterMapper categoryMasterMapper;
     @MockBean private AssetRawMapper assetRawMapper;
+    @MockBean private com.fincontrol.mapper.AssetRawQueryMapper assetRawQueryMapper;
+    @MockBean private com.fincontrol.mapper.UserConfigMapper userConfigMapper;
+    @MockBean private com.fincontrol.service.CurrentSnapshotContext currentSnapshotContext;
+    @MockBean private com.fincontrol.mapper.SnapshotMetaMapper snapshotMetaMapper;
     @MockBean private AssetSnapshotMapper assetSnapshotMapper;
     @MockBean private ChatHistoryMapper chatHistoryMapper;
+    @MockBean private com.fincontrol.service.ParseLogQueryService parseLogQueryService;
+    @MockBean private com.fincontrol.service.VisionModelClient visionModelClient;
 
     private ChatSendResponse fixtureResp(boolean isInvestment, String routedTo) {
         return ChatSendResponse.builder()

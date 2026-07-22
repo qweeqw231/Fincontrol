@@ -65,12 +65,24 @@ class CategoryMapControllerTest {
 
     @MockBean
     private AssetRawMapper assetRawMapper;
+    @MockBean
+    private com.fincontrol.mapper.AssetRawQueryMapper assetRawQueryMapper;
+    @MockBean
+    private com.fincontrol.mapper.UserConfigMapper userConfigMapper;
+    @MockBean
+    private com.fincontrol.service.CurrentSnapshotContext currentSnapshotContext;
+    @MockBean
+    private com.fincontrol.mapper.SnapshotMetaMapper snapshotMetaMapper;
 
     @MockBean
     private AssetSnapshotMapper assetSnapshotMapper;
 
     @MockBean
     private ChatHistoryMapper chatHistoryMapper;
+    @MockBean
+    private com.fincontrol.service.ParseLogQueryService parseLogQueryService;
+    @MockBean
+    private com.fincontrol.service.VisionModelClient visionModelClient;
 
     private CategoryMapMatchItem item(String fund, String cat, String src) {
         return CategoryMapMatchItem.builder()

@@ -11,51 +11,71 @@ import com.fincontrol.dto.asset.OperationsRecentResponse;
 import com.fincontrol.dto.screenshot.ParseLogItem;
 import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.mapper.AssetRawMapper;
+import com.fincontrol.mapper.AssetRawQueryMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
  * 1a.4 首页辅助服务（[api-contract.md §9.1 / §9.2 / §9.3](#)）。
- *
- * <p>只读；不写库。
+ * <p>1b.3 补救 R3：余额 / 收益 / 基金数 全部绑定 {@code snapshot_meta.is_current} 对应日期。
+ * <p>累计/持有公式沿用 1b.2 决策 4 v2 / 决策 25 v2，本轮仅修正输入行范围和目标比例/实际比例。
  */
 @Service
 public class AssetQueryService {
 
+    private static final Logger log = LoggerFactory.getLogger(AssetQueryService.class);
+
     private final AssetRawMapper assetRawMapper;
+    private final AssetRawQueryMapper assetRawQueryMapper;
     private final ParseLogQueryService parseLogQueryService;
+    private final CurrentSnapshotContext currentSnapshotContext;
 
     public AssetQueryService(AssetRawMapper assetRawMapper,
-                             ParseLogQueryService parseLogQueryService) {
+                             AssetRawQueryMapper assetRawQueryMapper,
+                             ParseLogQueryService parseLogQueryService,
+                             CurrentSnapshotContext currentSnapshotContext) {
         this.assetRawMapper = assetRawMapper;
+        this.assetRawQueryMapper = assetRawQueryMapper;
         this.parseLogQueryService = parseLogQueryService;
+        this.currentSnapshotContext = currentSnapshotContext;
     }
 
     // ========================================================================
-    // A4-S06 余额汇总
+    // 1b.3 补救 R3：余额汇总按 currentDate 限定
     // ========================================================================
 
     /**
      * 余额类卡片数据（[api-contract.md §9.1](#)）。
-     * <p>只统计 {@code category='余额类' AND is_latest=true}；空数据返回 total=0、items=[]。
+     * <p>1b.3 行为：仅汇总 {@code snapshot_meta.is_current} 对应日期的余额类 is_latest=1 行。
+     * <p>无任何快照时 total=0、items=[]。
      */
     public AssetBalanceResponse getBalance(Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
         }
-        List<AssetRaw> rows = Optional.ofNullable(assetRawMapper.selectBalanceByUser(userId))
+        LocalDate currentDate = currentSnapshotContext.resolveCurrentDate(userId);
+        if (currentDate == null) {
+            return AssetBalanceResponse.builder()
+                    .balanceFundTotal(BigDecimal.ZERO)
+                    .items(Collections.emptyList())
+                    .snapshotDate(null)
+                    .build();
+        }
+        List<AssetRaw> rows = Optional.ofNullable(
+                assetRawQueryMapper.selectCurrentBalanceByUser(userId, currentDate))
                 .orElse(Collections.emptyList());
         List<AssetBalanceItem> items = new ArrayList<>(rows.size());
         BigDecimal total = BigDecimal.ZERO;
         for (AssetRaw row : rows) {
-            if (Boolean.FALSE.equals(row.getIsLatest())) {
-                continue;
-            }
             BigDecimal amount = nz(row.getAmount());
             total = total.add(amount);
             BigDecimal holding = nz(row.getHoldingProfit() != null ? row.getHoldingProfit() : row.getProfit());
@@ -72,7 +92,7 @@ public class AssetQueryService {
         return AssetBalanceResponse.builder()
                 .balanceFundTotal(total)
                 .items(items)
-                .snapshotDate(items.isEmpty() ? null : rows.get(0).getSnapshotDate())
+                .snapshotDate(currentDate)
                 .build();
     }
 
@@ -82,7 +102,6 @@ public class AssetQueryService {
 
     /**
      * 最近解析活动（[api-contract.md §9.2](#)）。
-     * <p>复用 {@link ParseLogQueryService}；Phase 1 operationType 固定 screenshot_parse。
      */
     public OperationsRecentResponse getRecentOperations(Long userId, int limit) {
         if (userId == null) {
@@ -93,9 +112,17 @@ public class AssetQueryService {
         List<OperationRecentItem> items = new ArrayList<>(logs.size());
         for (ParseLogItem log : logs) {
             String status = log.getStatus() == null ? "" : log.getStatus();
-            String summary = "parse_failed".equals(status)
-                    ? "截图解析失败"
-                    : "解析 " + log.getFundCount() + " 只基金";
+            int count = log.getFundCount();
+            String summary;
+            if ("parse_failed".equals(status)) {
+                summary = "截图解析失败";
+            } else if (count <= 0 && (log.getParseError() != null && !log.getParseError().isBlank())) {
+                summary = "解析失败：" + log.getParseError();
+            } else if (count <= 0) {
+                summary = "基金数未知";
+            } else {
+                summary = "解析 " + count + " 只基金";
+            }
             items.add(OperationRecentItem.builder()
                     .operationType("screenshot_parse")
                     .operationDate(log.getCreatedAt())
@@ -107,44 +134,43 @@ public class AssetQueryService {
     }
 
     // ========================================================================
-    // 1b.2 A4-S08 累计收益率（决策 4 v2 / 口径 A / 2026-07-22）
+    // 1b.3 补救 R3：累计/持有/基金数 全部按 currentDate 限定
     // ========================================================================
 
     /**
      * 累计 + 持有 收益（[api-contract.md §9.3](#) / 决策 4 v2 / 决策 25 v2 / 2026-07-22）。
-     * <p>累计算法：{@code totalCumulativeProfit / totalAmount}，分子分母都包含余额类（口径 A / 全口径）。
-     * <p>持有算法：{@code totalHoldingProfit / totalAmount}，仅当前仍持仓的浮盈/亏（不含已实现）。
-     * <p>依赖 {@link AssetRawMapper#sumReturnFieldsByUser} 一次查 5 字段（双保险 + snapshot_date + fund_count）。
-     * <p>totalAmount=0 时 returnRate / holdingReturnRate 都为 0（避免除零）。
-     * <p>Phase 3 升级为 Modified Dietz / XIRR 时，本方法改为分支计算，算法标识从 phase1_simple 改为 phase3_dietz / phase3_xirr。
-     * <p>未来「每一天的累计/持有」需新增方法 getReturnAtDate(userId, snapshotDate)（Phase 2）。
+     * <p>1b.3：分子分母都来自 currentDate；currentDate=null 时直接返回不可用，避免 MAX(date) 兜底回到跨日聚合。
      */
     public CumulativeReturnResponse getCumulativeReturn(Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
         }
-        java.util.Map<String, Object> row = assetRawMapper.sumReturnFieldsByUser(userId);
+        LocalDate currentDate = currentSnapshotContext.resolveCurrentDate(userId);
+        if (currentDate == null) {
+            return CumulativeReturnResponse.builder()
+                    .available(false)
+                    .algorithm("phase1_simple")
+                    .message("尚未上传资产快照")
+                    .build();
+        }
+        Map<String, Object> row = assetRawQueryMapper.sumReturnFieldsAtDate(userId, currentDate);
 
         BigDecimal totalCum = toBigDecimal(row, "total_cumulative_profit");
         BigDecimal rawHolding = toBigDecimal(row, "total_holding_profit");
-        BigDecimal totalAmt  = toBigDecimal(row, "total_amount");
+        BigDecimal totalAmt = toBigDecimal(row, "total_amount");
         BigDecimal returnRate = totalAmt.signum() == 0
                 ? BigDecimal.ZERO
                 : totalCum.divide(totalAmt, 6, java.math.RoundingMode.HALF_UP);
 
-        // 决策 25 v3：余额宝 fallback（展示层 smart fallback，不动数据层）
-        BalanceAdjustment adj = computeBalanceAdjustment(userId);
+        // 决策 25 v3：余额宝 fallback（限定到 currentDate）
+        BalanceAdjustment adj = computeBalanceAdjustmentAtDate(userId, currentDate);
         BigDecimal totalHold = rawHolding.add(adj.amount());
         BigDecimal holdingReturnRate = totalAmt.signum() == 0
                 ? BigDecimal.ZERO
                 : totalHold.divide(totalAmt, 6, java.math.RoundingMode.HALF_UP);
 
-        String snapshotDate = row == null || row.get("snapshot_date") == null
-                ? null
-                : String.valueOf(row.get("snapshot_date"));
         Integer fundCount = row == null || row.get("fund_count") == null
-                ? null
-                : ((Number) row.get("fund_count")).intValue();
+                ? null : ((Number) row.get("fund_count")).intValue();
 
         return CumulativeReturnResponse.builder()
                 .available(true)
@@ -157,45 +183,31 @@ public class AssetQueryService {
                 .returnRate(returnRate)
                 .holdingReturnRate(holdingReturnRate)
                 .balanceFundStatus(adj.status())
-                .snapshotDate(snapshotDate)
+                .snapshotDate(currentDate.toString())
                 .fundCount(fundCount)
                 .message(null)
                 .build();
     }
 
-    /**
-     * 决策 25 v3：余额宝 fallback 计算（展示层，不改数据层）。
-     * <p>余额宝原图 holding 字段通常为 NULL（1a 解析层尊重原图不补 0 也不补 cumulative），
-     * 但累计 1.90 元（"持有 = 累计"在余额宝这种活期/类货基上成立）。
-     * <p>Phase 2 重构时：把此逻辑下沉到 confirm 流程（写库时自动补 holding=cumulative），
-     * 本方法体可改为"信任数据层"实现（直接 sum holding 即可），调用方不变。
-     *
-     * @return BalanceAdjustment 包含 adjustment 金额 + status 标签
-     */
-    private BalanceAdjustment computeBalanceAdjustment(Long userId) {
-        // 找 category='余额类' 且 amount > 0（仍持仓）的第一行
-        List<AssetRaw> balanceRows = Optional.ofNullable(assetRawMapper.selectBalanceByUser(userId))
+    private BalanceAdjustment computeBalanceAdjustmentAtDate(Long userId, LocalDate currentDate) {
+        List<AssetRaw> balanceRows = Optional.ofNullable(
+                assetRawQueryMapper.selectCurrentBalanceByUser(userId, currentDate))
                 .orElse(Collections.emptyList());
         AssetRaw baoBao = balanceRows.stream()
-                .filter(r -> "余额类".equals(r.getCategory()))
                 .filter(r -> r.getAmount() != null && r.getAmount().signum() > 0)
                 .findFirst()
                 .orElse(null);
         if (baoBao == null) {
-            // 没余额类持仓（清仓 / 从未持有 / 数据缺失）
             return new BalanceAdjustment(BigDecimal.ZERO, "normal");
         }
         BigDecimal holding = baoBao.getHoldingProfit();
         BigDecimal cumulative = baoBao.getCumulativeProfit();
         if (holding == null && cumulative != null) {
-            // 原图没解析出持有，cumulative 有效 → fallback
             return new BalanceAdjustment(cumulative, "included");
         }
         if (holding == null && cumulative == null) {
-            // 两项都 null
             return new BalanceAdjustment(BigDecimal.ZERO, "excluded_unknown");
         }
-        // holding 非 null（已解析） → 不校正
         return new BalanceAdjustment(BigDecimal.ZERO, "normal");
     }
 
@@ -211,11 +223,13 @@ public class AssetQueryService {
         String status() { return status; }
     }
 
-    private static BigDecimal toBigDecimal(java.util.Map<String, Object> row, String key) {
+    private static BigDecimal toBigDecimal(Map<String, Object> row, String key) {
         if (row == null || row.get(key) == null) return BigDecimal.ZERO;
-        return new BigDecimal(row.get(key).toString());
+        Object v = row.get(key);
+        if (v instanceof BigDecimal bd) return bd;
+        if (v instanceof Number n) return new BigDecimal(n.toString());
+        return new BigDecimal(v.toString());
     }
-
 
     private static BigDecimal nz(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;

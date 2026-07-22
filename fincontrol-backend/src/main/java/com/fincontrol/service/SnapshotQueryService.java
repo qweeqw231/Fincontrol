@@ -11,6 +11,7 @@ import com.fincontrol.dto.snapshot.SnapshotLatestResponse;
 import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.entity.AssetSnapshot;
 import com.fincontrol.mapper.AssetRawMapper;
+import com.fincontrol.mapper.AssetRawQueryMapper;
 import com.fincontrol.mapper.SnapshotMetaMapper;
 import com.fincontrol.mapper.AssetSnapshotMapper;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -30,6 +32,13 @@ import java.util.stream.Collectors;
  * 1a.4 快照查询服务（[api-contract.md §3.1/§3.2](#)）。
  *
  * <p>latest 与 latest/detail 共用同一查询入口；只读，不写库。
+ *
+ * <p>1b.3 补救：
+ * <ul>
+ *   <li>R3：currentDate 来自 {@code snapshot_meta.is_current}，与首页其它数据源严格一致。</li>
+ *   <li>R4：实际比例与偏差按权威金额重算；目标比例从 {@code user_config.target_ratios} 加载，
+ *       余额类排除在六大类配置之外并显示为 {@code —}。</li>
+ * </ul>
  */
 @Service
 public class SnapshotQueryService {
@@ -39,14 +48,23 @@ public class SnapshotQueryService {
 
     private final AssetSnapshotMapper assetSnapshotMapper;
     private final AssetRawMapper assetRawMapper;
+    private final AssetRawQueryMapper assetRawQueryMapper;
     private final SnapshotMetaMapper snapshotMetaMapper; // 1b.3.4 决策 27
+    private final UserConfigService userConfigService;
+    private final CurrentSnapshotContext currentSnapshotContext;
 
     public SnapshotQueryService(AssetSnapshotMapper assetSnapshotMapper,
-                               AssetRawMapper assetRawMapper,
-                               SnapshotMetaMapper snapshotMetaMapper) {
+                                AssetRawMapper assetRawMapper,
+                                AssetRawQueryMapper assetRawQueryMapper,
+                                SnapshotMetaMapper snapshotMetaMapper,
+                                UserConfigService userConfigService,
+                                CurrentSnapshotContext currentSnapshotContext) {
         this.assetSnapshotMapper = assetSnapshotMapper;
         this.assetRawMapper = assetRawMapper;
+        this.assetRawQueryMapper = assetRawQueryMapper;
         this.snapshotMetaMapper = snapshotMetaMapper;
+        this.userConfigService = userConfigService;
+        this.currentSnapshotContext = currentSnapshotContext;
     }
 
     /**
@@ -61,13 +79,10 @@ public class SnapshotQueryService {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
         }
         // 1b.3.4 决策 27：找当前快照日期：查 snapshot_meta.is_current=true 的 snapshot_date
-        // （替代原 MAX(snapshot_date) WHERE is_latest=true 逻辑）
-        LocalDate latestDate = Optional.ofNullable(snapshotMetaMapper.selectCurrentDateByUser(userId))
-                .orElse(null);
+        LocalDate latestDate = currentSnapshotContext.resolveCurrentDate(userId);
         if (latestDate == null) {
             return null;
         }
-        // 2) 拉取该 user/date 全部 is_latest=true 的 snapshot 行
         List<AssetSnapshot> snapshots = Optional.ofNullable(
                 assetSnapshotMapper.selectLatestByUserAndDate(userId, latestDate))
                 .orElse(Collections.emptyList());
@@ -82,28 +97,22 @@ public class SnapshotQueryService {
                                                      List<AssetSnapshot> snapshots,
                                                      boolean includeDetail,
                                                      boolean includeBalance) {
-        // 3) 组装 categories（余额类根据 includeBalance 决定是否返回）
-        List<SnapshotCategorySummary> summaries = new ArrayList<>();
-        BigDecimal sixTotal = BigDecimal.ZERO;
-        BigDecimal balanceTotal = BigDecimal.ZERO;
+        Map<String, BigDecimal> targetRatios = userConfigService.loadSixCategoryTargetRatios(userId);
+        BigDecimal sixTotal = recomputeSixTotal(userId, snapshotDate, snapshots);
+        BigDecimal balanceTotal = includeBalance
+                ? recomputeBalanceTotal(userId, snapshotDate, snapshots)
+                : BigDecimal.ZERO;
         LocalDateTime confirmedAt = null;
         for (AssetSnapshot snap : snapshots) {
             if (snap.getUpdatedAt() != null && (confirmedAt == null || snap.getUpdatedAt().isAfter(confirmedAt))) {
                 confirmedAt = snap.getUpdatedAt();
             }
-            boolean isBalance = "余额类".equals(snap.getCategory());
-            if (isBalance) {
-                if (!includeBalance) {
-                    continue;
-                }
-                balanceTotal = nz(snap.getTotalAmount());
-            } else {
-                sixTotal = sixTotal.add(nz(snap.getTotalAmount()));
-            }
-            if (isBalance && !includeBalance) {
-                continue;
-            }
-            summaries.add(toCategorySummary(userId, snapshotDate, snap, includeDetail));
+        }
+        List<SnapshotCategorySummary> summaries = new ArrayList<>();
+        for (AssetSnapshot snap : snapshots) {
+            String cat = snap.getCategory();
+            if (!includeBalance && "余额类".equals(cat)) continue;
+            summaries.add(toCategorySummary(userId, snapshotDate, snap, sixTotal, targetRatios, includeDetail));
         }
         BigDecimal sixWithBalance = sixTotal.add(balanceTotal);
         return SnapshotLatestResponse.builder()
@@ -116,28 +125,80 @@ public class SnapshotQueryService {
                 .build();
     }
 
+    /**
+     * 1b.3 补救 R4：按权威金额重算六大类总额（不信任 asset_snapshot 旧比例）。
+     * 优先用 asset_raw 在 currentDate 下重算；旧 snapshot 行仅作展示兜底。
+     */
+    private BigDecimal recomputeSixTotal(Long userId, LocalDate snapshotDate, List<AssetSnapshot> snapshots) {
+        BigDecimal sum = BigDecimal.ZERO;
+        for (AssetSnapshot snap : snapshots) {
+            if (!"余额类".equals(snap.getCategory()) && Boolean.TRUE.equals(snap.getIsLatest())) {
+                sum = sum.add(nz(snap.getTotalAmount()));
+            }
+        }
+        // 若 currentDate 下 asset_raw 能算权威金额，则用它覆盖（修复 ratio=0 历史快照）
+        List<Map<String, Object>> rows = Optional.ofNullable(
+                assetRawQueryMapper.sumSixCategoryAmountsAtDate(userId, snapshotDate))
+                .orElse(Collections.emptyList());
+        if (!rows.isEmpty()) {
+            BigDecimal authoritative = BigDecimal.ZERO;
+            for (Map<String, Object> r : rows) {
+                authoritative = authoritative.add(toBigDecimal(r.get("total_amount")));
+            }
+            return authoritative;
+        }
+        return sum;
+    }
+
+    private BigDecimal recomputeBalanceTotal(Long userId, LocalDate snapshotDate, List<AssetSnapshot> snapshots) {
+        for (AssetSnapshot snap : snapshots) {
+            if ("余额类".equals(snap.getCategory()) && Boolean.TRUE.equals(snap.getIsLatest())) {
+                return nz(snap.getTotalAmount());
+            }
+        }
+        // 兜底：从 raw 行汇总
+        List<AssetRaw> rows = Optional.ofNullable(
+                assetRawQueryMapper.selectCurrentBalanceByUser(userId, snapshotDate))
+                .orElse(Collections.emptyList());
+        BigDecimal sum = BigDecimal.ZERO;
+        for (AssetRaw r : rows) sum = sum.add(nz(r.getAmount()));
+        return sum;
+    }
+
     private SnapshotCategorySummary toCategorySummary(Long userId,
                                                      LocalDate snapshotDate,
                                                      AssetSnapshot snap,
+                                                     BigDecimal sixTotal,
+                                                     Map<String, BigDecimal> targetRatios,
                                                      boolean includeDetail) {
+        String category = snap.getCategory();
         BigDecimal total = nz(snap.getTotalAmount());
-        BigDecimal actualRatio = snap.getActualRatio() != null
-                ? snap.getActualRatio()
-                : BigDecimal.ZERO;
-        BigDecimal targetRatio = snap.getTargetRatio() != null
-                ? snap.getTargetRatio()
-                : BigDecimal.ZERO;
-        BigDecimal deviation = actualRatio.subtract(targetRatio);
+        BigDecimal actualRatio;
+        BigDecimal targetRatio;
+        if ("余额类".equals(category)) {
+            // 余额类不参与六大类配置
+            actualRatio = null;
+            targetRatio = null;
+        } else if (sixTotal.signum() == 0) {
+            actualRatio = BigDecimal.ZERO;
+            targetRatio = targetRatios.getOrDefault(category, BigDecimal.ZERO);
+        } else {
+            actualRatio = total.multiply(HUNDRED).divide(sixTotal, 2, RoundingMode.HALF_UP);
+            targetRatio = targetRatios.getOrDefault(category, BigDecimal.ZERO);
+        }
+        BigDecimal deviation = (actualRatio == null)
+                ? null
+                : actualRatio.subtract(targetRatio);
         Integer fundCount = assetRawMapper.countFundsByUserAndDateAndCategory(
-                userId, snapshotDate, snap.getCategory());
+                userId, snapshotDate, category);
         if (fundCount == null) {
             fundCount = 0;
         }
         List<SnapshotFundDetail> funds = includeDetail
-                ? toFundDetails(userId, snapshotDate, snap.getCategory())
+                ? toFundDetails(userId, snapshotDate, category)
                 : null;
         return SnapshotCategorySummary.builder()
-                .categoryName(snap.getCategory())
+                .categoryName(category)
                 .categoryTotal(total)
                 .actualRatio(actualRatio)
                 .targetRatio(targetRatio)
@@ -172,6 +233,13 @@ public class SnapshotQueryService {
 
     private static BigDecimal nz(BigDecimal v) {
         return v != null ? v : BigDecimal.ZERO;
+    }
+
+    private static BigDecimal toBigDecimal(Object v) {
+        if (v == null) return BigDecimal.ZERO;
+        if (v instanceof BigDecimal bd) return bd;
+        if (v instanceof Number n) return new BigDecimal(n.toString());
+        return new BigDecimal(v.toString());
     }
 
     @SuppressWarnings("unused")
@@ -218,30 +286,25 @@ public class SnapshotQueryService {
     }
 
     private SnapshotByDateResponse buildByDateResponse(Long userId,
-                                                     LocalDate date,
-                                                     List<AssetSnapshot> snapshots,
-                                                     boolean includeBalance) {
-        List<SnapshotCategorySummary> summaries = new ArrayList<>();
-        BigDecimal sixTotal = BigDecimal.ZERO;
-        BigDecimal balanceTotal = BigDecimal.ZERO;
+                                                      LocalDate date,
+                                                      List<AssetSnapshot> snapshots,
+                                                      boolean includeBalance) {
+        Map<String, BigDecimal> targetRatios = userConfigService.loadSixCategoryTargetRatios(userId);
+        BigDecimal sixTotal = recomputeSixTotal(userId, date, snapshots);
+        BigDecimal balanceTotal = includeBalance
+                ? recomputeBalanceTotal(userId, date, snapshots)
+                : BigDecimal.ZERO;
         LocalDateTime confirmedAt = null;
         for (AssetSnapshot snap : snapshots) {
             if (snap.getUpdatedAt() != null && (confirmedAt == null || snap.getUpdatedAt().isAfter(confirmedAt))) {
                 confirmedAt = snap.getUpdatedAt();
             }
-            boolean isBalance = "余额类".equals(snap.getCategory());
-            if (isBalance) {
-                if (!includeBalance) {
-                    continue;
-                }
-                balanceTotal = nz(snap.getTotalAmount());
-            } else {
-                sixTotal = sixTotal.add(nz(snap.getTotalAmount()));
-            }
-            if (isBalance && !includeBalance) {
-                continue;
-            }
-            summaries.add(toCategorySummary(userId, date, snap, false));
+        }
+        List<SnapshotCategorySummary> summaries = new ArrayList<>();
+        for (AssetSnapshot snap : snapshots) {
+            String cat = snap.getCategory();
+            if (!includeBalance && "余额类".equals(cat)) continue;
+            summaries.add(toCategorySummary(userId, date, snap, sixTotal, targetRatios, false));
         }
         return SnapshotByDateResponse.builder()
                 .snapshotDate(date)
@@ -258,11 +321,11 @@ public class SnapshotQueryService {
      * <p>每个日期默认排除余额类统计 6 大类合计；分页按 page/pageSize。
      */
     public SnapshotHistoryResponse getHistory(Long userId,
-                                             LocalDate from,
-                                             LocalDate to,
-                                             int page,
-                                             int pageSize,
-                                             boolean includeBalance) {
+                                              LocalDate from,
+                                              LocalDate to,
+                                              int page,
+                                              int pageSize,
+                                              boolean includeBalance) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
         }
@@ -300,25 +363,19 @@ public class SnapshotQueryService {
         List<AssetSnapshot> snapshots = Optional.ofNullable(
                 assetSnapshotMapper.selectLatestByUserAndDate(userId, date))
                 .orElse(Collections.emptyList());
-        BigDecimal sixTotal = BigDecimal.ZERO;
-        BigDecimal balanceTotal = BigDecimal.ZERO;
+        BigDecimal sixTotal = recomputeSixTotal(userId, date, snapshots);
+        BigDecimal balanceTotal = recomputeBalanceTotal(userId, date, snapshots);
         LocalDateTime confirmedAt = null;
         int categoryCount = 0;
         for (AssetSnapshot snap : snapshots) {
             if (snap.getUpdatedAt() != null && (confirmedAt == null || snap.getUpdatedAt().isAfter(confirmedAt))) {
                 confirmedAt = snap.getUpdatedAt();
             }
-            categoryCount++;
             boolean isBalance = "余额类".equals(snap.getCategory());
             if (isBalance) {
-                if (!includeBalance) {
-                    categoryCount--; // 未计入响应 categoryCount
-                    continue;
-                }
-                balanceTotal = nz(snap.getTotalAmount());
-            } else {
-                sixTotal = sixTotal.add(nz(snap.getTotalAmount()));
+                if (!includeBalance) continue;
             }
+            categoryCount++;
         }
         return SnapshotHistoryItem.builder()
                 .snapshotDate(date)
