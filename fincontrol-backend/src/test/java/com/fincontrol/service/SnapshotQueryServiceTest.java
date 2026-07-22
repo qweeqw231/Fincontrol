@@ -92,12 +92,13 @@ class SnapshotQueryServiceTest {
     @Test
     @DisplayName("A4-S01: 用户没有任何 snapshot 时返回 null，不抛异常")
     void latest_noSnapshot_returnsNull() {
-        when(assetSnapshotMapper.selectLatestSnapshotDate(USER_ID)).thenReturn(null);
+        // 1b.3.4 决策 27：setUp() 默认 stub SNAP_DATE，此 case override 为 null
+        lenient().when(snapshotMetaMapper.selectCurrentDateByUser(USER_ID)).thenReturn(null);
 
         SnapshotLatestResponse resp = service.getLatest(USER_ID, false, true);
 
         assertThat(resp).isNull();
-        verify(assetSnapshotMapper).selectLatestSnapshotDate(USER_ID);
+        verify(snapshotMetaMapper).selectCurrentDateByUser(USER_ID);
         verify(assetSnapshotMapper, never()).selectLatestByUserAndDate(anyLong(), any());
         verify(assetRawMapper, never()).selectByUserAndDateAndCategory(anyLong(), any(), any());
     }
