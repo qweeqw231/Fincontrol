@@ -293,7 +293,9 @@ public class ScreenshotService {
                 .build();
     }
 
-    /** single 模式：合并多张 ParsedAsset（按 fundName 合并 funds，categories 累加）。 */
+    /** single 模式：把 4 张 ParsedAsset 合并成 1 个（不主动去重，交给 DedupEngine 在 confirm 时做）。
+     * <p>决策 9 1a.10 DedupEngine 本身有完整 dedup（fundName + category 镜像），不重造轮子。
+     */
     private ParsedAsset mergeSingleModeAssets(List<ParsedAsset> assets, LocalDate overrideDate) {
         ParsedAsset merged = new ParsedAsset();
         merged.setSnapshotDate(overrideDate != null ? overrideDate.toString() : assets.get(0).getSnapshotDate());
@@ -318,8 +320,8 @@ public class ScreenshotService {
                     if (dst.getTargetRatio() == null) dst.setTargetRatio(src.getTargetRatio());
                     if (dst.getCategoryTotal() == null) dst.setCategoryTotal(src.getCategoryTotal());
                     if (src.getFunds() != null) {
+                        dst.getFunds().addAll(src.getFunds());
                         for (ParsedAsset.FundLine fl : src.getFunds()) {
-                            dst.getFunds().add(fl);
                             if (fl.getFundName() != null) matchedFunds.add(fl.getFundName());
                         }
                     }

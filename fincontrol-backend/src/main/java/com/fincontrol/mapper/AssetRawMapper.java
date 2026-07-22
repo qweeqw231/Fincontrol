@@ -22,7 +22,8 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
      * 维度 D 镜像校验：同 user_id+date+category 下 amount 之和。
      */
     @Select("SELECT COALESCE(SUM(amount), 0) FROM asset_raw " +
-            "WHERE user_id = #{userId} AND snapshot_date = #{snapshotDate} AND category = #{category}")
+            "WHERE user_id = #{userId} AND snapshot_date = #{snapshotDate} " +
+            "AND category = #{category} AND is_latest = true")
     java.math.BigDecimal sumAmountByUserAndDateAndCategory(
             @Param("userId") Long userId,
             @Param("snapshotDate") java.time.LocalDate snapshotDate,
@@ -32,7 +33,8 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
      * 维度 D 镜像校验：同 user_id+date 下 fund_name 集合（与 fund_category_map 对比）。
      */
     @Select("SELECT DISTINCT fund_name FROM asset_raw " +
-            "WHERE user_id = #{userId} AND snapshot_date = #{snapshotDate}")
+            "WHERE user_id = #{userId} AND snapshot_date = #{snapshotDate} " +
+            "AND is_latest = true")
     Set<String> selectFundNamesByUserAndDate(
             @Param("userId") Long userId,
             @Param("snapshotDate") java.time.LocalDate snapshotDate);

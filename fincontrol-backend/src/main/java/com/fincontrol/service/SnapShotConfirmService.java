@@ -167,6 +167,8 @@ public class SnapShotConfirmService {
     // ========================================================================
 
     private int writeAssetRaw(SnapshotConfirmRequest req, DedupResult dedup) {
+        // 决策 27 (Bug 1 修复): 写新批次前先把 (user_id, snapshot_date) 旧行 is_latest 翻 false
+        assetRawMapper.updateIsLatestBySnapshotDate(req.getUserId(), req.getSnapshotDate());
         int count = 0;
         // 1a.9：从 dedup 结果获取 totalAssetSource（"top" 或 "visible_sum"）；所有行同值
         String totalAssetSource = dedup.merged().getTotalAssetSource() != null
