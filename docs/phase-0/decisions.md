@@ -100,36 +100,73 @@
 
 ---
 
-## 决策 4：首页"累计收益率"卡片 Phase 1 隐藏
+## 决策 4 v2（2026-07-22 修订）：首页"累计收益率"卡片两阶段实现
 
-**状态**：✅ 已锁定
+**状态**：✅ 已锁定（原决策 4"Phase 1 隐藏"已废止，本条为唯一生效版本）
 
-**背景**：
-- 第四轮评审 P0 3.3.1：首页"累计收益率"卡片在 Phase 1 无数据源
-- 累计收益率 = (当前市值 - 累计投入本金) / 累计投入本金
-- 累计投入本金无存储表（第二轮 P0 4.1.1），nav_history 表也不存在（第二轮 P0 4.1.2）
-- Phase 1 不实现净值曲线（Phase 3 才实现）
+**修订背景**：
+- 2026-07-22 1b.2 编码前讨论中发现：原决策 4"直接隐藏"过于保守
+- 灰测数据中已有 `asset_raw.cumulative_profit` 字段（决策 7 拆分后保留），是天然数据源
+- **新算法**：`累计收益率 ≈ Σcumulative_profit / Σamount`（快照型，忽略时间加权），1 次 SELECT
+- 该算法不是真实 IRR，但作为"近似版"可在 Phase 1 启用，Phase 3 升级为 Modified Dietz / XIRR
+- 跨模块评审 3.3.1 红标"无数据源"问题，本决策即解决方案
 
 **决策**：
 
-> Phase 1 首页"累计收益率"卡片**默认隐藏**，使用 `isPhase1Mode` 标志控制。Phase 3 上线时同步显示。
+> 首页累计收益率卡片分两阶段实现：
+>
+> **Phase 1b（1b.2 起）**：渲染卡片，算法 `Σcumulative_profit / Σamount`，API 返 `algorithm: "phase1_simple"`。
+> **Phase 3（净值曲线）**：算法升级为 Modified Dietz 或 XIRR，API 返 `algorithm: "phase3_dietz"` / `"phase3_xirr"`，前端 UI 不变，仅 tooltip 文案随之更新。
+
+**算法 SQL（Phase 1b）**：
+```sql
+SELECT
+  COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit,
+  COALESCE(SUM(amount), 0) AS total_amount
+FROM asset_raw
+WHERE is_latest = 1   -- 全口径：分子分母都包含余额类（2026-07-22 用户拍板口径 A / 总资产视角 / 含余额宝）
+```
+
+**公式**：`累计收益率 ≈ total_cumulative_profit / total_amount`
 
 **实现细节**：
-- `AssetOverview.jsx` 顶部三卡片改为两卡片（余额类、六大类总值）
-- 卡片渲染条件：`{isPhase1Mode ? <TwoCards /> : <ThreeCards />}`
-- `isPhase1Mode` 通过 build config 或环境变量控制（默认 true）
-- API `GET /api/asset/cumulative-return` 在 Phase 1 返回 `{ available: false }`，前端据此判断（已在 [api-contract.md](./api-contract.md) 9.3 节定义）
+- 后端 `AssetQueryService.getCumulativeReturn()` 替换现有占位 `getCumulativeReturnPlaceholder()`
+- DTO 新增 `algorithm: "phase1_simple"` 字段（Phase 3 时改为 `"phase3_dietz"` / `"phase3_xirr"`）
+- 前端 `CumulativeReturnCard` 组件：
+  - 显示百分比（如 `+5.67%`）
+  - 卡片底部显示算法标识 + tooltip（"简化版：Σcumulative/Σamount"）
+- 前端三卡片布局：余额类 / 六大类总值 / 累计收益率（不再分两/三态切换）
 
-**触发更新**：
-- 首页组件结构调整
-- `asset/cumulative-return` API 即使在 Phase 1 也要实现（返回 available=false），避免前端硬编码
+**为什么不直接用 IRR**：
+- IRR/XIRR 需要 operation_log 表（每笔 cash flow + 日期），Phase 1 不实现
+- Phase 3 净值曲线时必须先建 `nav_history` / `manual_nav_entry` / `event_log` 4 张表（跨模块评审 4.3.4 已识别）
+- Phase 1b 用"简化版"折中，立刻让用户看到数字，不空挂卡片
 
 **理由**：
-- 避免 Phase 1 出现"显示假数据"的反模式
-- 卡片位置保留，Phase 3 直接启用
-- 与净值曲线功能同步上线（累计收益率依赖净值数据）
+- **立即可用**：Phase 1b 不必等 Phase 3 的 4 张表
+- **渐进升级**：从快照型 → Modified Dietz → IRR，算法精度随数据成熟度提升
+- **前端透明**：UI 不变，仅底层算法 + tooltip 文案变化，避免前端重构
+- **决策追溯**：本 v2 修订保留原决策 4 文件存档，明确"Phase 1 隐藏"的旧方案不再适用
 
-**回退条件**：Phase 3 启动时，需先设计 nav_history 表（第二轮 P0 4.1.2）
+**Phase 3 升级触发**：
+- 当 `nav_history` 表 + Phase 3a 数据模型落地后，启动 Phase 3b
+- 在 `AssetQueryService.getCumulativeReturn()` 中切换分支：
+  ```java
+  if (phase3NavHistoryAvailable) {
+      return computeDietzReturn();   // 或 computeIRRReturn()
+  } else {
+      return computeSimpleReturn();  // 现有逻辑
+  }
+  ```
+- DTO 字段 `algorithm` 同步更新
+- 前端 tooltip 文案从"简化版"升级为"Modified Dietz"或"年化 IRR"
+
+**回退条件**：
+- 若 Phase 1 简化版与 Phase 3 IRR 偏差 > 2%，需在 1b.2 验收报告中明确标注"Phase 3 切换时的修正幅度"
+- 若用户要求 Phase 1 重新隐藏卡片，回退到 v2 之前的决策（即决策 4 历史版）
+
+---
+
 
 ---
 
@@ -754,32 +791,6 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 
 ---
 
-## 决策总结表（持续追加）
-
-| # | 决策 | 状态 | 关联评审问题 |
-|---|------|------|------------|
-| 1 | REST API 契约完成 | ✅ | 第四轮 3.3.5 |
-| 2 | target_ratio 同步策略 = 解读 4 | ✅ | 第四轮 2.2.1 |
-| 3 | profit 字段读取 = 首页明细表 | ✅ | 第四轮 2.1.1 |
-| 4 | 累计收益率卡片 Phase 1 隐藏 | ✅ | 第四轮 3.3.1 |
-| 5 | Phase 1 验收标准追加 P0 | ✅ | 第四轮 4.3.1 / 4.3.2 |
-| 6 | Phase 计划修订（新增 Phase 0）| ✅ | 第四轮 4.3.3 / 4.3.4 / 4.3.7 / 4.3.8 |
-| 7 | profit 字段拆分 holding_profit / cumulative_profit | ✅ | 1a.8.7 实测发现 |
-| 8 | fund 分类归一化 + 双向 cache | ✅ | 1a.8.8 |
-| 9 | 总资产双轨 + DISCREPANCY 1% 报警 | ✅ | 1a.9 |
-| 10 | 双路径并存（4×单图+confirm / 1×parse-batch）| ✅ | 1a.10 |
-| 11 | 缓存验证（同 JVM 3 HIT 加速 460x）| ✅ | 1a.10 缓存 |
-| 12 | 豆包 vision 路径暂时废弃（minimax-only）| ✅ | 1a 收官 |
-| 13 | snapshotDate 来源优先级 + dataTime 字段 | ✅ | 1a.10 |
-| 14 | fund 分类 AI 辅助 + 用户自定义（1b+）| ⏳ | 1b+ |
-| 15 | Chat prompt 已知缺陷（1b+ 聚合修复）| 📝 | 1a.10 |
-| 16 | 图表库 = Recharts | ✅ | 1b.7 验收项 ECharts→Recharts 调整 |
-| 17 | UI 库 = 纯 CSS（移除 antd）| ✅ | 工科风 + 学习价值 |
-| 18 | Phase 1b 文档目录子目录隔离 | ✅ | 文件数量增加后的可维护性 |
-| 19 | 阶段验收必更新 README | ✅ | 1b.1 完成时 README 未及时更新 |
-
----
-
 ## 决策 19 详述：阶段验收必更新根目录 README（2026-07-21）
 
 **状态**：✅ 已锁定
@@ -805,3 +816,184 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 - 任何子仓库级别的重要变更
 
 **实装参照**：1b.1 完成时 README 行 28 从单行 "1b.1–1b.4 前端对接 | 🟡 准备启动" 拆为 5 行（1b.1/2/3/4 + 整体），准确反映完成度。
+
+---
+
+## 决策 20 详述：根目录 \`test/\` 文件夹规范（2026-07-22）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- Phase 1b 进入 1b.2 编码后，前后端联调联试需求显著增加（特别是累计收益率简化算法的真实数据验证）
+- 当前的'过程性小测试记录、临时脚本、联调产物'散落在 /tmp/、项目根、聊天工具输出等地方，事后无法追溯
+- 测试数据涉及个人实盘账户（0720 标号的 4 张支付宝截图），**绝不能上传 GitHub**
+
+**决策**：
+
+> 从 1b.2 起，所有**过程性测试产物**统一存放在**仓库根目录 /test/** 文件夹，**永不提交 GitHub**。
+
+**目录结构**：
+
+\`\`\`
+<repo-root>/test/                          ← 不上传 GitHub（已在 .gitignore）
+├── 1b/                                    ← 按 Phase 隔离
+│   ├── 2026-07-22-upload-4-screenshots.md  ← 联调过程记录
+│   ├── start-frontend.sh                  ← 临时启动脚本
+│   └── screenshots-html/                  ← 上传后的截图副本（可选）
+├── 2/
+└── ...
+\`\`\`
+
+**每个测试文件必须包含**：
+1. **存放位置说明段**：原始测试数据在哪（如'4 张原始截图：fincontrol-backend/uploads/samples/phase1a10-alipay-fund-list-20260720-0048-{1,2,3,4}.jpg'）
+2. **何时何地去向说明**：何时创建、何用于哪个阶段、归档后是否可删除
+
+**.gitignore 已包含**：test/ 已在 1b.1 完工时添加。
+
+**影响**：
+- 过程性产物可追溯（一旦 webview 崩溃或会话中断，能从 /test/ 恢复）
+- 敏感测试数据（如真实截图）永不入仓
+- 联调产物与正式验收报告（docs/test-records/manual-tests/）物理隔离
+
+**回退条件**：如 Phase 2+ 联调产物激增导致 /test/ 杂乱，可改为按 1b/2/3/4/5/ 子目录 + 时间戳前缀。
+
+---
+
+## 决策 21 详述：\`uploads/screenshots/\` 缓存清理规范（2026-07-22）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- 1b.2 编码前用户指出：uploads/screenshots/ 目录文件数量'随着测试次数增加而增加'——经查证，这是**后端运行时缓存的截图文件**（36 进制 hash 文件名如 05588f9b...jpg）
+- 该目录**不是**测试样本归档区（那是 uploads/samples/，由 FileSystemWatcher 重命名）
+- 1a 期间累计 ~180 张缓存文件（~50 MB）未清理，每次 POST /api/screenshot/upload 都会创建一张新缓存
+- 当前**没有任何清理机制**：缓存会无限增长
+
+**决策**：
+
+> 1. **1b.2 测试不依赖 uploads/screenshots/**（用 samples/ 目录的 4 张 fixed 测试样本联调）
+> 2. **Phase 2 末期补清理脚本**：scripts/cleanup-screenshots-cache.ps1，按**保留最近 N 天**策略清理
+> 3. **当前**（2026-07-22）：保留现有 180 张缓存，作为 1a 历史样本；1b.2 测试时只读 samples/ 目录
+> 4. **未来**：后端可考虑加 cleanup 钩子（@Scheduled 每周清理一次，保留 7 天内）
+
+**两个 uploads/ 子目录的角色区分**：
+
+| 目录 | 角色 | 文件名规范 | 是否清理 |
+|---|---|---|---|
+| uploads/samples/ | 手动归档（FileSystemWatcher 重命名后的永久样本）| {phase}-{vendor}-{scenario}-{yyyyMMdd-HHmm}-{seq}.jpg | 否（历史归档） |
+| uploads/screenshots/ | 运行时缓存（后端接收上传的临时存储）| 36进制uuid.jpg | 是（7 天清理） |
+
+**1b.2 测试数据源**（仅用 samples/，不用 screenshots/）：
+- ✅ fincontrol-backend/uploads/samples/phase1a10-alipay-fund-list-20260720-0048-{1,2,3,4}.jpg
+- 标号 0720（文件名时间戳）｜真实截图数据日期 0716｜本次 1b.2 联调联试用
+
+**影响**：
+- 1b.2 联调不会产生新缓存（samples/ 是只读样本，由后端扫描并归类为 is_latest=true）
+- Phase 2 添加清理脚本后，screenshots/ 大小可控
+- 后端短期可不动；长期建议加 @Scheduled 自动清理
+
+**回退条件**：如后端运行依赖 screenshots/ 中的中间文件（如解析失败的暂存），则不在 7 天清理范围内。
+
+---
+
+## 决策 22 详述：决策总结表位置约定（2026-07-22）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- 2026-07-22 用户发现：之前的"决策总结表（持续追加）"块在决策 18 后、决策 19 详情前，位置错误（应是文档最末尾）
+- 这导致每个新增决策都要"顺手更新中间表"，维护路径扭曲
+- 用户明令规定：决策总结表必须位于整个文档的**最后**，且每次**新增决策必须就地更新末尾的汇总表行**
+
+**决策**：
+
+> \`docs/phase-0/decisions.md\` 的 **决策总结表始终位于文档最末尾**。每新增一条决策：
+> 1. 先在合适位置插入"决策 N 详述"段（可按时间或主题分组）
+> 2. **然后**刷新文档最末尾的"决策总结表"，新增一行 #N
+> 3. 永不**重复**插入中间的旧表块
+
+**维护机制**：
+- 旧的"决策总结表（持续追加）"块已删除（2026-07-22，已在此决策前移除）
+- 现在的策略是**单一时点表**——文档末尾的"决策总结表（追加后）"始终是最新完整视图
+- 如需历史快照，看 git log（决策追加时建议同时 commit）
+
+**不允许的操作**：
+- ❌ 在文档中间再加任何形式的"决策总结表"
+- ❌ "## 决策总结表（持续追加）"这种标题（已废止）
+- ❌ 保留两份以上的汇总表
+
+**影响**：减少文档维护错误；保证未来读文档的人只看一份汇总表
+
+**回退条件**：如未来文档结构变化（如改为多文件），本约定自动失效，需重新约定。
+
+---
+
+## 决策 23 详述：文档更新必 commit + push（2026-07-22）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- 2026-07-22 用户明令：每次做出文档更新（work-plan / acceptance-plan / acceptance-report / decisions 等）后都必须先 commit
+- 如果网络连通则一并 push（git push origin main），不要等用户提醒
+- 此前 1b.1 / 1a 期间多次出现"文档写完没及时 commit"的情况，导致 webview 崩溃时丢失进度
+
+**决策**：
+
+> 任何对仓库根目录或 docs/ 下的 markdown 文档做出可工作的更新后：
+> 1. 立刻 `git add <files>`
+> 2. 立刻 `git commit -m "<type>(<scope>): <subject>"`（commit message 简明）
+> 3. 检测网络：能 push 就 `git push origin main`
+> 4. 如 push 失败（proxy / 401 / 离线），在 commit message 后追加 `(push-deferred)`，并把"待 push"清单写到 `/test/` 下次提醒
+
+**commit message 约定（沿用 1a 风格）**：
+- `docs: <一句话描述>` — 纯文档
+- `docs(1b.X): <一句话描述>` — 阶段性文档
+- `fix(docs): <一句话描述>` — 修复（乱码、错位、漏字等）
+- `chore(decisions): <一句话描述>` — decisions 维护
+
+**不在本决策范围内的提交**：
+- src/ 下的代码修改 → 走正常 dev workflow（先 plan → 实施 → 验证 → 文档 → commit）
+- log/ 临时调试产物 → 不提交（.gitignore 已含）
+- test/ 联调记录 → 不提交（决策 20）
+
+**影响**：
+- webview 崩溃或会话中断时，进度可从 git log 恢复
+- 决策 19 "阶段验收必更新 README" 的 commit 时机更明确
+- 与 "文档优先 → 计划 → 实施 → 验收 → 追加文档" 工作流一致
+
+**回退条件**：如未来改用其他 VCS（如 svn / pijul），本约定自动失效。
+
+---
+
+## 决策总结表（最新，单一份）
+
+| # | 决策 | 状态 | 关联评审问题 / 触发 |
+|---|------|------|------------|
+| 1 | REST API 契约完成 | ✅ | 第四轮 3.3.5 |
+| 2 | target_ratio 同步策略 = 解读 4 | ✅ | 第四轮 2.2.1 |
+| 3 | profit 字段读取 = 首页明细表 | ✅ | 第四轮 2.1.1 |
+| 4 v2 | 累计收益率卡片（口径 A 全口径含余额类）| ✅ | 第四轮 3.3.1 / 2026-07-22 1b.2 拍板口径 A |
+| 5 | Phase 1 验收标准追加 P0 | ✅ | 第四轮 4.3.1 / 4.3.2 |
+| 6 | Phase 计划修订（新增 Phase 0）| ✅ | 第四轮 4.3.3 / 4.3.4 / 4.3.7 / 4.3.8 |
+| 7 | profit 字段拆分 holding_profit / cumulative_profit | ✅ | 1a.8.7 实测发现 |
+| 8 | fund 分类归一化 + 双向 cache | ✅ | 1a.8.8 |
+| 9 | 总资产双轨 + DISCREPANCY 1% 报警 | ✅ | 1a.9 |
+| 10 | 双路径并存（4×单图+confirm / 1×parse-batch）| ✅ | 1a.10 |
+| 11 | 缓存验证（同 JVM 3 HIT 加速 460x）| ✅ | 1a.10 缓存 |
+| 12 | 豆包 vision 路径暂时废弃（minimax-only）| ✅ | 1a 收官 |
+| 13 | snapshotDate 来源优先级 + dataTime 字段 | ✅ | 1a.10 |
+| 14 | fund 分类 AI 辅助 + 用户自定义（1b+）| ⏳ | 1b+ |
+| 15 | Chat prompt 已知缺陷（1b+ 聚合修复）| 📝 | 1a.10 |
+| 16 | 图表库 = Recharts | ✅ | 1b.7 验收项 ECharts→Recharts 调整 |
+| 17 | UI 库 = 纯 CSS（移除 antd）| ✅ | 工科风 + 学习价值 |
+| 18 | Phase 1b 文档目录子目录隔离 | ✅ | 文件数量增加后的可维护性 |
+| 19 | 阶段验收必更新根目录 README | ✅ | 1b.1 完成时 README 未及时更新 |
+| 20 | 根目录 \`test/\` 文件夹规范 | ✅ | 1b.2 联调产物管理 |
+| 21 | \`uploads/screenshots/\` 缓存清理规范 | ✅ | 1b.2 测试文件依赖 |
+| **22** | 决策总结表位置约定（末尾单一份）| ✅ | 2026-07-22 用户明令规定 |
+| **23** | 文档更新必 commit + push | ✅ | 2026-07-22 用户明令规定 |
+
+---
+
+*最近更新：2026-07-22 追加决策 22 + 删除中间旧汇总表块（详见 bd88d87..HEAD 范围 git log）*
+*触发：决策 20、21 追加后用户发现中间出现旧表块，重整为"末尾单一份"*
