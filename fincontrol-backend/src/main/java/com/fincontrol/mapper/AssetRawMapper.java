@@ -91,21 +91,28 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
     List<AssetRaw> selectBalanceByUser(@Param("userId") Long userId);
 
     /**
-     * 1b.2 累计收益率（决策 4 v2 / 口径 A / 2026-07-22）：Σcumulative_profit 与 Σamount，
-     * 按 user 全部 is_latest=true 行计算。**双保险**：额外加 `snapshot_date = MAX(snapshot_date)` 过滤，
-     * 避免 is_latest 标记错乱时混入旧数据。
-     * <p>口径 A = 全口径含余额类（user 拍板），与决策 7 / 8 / 13 一致：分母不去余额类，分子也含余额类（如余额宝 cumulative）。
-     * <p>Phase 3 升级为 Modified Dietz / XIRR 时，本方法改为分支计算，且算法标识从 phase1_simple 改为 phase3_dietz / phase3_xirr。
-     * <p>未来实现「每一天的累计收益」需新增方法 `getCumulativeReturnAtDate(userId, snapshotDate)`。
+     * 1b.2 累计 + 持有 收益（决策 4 v2 / 决策 25 v2 / 口径 A / 2026-07-22）：
+     * 返 5 个字段（累计 profit / 持有 profit / 总额 / 基金行数 / snapshot_date）。
+     * **双保险**：额外加 `snapshot_date = MAX(snapshot_date)` 过滤，避免 is_latest 标记错乱时混入旧数据。
+     * <p>累计 vs 持有 区别：
+     * <ul>
+     *   <li>累计（cumulative）：自该基金建仓以来所有盈亏总和（含已实现）
+     *   <li>持有（holding）：当前仍持仓的浮盈/亏（不含已实现）
+     * </ul>
+     * <p>Phase 3 升级为 Modified Dietz / XIRR 时，本方法改为分支计算，算法标识从 phase1_simple 改为 phase3_dietz / phase3_xirr。
+     * <p>未来实现「每一天的累计/持有」需新增方法 `getReturnAtDate(userId, snapshotDate)`（Phase 2）。
      */
     @Select("SELECT COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit, " +
-            "COALESCE(SUM(amount), 0) AS total_amount " +
+            "COALESCE(SUM(holding_profit), 0) AS total_holding_profit, " +
+            "COALESCE(SUM(amount), 0) AS total_amount, " +
+            "COUNT(*) AS fund_count, " +
+            "MAX(snapshot_date) AS snapshot_date " +
             "FROM asset_raw " +
             "WHERE user_id = #{userId} " +
             "AND is_latest = 1 " +
             "AND snapshot_date = (SELECT MAX(snapshot_date) FROM asset_raw " +
             "                       WHERE user_id = #{userId} AND is_latest = 1)")
-    java.util.Map<String, Object> sumCumProfitAndAmountByUser(@Param("userId") Long userId);
+    java.util.Map<String, Object> sumReturnFieldsByUser(@Param("userId") Long userId);
 }
 
 

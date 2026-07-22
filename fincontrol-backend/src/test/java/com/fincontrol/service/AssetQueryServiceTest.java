@@ -129,43 +129,54 @@ class AssetQueryServiceTest {
     }
 
     @Test
-    @DisplayName("1b.2 累计收益率: 正常（正收益，口径 A 全口径含余额类）")
-    void cumulativeReturn_positiveCumProf() {
+    @DisplayName("1b.2 累计 + 持有 收益: 正常（正累计 + 正持有，返 5 字段）")
+    void cumulativeReturn_positiveCumAndHold() {
         java.util.Map<String, Object> row = new java.util.HashMap<>();
         row.put("total_cumulative_profit", new BigDecimal("123.45"));
-        row.put("total_amount", new BigDecimal("1000.00"));
-        when(assetRawMapper.sumCumProfitAndAmountByUser(USER_ID)).thenReturn(row);
+        row.put("total_holding_profit",    new BigDecimal("20.00"));
+        row.put("total_amount",             new BigDecimal("1000.00"));
+        row.put("fund_count",               19);
+        row.put("snapshot_date",            "2026-07-16");
+        when(assetRawMapper.sumReturnFieldsByUser(USER_ID)).thenReturn(row);
 
         com.fincontrol.dto.asset.CumulativeReturnResponse body = service.getCumulativeReturn(USER_ID);
         assertThat(body.getAvailable()).isTrue();
         assertThat(body.getAlgorithm()).isEqualTo("phase1_simple");
         assertThat(body.getTotalCumulativeProfit()).isEqualByComparingTo(new BigDecimal("123.45"));
+        assertThat(body.getTotalHoldingProfit()).isEqualByComparingTo(new BigDecimal("20.00"));
         assertThat(body.getTotalAmount()).isEqualByComparingTo(new BigDecimal("1000.00"));
         assertThat(body.getReturnRate()).isEqualByComparingTo(new BigDecimal("0.123450"));
+        assertThat(body.getHoldingReturnRate()).isEqualByComparingTo(new BigDecimal("0.020000"));
+        assertThat(body.getFundCount()).isEqualTo(19);
+        assertThat(body.getSnapshotDate()).isEqualTo("2026-07-16");
     }
 
     @Test
-    @DisplayName("1b.2 累计收益率: 负收益（负累计收益 / 正总额 = 负 returnRate）")
-    void cumulativeReturn_negativeCumProf() {
+    @DisplayName("1b.2 累计 + 持有 收益: 负累计 / 正持有（典型持仓场景：累计亏损但浮盈）")
+    void cumulativeReturn_negativeCumPositiveHold() {
         java.util.Map<String, Object> row = new java.util.HashMap<>();
         row.put("total_cumulative_profit", new BigDecimal("-50.00"));
-        row.put("total_amount", new BigDecimal("1000.00"));
-        when(assetRawMapper.sumCumProfitAndAmountByUser(USER_ID)).thenReturn(row);
+        row.put("total_holding_profit",    new BigDecimal("30.00"));
+        row.put("total_amount",             new BigDecimal("1000.00"));
+        when(assetRawMapper.sumReturnFieldsByUser(USER_ID)).thenReturn(row);
 
         com.fincontrol.dto.asset.CumulativeReturnResponse body = service.getCumulativeReturn(USER_ID);
         assertThat(body.getReturnRate()).isEqualByComparingTo(new BigDecimal("-0.050000"));
+        assertThat(body.getHoldingReturnRate()).isEqualByComparingTo(new BigDecimal("0.030000"));
     }
 
     @Test
-    @DisplayName("1b.2 累计收益率: 总额为 0 时 returnRate=0（避免除零）")
+    @DisplayName("1b.2 累计 + 持有 收益: 总额为 0 时两个 returnRate=0（避免除零）")
     void cumulativeReturn_zeroAmount_returnsZero() {
         java.util.Map<String, Object> row = new java.util.HashMap<>();
         row.put("total_cumulative_profit", BigDecimal.ZERO);
-        row.put("total_amount", BigDecimal.ZERO);
-        when(assetRawMapper.sumCumProfitAndAmountByUser(USER_ID)).thenReturn(row);
+        row.put("total_holding_profit",    BigDecimal.ZERO);
+        row.put("total_amount",             BigDecimal.ZERO);
+        when(assetRawMapper.sumReturnFieldsByUser(USER_ID)).thenReturn(row);
 
         com.fincontrol.dto.asset.CumulativeReturnResponse body = service.getCumulativeReturn(USER_ID);
         assertThat(body.getReturnRate()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(body.getHoldingReturnRate()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(body.getAvailable()).isTrue();
     }
 }

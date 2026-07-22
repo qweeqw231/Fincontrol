@@ -111,35 +111,54 @@ public class AssetQueryService {
     // ========================================================================
 
     /**
-     * 累计收益率（[api-contract.md §9.3](#) / 决策 4 v2 / 2026-07-22）。
-     * <p>算法：{@code totalCumulativeProfit / totalAmount}，分子分母都包含余额类（口径 A / 全口径）。
-     * <p>依赖 {@link AssetRawMapper#sumCumProfitAndAmountByUser} 查 user 全部 {@code is_latest=1} 行的 Σ。
-     * <p>totalAmount=0 时 returnRate=0（避免除零）。
-     * <p>Phase 3 升级为 Modified Dietz / XIRR 时，{@link AssetQueryService#getCumulativeReturn} 改为分支计算，
-     * 且算法标识从 {@code phase1_simple} 改为 {@code phase3_dietz} / {@code phase3_xirr}。
+     * 累计 + 持有 收益（[api-contract.md §9.3](#) / 决策 4 v2 / 决策 25 v2 / 2026-07-22）。
+     * <p>累计算法：{@code totalCumulativeProfit / totalAmount}，分子分母都包含余额类（口径 A / 全口径）。
+     * <p>持有算法：{@code totalHoldingProfit / totalAmount}，仅当前仍持仓的浮盈/亏（不含已实现）。
+     * <p>依赖 {@link AssetRawMapper#sumReturnFieldsByUser} 一次查 5 字段（双保险 + snapshot_date + fund_count）。
+     * <p>totalAmount=0 时 returnRate / holdingReturnRate 都为 0（避免除零）。
+     * <p>Phase 3 升级为 Modified Dietz / XIRR 时，本方法改为分支计算，算法标识从 phase1_simple 改为 phase3_dietz / phase3_xirr。
+     * <p>未来「每一天的累计/持有」需新增方法 getReturnAtDate(userId, snapshotDate)（Phase 2）。
      */
     public CumulativeReturnResponse getCumulativeReturn(Long userId) {
         if (userId == null) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
         }
-        java.util.Map<String, Object> row = assetRawMapper.sumCumProfitAndAmountByUser(userId);
-        BigDecimal totalCum = row == null || row.get("total_cumulative_profit") == null
-                ? BigDecimal.ZERO
-                : new BigDecimal(row.get("total_cumulative_profit").toString());
-        BigDecimal totalAmt = row == null || row.get("total_amount") == null
-                ? BigDecimal.ZERO
-                : new BigDecimal(row.get("total_amount").toString());
+        java.util.Map<String, Object> row = assetRawMapper.sumReturnFieldsByUser(userId);
+
+        BigDecimal totalCum = toBigDecimal(row, "total_cumulative_profit");
+        BigDecimal totalHold = toBigDecimal(row, "total_holding_profit");
+        BigDecimal totalAmt  = toBigDecimal(row, "total_amount");
         BigDecimal returnRate = totalAmt.signum() == 0
                 ? BigDecimal.ZERO
                 : totalCum.divide(totalAmt, 6, java.math.RoundingMode.HALF_UP);
+        BigDecimal holdingReturnRate = totalAmt.signum() == 0
+                ? BigDecimal.ZERO
+                : totalHold.divide(totalAmt, 6, java.math.RoundingMode.HALF_UP);
+
+        String snapshotDate = row == null || row.get("snapshot_date") == null
+                ? null
+                : String.valueOf(row.get("snapshot_date"));
+        Integer fundCount = row == null || row.get("fund_count") == null
+                ? null
+                : ((Number) row.get("fund_count")).intValue();
+
         return CumulativeReturnResponse.builder()
                 .available(true)
                 .algorithm("phase1_simple")
                 .totalCumulativeProfit(totalCum)
+                .totalHoldingProfit(totalHold)
                 .totalAmount(totalAmt)
                 .returnRate(returnRate)
+                .holdingReturnRate(holdingReturnRate)
+                .snapshotDate(snapshotDate)
+                .fundCount(fundCount)
                 .message(null)
                 .build();
+    }
+
+    private static BigDecimal toBigDecimal(java.util.Map<String, Object> row, String key) {
+        if (row == null || row.get(key) == null) return BigDecimal.ZERO;
+        return new BigDecimal(row.get(key).toString());
     }
 
 

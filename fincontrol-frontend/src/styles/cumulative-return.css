@@ -1,0 +1,248 @@
+/* =========================================================================
+ * CumulativeReturnCard 样式（1b.2 / 决策 4 v2 + 决策 25 v2 / 2026-07-22）
+ * 包含：通用 .card / 双列网格 / InfoModal 弹窗
+ * ========================================================================= */
+
+/* 通用卡片（其他 BalanceCard / TotalAssetCard 也复用） */
+.card {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-4) var(--space-6);
+  box-shadow: var(--shadow-sm);
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.card-title {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+  font-weight: 500;
+}
+
+.card-value {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.card-sub {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.card.error .card-value {
+  color: var(--color-error);
+}
+
+.card.disabled .card-value {
+  color: var(--color-text-disabled);
+}
+
+/* 三卡片行（首页顶部） */
+.cards-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+@media (max-width: 768px) {
+  .cards-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* CumulativeReturnCard 双列布局（核心：累计 vs 持有） */
+.cumulative-return-card {
+  min-width: 0;
+}
+
+.crc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.crc-col {
+  padding: var(--space-2) var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.crc-col-cum {
+  border-right: 1px solid var(--color-border);
+  padding-right: var(--space-3);
+}
+
+.crc-label {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.crc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.crc-row-amt {
+  /* 第二个 row（金额行） */
+}
+
+.crc-rate {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: 1.2;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crc-amt {
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1.2;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crc-info-btn {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: 0 0 18px;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.crc-info-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* InfoModal 弹窗（4 个 ℹ️ 共用） */
+.modal-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: var(--color-bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  max-width: 480px;
+  width: 92vw;
+  max-height: 86vh;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-header h3 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.modal-close {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.modal-close:hover {
+  color: var(--color-text-primary);
+}
+
+.modal-body {
+  padding: var(--space-4) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.modal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.modal-label {
+  color: var(--color-text-secondary);
+  min-width: 60px;
+  flex: 0 0 auto;
+}
+
+.modal-code {
+  font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  background: var(--color-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  word-break: break-all;
+}
+
+.modal-text {
+  flex: 1 1 auto;
+  color: var(--color-text-primary);
+}
+
+.modal-footer {
+  padding: var(--space-3) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  text-align: right;
+}
+
+.modal-btn {
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.modal-btn:hover {
+  background: var(--color-primary-hover);
+}

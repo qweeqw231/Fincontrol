@@ -1031,9 +1031,9 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 
 ---
 
-## 决策 25：累计收益查询双保险 + 不回补假设（2026-07-22）
+## 决策 25 v2：累计 + 持有 收益 + 双保险 + 历史查询（2026-07-22）
 
-**状态**：✅ 已锁定
+**状态**：✅ 已锁定（v1：累计 + 双保险 / v2：扩展持有 + 双列 + 历史）
 
 **背景**：
 - 1b.2 累计收益接口在 step7 端到端联调中暴露**测试数据污染**问题：
@@ -1043,24 +1043,44 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
   - 但未来如果 confirm 流程漏 user_id 过滤、或测试数据混用 user_id=1，会导致**累计收益混入旧数据**
 - 1a.3 confirm 流程的 `SnapShotConfirmService.writeAssetRaw` line 210 直接 `assetRawMapper.insert(row)`，**缺前置** `UPDATE asset_raw SET is_latest=0 WHERE user_id=? AND snapshot_date<>?`（防同 user 旧 snapshot_date 残留）
 - 用户明令："**应该把已经确认的 is_latest 置为零**（假设用户不会回补曾经的数据，这个点也要明确）"
+- 1b.2 实装后用户反馈：累计 vs 持有 概念不清，**前端需双列展示 + ℹ️ 弹窗**让用户理解两个概念
+  - 累计 = Σcumulative_profit（含已实现，自建仓以来所有盈亏）
+  - 持有 = Σholding_profit（仅当前持仓的浮盈/亏，不含已实现）
+- 未来实现历史查询：不需要加 asset 字段，靠 `snapshot_date` 区分历史（`is_latest=0` 即历史）
 
 **决策**：
-累计收益查询采用**双保险**机制（临时打补丁）：
-1. **算法层加固（已完成）**：`AssetRawMapper.sumCumProfitAndAmountByUser` SQL 加 `snapshot_date = (SELECT MAX(snapshot_date) FROM ...)` 子查询过滤。即使 is_latest 标错，也只取最新一天。
-2. **写库层加固（Phase 2 实施）**：`SnapShotConfirmService.writeAssetRaw` 写新 batch 前先 `UPDATE asset_raw SET is_latest=0 WHERE user_id=? AND snapshot_date<>?`。
-3. **测试数据清理（已完成）**：`DELETE FROM asset_raw WHERE user_id != 1`（2026-07-22 已执行）。
-4. **不回补假设**：用户**不会**要求从已删除/已标记的 snapshot 恢复数据。累计收益永远按"最新一天"算，历史回放由 1a.4 `/api/snapshot/{date}` 接口承担。
+累计收益查询采用**双保险 + 持有扩展 + 双列展示**机制（v2 一次性定稿）：
 
-**算法层 SQL**（当前生效）：
+1. **算法层加固**（已完成）：`AssetRawMapper.sumReturnFieldsByUser` SQL 加 `snapshot_date = (SELECT MAX(snapshot_date) FROM ...)` 子查询过滤 + `snapshot_date = MAX(snapshot_date)` 返回。即使 is_latest 标错，也只取最新一天。
+2. **DTO 扩展**（已完成）：`CumulativeReturnResponse` 加 5 字段（`totalHoldingProfit` / `holdingReturnRate` / `snapshotDate` / `fundCount` + 原有 cumulative / rate / amount / algorithm / available / message）
+3. **写库层加固**（Phase 2 实施）：`SnapShotConfirmService.writeAssetRaw` 写新 batch 前先 `UPDATE asset_raw SET is_latest=0 WHERE user_id=? AND snapshot_date<>?`。
+4. **前端双列 + ℹ️ 弹窗**（已完成）：`CumulativeReturnCard` 拆"累计 / 持有"两列，每列显示"率 + 额"，4 个 ℹ️ 按钮弹 InfoModal 显示定义 / 公式 / 算法。
+5. **测试数据清理**（已完成）：`DELETE FROM asset_raw WHERE user_id != 1`（2026-07-22 已执行）。
+6. **不回补假设**：用户**不会**要求从已删除/已标记的 snapshot 恢复数据。累计收益永远按"最新一天"算，历史回放由 1a.4 `/api/snapshot/{date}` 接口承担。
+7. **未来历史查询接口**（Phase 2 实施）：新增 `GET /api/asset/cumulative-return/at-date?userId=&snapshotDate=`，按 `snapshot_date = ?` 过滤（不限 is_latest）。
+
+**算法层 SQL**（当前生效，v2 含 holding + 元数据）：
 ```sql
-SELECT COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit,
-       COALESCE(SUM(amount), 0) AS total_amount
+SELECT 
+  COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit,
+  COALESCE(SUM(holding_profit), 0) AS total_holding_profit,
+  COALESCE(SUM(amount), 0) AS total_amount,
+  COUNT(*) AS fund_count,
+  MAX(snapshot_date) AS snapshot_date
 FROM asset_raw
 WHERE user_id = #{userId}
   AND is_latest = 1
   AND snapshot_date = (SELECT MAX(snapshot_date) FROM asset_raw
                        WHERE user_id = #{userId} AND is_latest = 1)
 ```
+
+**累计 vs 持有 区别**（前端双列定义弹窗）：
+| 指标 | 公式 | 定义 |
+|---|---|---|
+| 累计收益率 | Σcumulative_profit / Σamount | 自建仓以来所有盈亏（含已实现，partial sell 也算入）|
+| 累计收益 | Σcumulative_profit（元）| 累计盈亏绝对值 |
+| 持有收益率 | Σholding_profit / Σamount | 当前仍持仓的浮盈率（不含已实现）|
+| 持有收益 | Σholding_profit（元）| 当前持仓的浮盈/亏绝对值 |
 
 **写库层 SQL**（Phase 2 实施，本决策待补）：
 ```java
@@ -1070,23 +1090,42 @@ int oldCount = assetRawMapper.updateIsLatestByUserExcludingDate(
 );
 ```
 
+**历史查询接口**（Phase 2 实施，本决策预留）：
+```java
+// 新增 mapper 方法（Phase 2）
+@Select("SELECT COALESCE(SUM(cumulative_profit), 0) AS total_cumulative_profit, " +
+        "COALESCE(SUM(holding_profit), 0) AS total_holding_profit, " +
+        "COALESCE(SUM(amount), 0) AS total_amount " +
+        "FROM asset_raw " +
+        "WHERE user_id = #{userId} AND snapshot_date = #{snapshotDate}")
+Map<String, Object> sumReturnFieldsByUserAndDate(...);
+```
+
 **未来扩展**：
-- 「每一天的累计收益」需新增 `getCumulativeReturnAtDate(userId, snapshotDate)` 接口
-- Phase 3 升级为 Modified Dietz / XIRR 时，算法标识从 phase1_simple 改为 phase3_dietz
+- Phase 3 升级为 Modified Dietz / XIRR 时，DTO 字段 `algorithm` 从 `phase1_simple` 改为 `phase3_dietz` / `phase3_xirr`
+- 净值曲线（`/nav-history` 页面）调用 `at-date` 接口画历史曲线
 
 **影响范围**：
-- 1b.2 联调：累计收益接口稳定返 -29.63（19 行 user_id=1，2026-07-16）
-- 1b.3/1b.4：写库层加固 Phase 2 补，不阻塞 1b 推进
+- 1b.2 联调：累计收益接口稳定返 5 字段（-29.63 / -36.55 / 7850.38 / 2026-07-16 / 19）
+- 1b.3/1b.4：写库层加固 + 历史接口 Phase 2 补，不阻塞 1b 推进
 - Phase 2：必须实现写库层加固 + 累计收益每天接口
+- Phase 3：升级算法标识（前端 UI 不变，仅 tooltip 文案变）
 
 **理由**：
 - 算法层双保险：写库层 bug 时仍正确
-- 不回补假设：累计收益只看最新一天，避免历史数据干扰
+- 不回补假设：累计/持有只看最新一天，避免历史数据干扰
 - 测试数据清理：38 → 19 行（user_id=1 单 user），消除污染
+- 双列 + ℹ️ 弹窗：用户清晰理解"累计"和"持有"区别（不混淆）
+- 不加 asset 字段：未来历史查询靠 `snapshot_date` 区分即可
 
-**回退条件**：无（用户不补旧 snapshot，决策 25 永久生效）
+**回退条件**：无（用户不补旧 snapshot，决策 25 v2 永久生效）
 
-**实现位置**：`fincontrol-backend/src/main/java/com/fincontrol/mapper/AssetRawMapper.java`（已修）
+**实现位置**：
+- `fincontrol-backend/src/main/java/com/fincontrol/mapper/AssetRawMapper.java`（已修：方法名 `sumReturnFieldsByUser`）
+- `fincontrol-backend/src/main/java/com/fincontrol/dto/asset/CumulativeReturnResponse.java`（已修：加 5 字段）
+- `fincontrol-backend/src/main/java/com\fincontrol\service\AssetQueryService.java`（已修：toBigDecimal + String.valueOf 防 java.sql.Date cast）
+- `fincontrol-frontend/src/components/CumulativeReturnCard.jsx`（已重写：双列 + InfoModal 4 弹窗）
+- `fincontrol-frontend/src/styles/cumulative-return.css`（新建：双列网格 + 模态框 + 通用 .card）
 
-*最近更新：2026-07-22 追加决策 24（后端 restart SOP） + 决策 25（累计收益双保险） + 1b.2 step 7 端到端联调通过 + user_id=19999 污染清理*
-*触发：1b.2 联调 jar 重建暴露 file lock + 测试数据 user_id 污染暴露累计收益查询鲁棒性不足*
+*最近更新：2026-07-22 追加决策 25 v2（累计 + 持有 + 双列 + 历史查询） + 1b.2 累计/持有双列实装完成*
+*触发：1b.2 step 7 端到端联调 + 用户对累计/持有概念澄清需求 + 未来历史查询架构明确*
