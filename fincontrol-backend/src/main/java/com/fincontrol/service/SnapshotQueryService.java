@@ -11,6 +11,7 @@ import com.fincontrol.dto.snapshot.SnapshotLatestResponse;
 import com.fincontrol.entity.AssetRaw;
 import com.fincontrol.entity.AssetSnapshot;
 import com.fincontrol.mapper.AssetRawMapper;
+import com.fincontrol.mapper.SnapshotMetaMapper;
 import com.fincontrol.mapper.AssetSnapshotMapper;
 import org.springframework.stereotype.Service;
 
@@ -38,11 +39,14 @@ public class SnapshotQueryService {
 
     private final AssetSnapshotMapper assetSnapshotMapper;
     private final AssetRawMapper assetRawMapper;
+    private final SnapshotMetaMapper snapshotMetaMapper; // 1b.3.4 决策 27
 
     public SnapshotQueryService(AssetSnapshotMapper assetSnapshotMapper,
-                               AssetRawMapper assetRawMapper) {
+                               AssetRawMapper assetRawMapper,
+                               SnapshotMetaMapper snapshotMetaMapper) {
         this.assetSnapshotMapper = assetSnapshotMapper;
         this.assetRawMapper = assetRawMapper;
+        this.snapshotMetaMapper = snapshotMetaMapper;
     }
 
     /**
@@ -56,8 +60,9 @@ public class SnapshotQueryService {
         if (userId == null) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
         }
-        // 1) 找最新日期：取该 user 下 is_latest=true 的最大 snapshot_date
-        LocalDate latestDate = Optional.ofNullable(assetSnapshotMapper.selectLatestSnapshotDate(userId))
+        // 1b.3.4 决策 27：找当前快照日期：查 snapshot_meta.is_current=true 的 snapshot_date
+        // （替代原 MAX(snapshot_date) WHERE is_latest=true 逻辑）
+        LocalDate latestDate = Optional.ofNullable(snapshotMetaMapper.selectCurrentDateByUser(userId))
                 .orElse(null);
         if (latestDate == null) {
             return null;

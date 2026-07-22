@@ -6,6 +6,9 @@ import com.fincontrol.dto.snapshot.SnapshotConfirmRequest;
 import com.fincontrol.dto.snapshot.SnapshotConfirmResult;
 import com.fincontrol.dto.snapshot.SnapshotHistoryResponse;
 import com.fincontrol.dto.snapshot.SnapshotLatestResponse;
+import com.fincontrol.dto.snapshot.SnapshotSetCurrentRequest;
+import com.fincontrol.dto.snapshot.SnapshotSetCurrentResult;
+import com.fincontrol.service.SnapshotMetaService;
 import com.fincontrol.service.SnapShotConfirmService;
 import com.fincontrol.service.SnapshotQueryService;
 import com.fincontrol.service.SnapshotRollbackService;
@@ -35,12 +38,16 @@ public class SnapshotController {
     private final SnapshotRollbackService snapshotRollbackService;
     private final SnapshotQueryService snapshotQueryService;
 
+    private final SnapshotMetaService snapshotMetaService; // 1b.3.3 决策 27
+
     public SnapshotController(SnapShotConfirmService snapShotConfirmService,
                               SnapshotRollbackService snapshotRollbackService,
-                              SnapshotQueryService snapshotQueryService) {
+                              SnapshotQueryService snapshotQueryService,
+                              SnapshotMetaService snapshotMetaService) {
         this.snapShotConfirmService = snapShotConfirmService;
         this.snapshotRollbackService = snapshotRollbackService;
         this.snapshotQueryService = snapshotQueryService;
+        this.snapshotMetaService = snapshotMetaService;
     }
 
     // ========================================================================
@@ -154,6 +161,26 @@ public class SnapshotController {
             @RequestParam Long userId) {
         log.info("1a.8 rollback: snapshotId={} userId={}", snapshotId, userId);
         RollbackResult result = snapshotRollbackService.rollback(snapshotId, userId);
+        return ApiResponse.success(result);
+    }
+
+    // ========================================================================
+    // 1b.3.3 决策 27: POST /api/snapshot/set-current
+    // 切换 is_current=true 指向的 snapshot_date
+    // ========================================================================
+
+    /**
+     * 1b.3.3 决策 27：手动切换当前快照。
+     * <p>前置：snapshot_date 必须在 (user_id) 已有 is_latest=true 的行
+     * <p>流程：clearCurrentForUser → setCurrent
+     *
+     * @param req 包含 userId + snapshotDate
+     * @return previousCurrent + newCurrent + message
+     */
+    @PostMapping("/set-current")
+    public ApiResponse<SnapshotSetCurrentResult> setCurrent(@RequestBody SnapshotSetCurrentRequest req) {
+        log.info("1b.3.3 set-current: userId={} snapshotDate={}", req.getUserId(), req.getSnapshotDate());
+        SnapshotSetCurrentResult result = snapshotMetaService.setCurrent(req.getUserId(), req.getSnapshotDate());
         return ApiResponse.success(result);
     }
 }
