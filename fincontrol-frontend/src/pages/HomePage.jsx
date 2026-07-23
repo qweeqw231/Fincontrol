@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
+import { useUserConfigStore } from '../stores/userConfigStore.js'
 import { useNavigate } from 'react-router-dom'
 import {
   formatYuan,
@@ -20,11 +21,34 @@ import {
 
 const BALANCE_NAME = '余额类'
 
+// 1b.3 补救：默认目标比例（userConfigStore 尚未初始化时使用）
+const DEFAULT_TARGET_RATIOS = {
+  货币类: 10,
+  固收类: 15,
+  商品类: 25,
+  A股权益类: 25,
+  海外权益类: 20,
+  港股大中华类: 5,
+}
+
 function sumFunds(funds) {
   return (Array.isArray(funds) ? funds : []).reduce(
     (s, f) => s + safeNumber(f.amount, 0),
     0
   )
+}
+
+/**
+ * 1b.3.14 修复（DATA-G-013）：
+ * 收益字段全部为 null 时返回 null（显示 —）；
+ * 否则正常求和（正负相抵得 0 显示 +0.00，不能显示 —）。
+ */
+function sumIfAllDefined(getter, funds) {
+  const arr = Array.isArray(funds) ? funds : []
+  if (arr.length === 0) return null
+  const vals = arr.map(getter)
+  if (vals.every((v) => v == null)) return null
+  return vals.reduce((s, v) => s + safeNumber(v, 0), 0)
 }
 
 function FundDetailTable({ categories, sixTotal, targetRatios, open, onToggle }) {
@@ -81,6 +105,9 @@ function FundDetailTable({ categories, sixTotal, targetRatios, open, onToggle })
 }
 
 function SixCategoryGroup({ cat, cTotal, funds }) {
+  // 1b.3.14：用 sumIfAllDefined 替换旧的 buggy 逻辑
+  const subtotalHolding = sumIfAllDefined((f) => f.holdingProfit, funds)
+  const subtotalCumulative = sumIfAllDefined((f) => f.cumulativeProfit, funds)
   return (
     <>
       <tr className="cat-header">
@@ -119,26 +146,8 @@ function SixCategoryGroup({ cat, cTotal, funds }) {
       <tr className="subtotal-row">
         <td>{cat.categoryName}小计</td>
         <td>{formatYuan(cTotal)}</td>
-        <td>
-          {sumFunds(funds) > 0 || funds.some((f) => f.amount > 0)
-            ? formatSignedAmount(
-                funds.reduce(
-                  (s, f) => s + safeNumber(f.holdingProfit, 0),
-                  0
-                )
-              )
-            : '—'}
-        </td>
-        <td>
-          {funds.some((f) => f.amount > 0)
-            ? formatSignedAmount(
-                funds.reduce(
-                  (s, f) => s + safeNumber(f.cumulativeProfit, 0),
-                  0
-                )
-              )
-            : '—'}
-        </td>
+        <td>{subtotalHolding == null ? '—' : formatSignedAmount(subtotalHolding)}</td>
+        <td>{subtotalCumulative == null ? '—' : formatSignedAmount(subtotalCumulative)}</td>
         <td>100.00%</td>
       </tr>
     </>
@@ -366,6 +375,16 @@ function QuickActions({ navigate }) {
   )
 }
 
+/**
+ * 1b.3.12 修复（BUG-P4-004 / DATA-G-012 / HOME-008）：
+ * 当后端 summary 文本为"解析 0 只基金"时，前端追加橙色 ⚠"基金数未知"标注，
+ * 避免把 AI 解析失败/模型未返回的记录静默显示为"0"。
+ */
+function isZeroFundAnomaly(summary) {
+  if (!summary || typeof summary !== 'string') return false
+  return /解析\s*0\s*只基金/.test(summary)
+}
+
 function RecentOps({ ops }) {
   const items = (ops || []).slice(0, 5)
   function fmtTime(iso) {
@@ -376,6 +395,28 @@ function RecentOps({ ops }) {
     } catch {
       return '—'
     }
+  }
+  function renderSummary(op) {
+    const text = op.summary || op.operationType || '—'
+    if (isZeroFundAnomaly(text)) {
+      return (
+        <span>
+          {text}
+          <span
+            style={{
+              color: '#fa8c16',
+              fontSize: 12,
+              marginLeft: 6,
+              fontWeight: 500,
+            }}
+            title="后端 AI 解析未返回完整基金数据，请检查截图或重新解析"
+          >
+            ⚠ 基金数未知
+          </span>
+        </span>
+      )
+    }
+    return text
   }
   return (
     <div className="timeline">
@@ -395,9 +436,7 @@ function RecentOps({ ops }) {
               className={`timeline-item ${op.operationType || ''}`}
             >
               <span className="time">{fmtTime(op.operationDate)}</span>
-              <span className="summary">
-                {op.summary || op.operationType || '—'}
-              </span>
+              <span className="summary">{renderSummary(op)}</span>
             </li>
           ))}
         </ul>
@@ -413,6 +452,8 @@ export default function HomePage() {
   const ops = useAssetSnapshotStore((s) => s.operationsRecent)
   const loading = useAssetSnapshotStore((s) => s.loading)
   const error = useAssetSnapshotStore((s) => s.error)
+  // 1b.3.15：目标比例从 userConfigStore 订阅（DATA-G-004：user_config 为权威源）
+  const storedTargetRatios = useUserConfigStore((s) => s.targetRatios)
   const navigate = useNavigate()
   const [pieOpen, setPieOpen] = useState(false)
   const [fundOpen, setFundOpen] = useState(false)
@@ -462,7 +503,10 @@ export default function HomePage() {
   const holdAmt = cum?.totalHoldingProfit
   const cumAlgo = cum?.algorithm || 'phase1_simple'
   const cumDate = cum?.snapshotDate || snap.snapshotDate || '—'
-  const targetRatios = { '货币类': 10, '固收类': 15, '商品类': 25, 'A股权益类': 25, '海外权益类': 20, '港股大中华类': 5 }
+  // 1b.3.15：userConfigStore 为空时回退到内置默认值
+  const targetRatios = (storedTargetRatios && Object.keys(storedTargetRatios).length > 0)
+    ? storedTargetRatios
+    : DEFAULT_TARGET_RATIOS
 
   return (
     <div className="page-shell">
