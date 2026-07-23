@@ -78,8 +78,8 @@ public class ParseLogQueryService {
             JsonNode root = visionModelClient.extractFirstJsonObject(content);
             populateFromJson(item, root);
         } catch (Exception ex) {
-            // 解析失败：fallback 到 manual 数 0 + 错误说明
-            item.setStatus("imported");
+            // P5-2a 增强：模型响应无结构（典型如 0 基金或错误文本），不冒充 imported，标 parse_unknown
+            item.setStatus("parse_unknown");
             item.setParseError("无法从模型响应中恢复结构：" + ex.getMessage());
         }
         return item;

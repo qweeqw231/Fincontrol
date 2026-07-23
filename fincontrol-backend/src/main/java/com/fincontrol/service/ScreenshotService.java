@@ -329,7 +329,11 @@ public class ScreenshotService {
             }
         }
         merged.setTotalAsset(total);
-        merged.setCategories(new ArrayList<>(blockMap.values()));
+        List<ParsedAsset.CategoryBlock> mergedBlocks = new ArrayList<>(blockMap.values());
+        for (ParsedAsset.CategoryBlock b : mergedBlocks) {
+            b.setFundCount(b.getFunds() == null ? 0 : b.getFunds().size());
+        }
+        merged.setCategories(mergedBlocks);
         merged.setMatchedFunds(matchedFunds);
         merged.setUnmatchedFunds(Collections.emptyList());
         return merged;
@@ -740,6 +744,7 @@ public class ScreenshotService {
                     }
                 }
                 block.setFunds(lines);
+                block.setFundCount(lines.size());
                 block.setCategoryTotal(decimalOrNull(c, "category_total"));
                 block.setCategoryPercentage(decimalOrNull(c, "category_percentage"));
                 block.setTargetRatio(decimalOrNull(c, "target_ratio"));
@@ -777,6 +782,7 @@ public class ScreenshotService {
                         lines.add(line);
                     }
                     block.setFunds(lines);
+                    block.setFundCount(lines.size());
                     JsonNode s = summary.path(entry.getKey());
                     if (s.isObject()) {
                         block.setCategoryTotal(decimalOrNull(s, "total_amount"));

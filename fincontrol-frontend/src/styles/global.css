@@ -148,7 +148,7 @@ table { border-collapse: collapse; width: 100%; position: relative; z-index: 1; 
 .cat-detail-table td.neg { color: #52C41A; font-weight: 500; }
 .cat-detail-table td.neutral { color: #8C8C8C; }
 
-/* ===== 1b.3.13 修复（BUG-P4-005）：压缩 ratio-table 行高 ===== */
+/* ===== 1b.3.13 + P5-4 修复（BUG-P4-005）：压缩 ratio-table 行高 ===== */
 .ratio-table { width: 100%; font-size: 13px; }
 .ratio-table th {
   background: #fafafa;
@@ -175,7 +175,9 @@ table { border-collapse: collapse; width: 100%; position: relative; z-index: 1; 
 .ratio-table td .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
 .ratio-table td .pname { display: inline-flex; align-items: center; }
 
-.six-pie-row { display: flex; gap: 16px; align-items: stretch; }
+/* P5-4: align-items: flex-start 让 ConfigDeviationTable 保持自然高度，
+   不再被 pie-wrap 的 minHeight: 280 拉伸（之前导致 7 行 ≈ 280+px 完全压过 td height: 32px） */
+.six-pie-row { display: flex; gap: 16px; align-items: flex-start; }
 .six-pie-row .pie-wrap { flex: 1.2; }
 .six-pie-row .pie-table { flex: 0.8; }
 .six-pie-row .pie-table th, .six-pie-row .pie-table td { padding: 6px 8px; }

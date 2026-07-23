@@ -114,10 +114,10 @@ public class AssetQueryService {
             String status = log.getStatus() == null ? "" : log.getStatus();
             int count = log.getFundCount();
             String summary;
-            if ("parse_failed".equals(status)) {
-                summary = "截图解析失败";
-            } else if (count <= 0 && (log.getParseError() != null && !log.getParseError().isBlank())) {
-                summary = "解析失败：" + log.getParseError();
+            if ("parse_failed".equals(status) || "parse_unknown".equals(status)) {
+                // P5-2a 增强：无法恢复结构时显示原因
+                String pe = log.getParseError();
+                summary = (pe == null || pe.isBlank()) ? "截图解析失败（结构不可恢复）" : ("解析失败：" + pe);
             } else if (count <= 0) {
                 summary = "基金数未知";
             } else {

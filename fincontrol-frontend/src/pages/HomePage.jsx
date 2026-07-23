@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
 import { useUserConfigStore } from '../stores/userConfigStore.js'
 import { useNavigate } from 'react-router-dom'
+import { CumulativeReturnCard } from '../components/CumulativeReturnCard.jsx'
 import {
   formatYuan,
   formatSignedAmount,
@@ -447,7 +448,6 @@ function RecentOps({ ops }) {
 
 export default function HomePage() {
   const snap = useAssetSnapshotStore((s) => s.latestSnapshot)
-  const balance = useAssetSnapshotStore((s) => s.balance)
   const cum = useAssetSnapshotStore((s) => s.cumulativeReturn)
   const ops = useAssetSnapshotStore((s) => s.operationsRecent)
   const loading = useAssetSnapshotStore((s) => s.loading)
@@ -497,11 +497,7 @@ export default function HomePage() {
   const totalAll = sixTotal + balanceTotal
   const totalFundCount = getTotalFundCount(categories)
   const balFundCount = getBalanceFundCount(categories)
-  const cumRate = cum?.returnRate
-  const cumAmt = cum?.totalCumulativeProfit
-  const holdRate = cum?.holdingReturnRate
-  const holdAmt = cum?.totalHoldingProfit
-  const cumAlgo = cum?.algorithm || 'phase1_simple'
+  // cumDate 仍用于 hero-card 底部（"截至 xxx · ..."）
   const cumDate = cum?.snapshotDate || snap.snapshotDate || '—'
   // 1b.3.15：userConfigStore 为空时回退到内置默认值
   const targetRatios = (storedTargetRatios && Object.keys(storedTargetRatios).length > 0)
@@ -556,48 +552,8 @@ export default function HomePage() {
           <div className="value">¥ {formatYuan(balanceTotal)}</div>
           <div className="sub">{balFundCount} 只基金 · 定投水源</div>
         </div>
-        <div className="card highlight">
-          <div className="label">累计 / 持有 收益</div>
-          <div className="crc-grid">
-            <div className="crc-col crc-col-cum">
-              <div className="crc-label">累计</div>
-              <div className="crc-row">
-                <div
-                  className="crc-rate"
-                  style={{ color: cumRate == null ? '#8C8C8C' : Number(cumRate) >= 0 ? '#FF4D4F' : '#52C41A' }}
-                >
-                  {cumRate == null ? '—' : formatSignedPercent(cumRate)}
-                </div>
-                <div
-                  className="crc-amt"
-                  style={{ color: cumAmt == null ? '#8C8C8C' : Number(cumAmt) >= 0 ? '#FF4D4F' : '#52C41A' }}
-                >
-                  {cumAmt == null ? '—' : formatSignedAmount(cumAmt)}
-                </div>
-              </div>
-            </div>
-            <div className="crc-col crc-col-hold">
-              <div className="crc-label">持有</div>
-              <div className="crc-row">
-                <div
-                  className="crc-rate"
-                  style={{ color: holdRate == null ? '#8C8C8C' : Number(holdRate) >= 0 ? '#FF4D4F' : '#52C41A' }}
-                >
-                  {holdRate == null ? '—' : formatSignedPercent(holdRate)}
-                </div>
-                <div
-                  className="crc-amt"
-                  style={{ color: holdAmt == null ? '#8C8C8C' : Number(holdAmt) >= 0 ? '#FF4D4F' : '#52C41A' }}
-                >
-                  {holdAmt == null ? '—' : formatSignedAmount(holdAmt)}
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="crc-sub">
-            算法：{cumAlgo}｜快照：{cumDate}｜{cum?.fundCount ?? 0} 只基金
-          </div>
-        </div>
+        {/* P5-1: 1b.2 累计/持有收益 ℹ️ 提示恢复 —— 用 CumulativeReturnCard 组件自带 4 个 ℹ️ + InfoModal */}
+        <CumulativeReturnCard />
       </div>
 
       <div className="two-col">
