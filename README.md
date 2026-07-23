@@ -27,9 +27,9 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 | **1a.10 缓存验证** | ✅ fresh JVM 4 MISS (32-62s) → 同 JVM 3 HIT (0.08-0.12s) = **460x 加速** | [缓存 + AI vs DeepSeek 验收](docs/test-records/manual-tests/2026-07-20_phase1a10-cache-gray-test-acceptance.md) |
 | **1b.1** 前端骨架 + 全局状态管理 | done | [1b.1 验收报告](docs/test-records/manual-tests/1b/2026-07-21_phase1b1-acceptance-report.md) |
 | **1b.2** 首页资产总览 + Recharts 环形图 | pending | - |
-| **1b.3** 数据管理页（最复杂）| pending | - |
+| **1b.3** 数据管理页（最复杂）| ✅ 已完成（P0–P7 全过） | [1b.3 验收报告](docs/test-records/manual-tests/1b/2026-07-22_phase1b3-acceptance-report.md) · [综合验收](docs/test-records/manual-tests/1b/2026-07-22_phase1b3-comprehensive-acceptance-report.md) |
 | **1b.4** AI 顾问页 | pending | - |
-| **Phase 1b 整体** | partial (1b.1/4) | - |
+| **Phase 1b 整体** | partial (1b.1 + 1b.3 / 4) | - |
 | **Phase 2** 核心业务 | ⏳ 待启动 | — |
 
 **架构文档**：[技术设计文档 v2.0](docs/architecture/技术设计文档v2.docx)（2026-06-10）
