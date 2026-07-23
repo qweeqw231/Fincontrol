@@ -1,6 +1,6 @@
 # Phase 1b.3 验收报告（2026-07-22）
 
-> **状态**：🚧 部分完成（10 项中 4 项通过 + 4 项前端 + 2 项待 e2e 验证）
+> **状态**：🚧 部分完成（10 项中 4 项通过 + 4 项前端 + 2 项待 e2e 验证） + 2026-07-23 新增 5 项待修 UI/数据问题
 > **配套工作计划**：[2026-07-22_phase1b3-work-plan.md](../../../phase-1/work-plans/1b/2026-07-22_phase1b3-work-plan.md)
 > **关联决策**：决策 27（is_latest 双层语义 + 跨日期 is_current）
 
@@ -13,7 +13,7 @@
 | 子阶段 | 1b.3 数据管理页 |
 | 启动日期 | 2026-07-22 |
 | 验收人 | 刘博丞 + Cline |
-| 关联 commit | 5f6117c / 649ae78 / 831dfb2 / e0edf69 / 4fe4612 |
+| 关联 commit | 5f6117c / 649ae78 / 831dfb2 / e0edf69 / 4fe4612 + 1b.3.11~15（待提交） |
 | 关联决策 | 决策 27 |
 
 ---
@@ -44,6 +44,16 @@
 | # | 验收项 | 状态 | 证据 |
 |---|--------|------|------|
 | **1b.3.10** | 1b.3 验收报告 + commit + push | ✅ | 本文件 + 4fe4612 |
+
+### 1.2b 前端代码审查补救（5 项，2026-07-23 追加）
+
+| # | 验收项 | 状态 | 证据 / commit |
+|---|--------|------|---------------|
+| **1b.3.11** | DataPage CSS 加载（修复 4 张图占全屏、按钮消失、21 世纪初风格） | ⏳ 待修 | docs commit 已完成；fix commit 待生成 |
+| **1b.3.12** | 最近操作 0 基金异常标注 | ⏳ 待修 | 同上 |
+| **1b.3.13** | 六大类配置表行高压缩 | ⏳ 待修 | 同上 |
+| **1b.3.14** | 基金小计零值语义（sumIfAllDefined） | ⏳ 待修 | 同上 |
+| **1b.3.15** | 目标比例从 userConfigStore 读取 | ⏳ 待修 | 同上 |
 
 ---
 
@@ -175,6 +185,15 @@ fincontrol-frontend/src/pages/DataPage.jsx              # 完整重写（4 卡�
 fincontrol-frontend/src/styles/global.css               # 1b.3 DataPage 样式
 ```
 
+### 4.4 Phase 4 前端补救（2026-07-23 追加，待提交）
+
+```
+fincontrol-frontend/src/styles/data-page.css            # 1b.3.11 新建：DataPage 全部类样式
+fincontrol-frontend/src/main.jsx                        # 1b.3.11 修改：import data-page.css
+fincontrol-frontend/src/styles/global.css               # 1b.3.13 修改：.ratio-table 行高压缩
+fincontrol-frontend/src/pages/HomePage.jsx              # 1b.3.12 / 14 / 15 修改：异常检测 + sumIfAllDefined + userConfigStore
+```
+
 ---
 
 ## 5. 1b.3 已知问题
@@ -187,6 +206,28 @@ fincontrol-frontend/src/styles/global.css               # 1b.3 DataPage 样式
 
 ---
 
+## 5b. 代码审查补救问题清单（2026-07-23 追加）
+
+> **关联**：[工作计划 §9](../../../phase-1/work-plans/1b/2026-07-22_phase1b3-work-plan.md) · [验收计划 §1.2b](./2026-07-22_phase1b3-acceptance-plan.md)
+>
+> 以下问题由 2026-07-23 用户运行时报告触发，全部为前端代码层 P0~P2 缺陷，**不涉及后端业务逻辑与累计/持有收益现行算法**。
+
+| # | 验收项 | Bug ID | 现象 | 根因 | 状态 | 计划 commit |
+|---|--------|--------|------|------|------|-------------|
+| 1 | 1b.3.11 | BUG-P4-001/002/003 | 上传 4 张图后图片占满全屏；上传按钮消失；DataPage 像 21 世纪初网页 | `DataPage.jsx` 使用 `.preview-strip` / `.preview-item` 等类但 `main.jsx` 未 import 任何 `data-page.css`，所有类回退到 UA 默认样式，`<img>` 按原像素渲染 | ⏳ 待修 | 1b.3.11 fix |
+| 2 | 1b.3.12 | BUG-P4-004 | 首页最近操作"解析 0 只基金"静默显示（数量 0、时间正常） | `HomePage.jsx` `RecentOps` 直接透传后端 `summary` 文本，无 0-fund 异常检测 | ⏳ 待修 | 1b.3.12 fix |
+| 3 | 1b.3.13 | BUG-P4-005 | 首页六大类分布表格行高过高 | `global.css` `.ratio-table td, th` padding = `10px 12px`，无固定行高 | ⏳ 待修 | 1b.3.13 fix |
+| 4 | 1b.3.14 | BUG-P4-006 | 基金小计 null 收益被显示为 +0.00（违反 DATA-G-013） | `SixCategoryGroup` 小计判断条件用 `sumFunds(funds) > 0`（求 amount 和），所有 holdingProfit=null 时 `safeNumber(null, 0)`=0 求和后显示 `+0.00` | ⏳ 待修 | 1b.3.14 fix |
+| 5 | 1b.3.15 | BUG-P4-007 | 目标比例硬编码（违反 DATA-G-004） | `HomePage` 第 465 行 `const targetRatios = { ... }` 写死，不读 `userConfigStore` | ⏳ 待修 | 1b.3.15 fix |
+
+### 5b.1 修复策略
+
+- **A 段（已完成）**：落盘 docs commit — 更新 work-plan §9 + acceptance-plan §1.2b + 本节
+- **B 段（待执行）**：依次执行 1b.3.11 → 1b.3.15 五项 fix，落在 1 个 fix commit（不 push）
+- **保护范围**：累计/持有收益现行算法、CumulativeReturnCard、决策 27 双层语义、后端 Java、store action、路由、侧边栏、Sidebar.jsx — 全部不动
+
+---
+
 ## 6. 后续工作
 
 | # | 任务 | 优先级 |
@@ -194,7 +235,9 @@ fincontrol-frontend/src/styles/global.css               # 1b.3 DataPage 样式
 | 1 | 1b.4 AI 顾问页 | 1b.3 后 |
 | 2 | Phase 1b 收尾验收 | 1b.4 后 |
 | 3 | Phase 2 启动 | 1b.4 后 |
+| 4 | **Phase 4 fix commit + 用户验收 1b.3.11~15** | **2026-07-23 17:20 起** |
 
 ---
 
 *1b.3 验收报告 2026-07-22 20:33 GMT+8 生成*
+*1b.3.11~15 §5b 2026-07-23 17:20 GMT+8 追加*

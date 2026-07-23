@@ -200,3 +200,67 @@ fincontrol-backend/src/main/java/com/fincontrol/dto/snapshot/SnapshotSetCurrentR
 ---
 
 *1b.3 工作计划 2026-07-22 20:00 GMT+8 启动*
+
+---
+
+## 9. Phase 4：前端代码审查补救（2026-07-23）
+
+> **状态**：🔧 待实施
+> **触发**：2026-07-23 用户运行时报告 5 项 UI/数据问题
+> **配套验收更新**：[2026-07-22_phase1b3-acceptance-plan.md §1.2b](../../../test-records/manual-tests/1b/2026-07-22_phase1b3-acceptance-plan.md)
+> **配套报告更新**：[2026-07-22_phase1b3-acceptance-report.md §5b](../../../test-records/manual-tests/1b/2026-07-22_phase1b3-acceptance-report.md)
+>
+> ⚠️ 本阶段只修用户明确点名的 5 个症状；累计/持有收益现行算法、决策 27 双层语义、后端 Java 代码、store action 方法、路由结构、侧边栏菜单全部保持不动。
+> 后续若用户验收通过后提出新需求，只在用户明确指出的范围内修改。
+
+### 9.1 用户报告 5 项问题与根因
+
+| ID | 用户报告 | 根因 | 关联需求 |
+|---|---|---|---|
+| **BUG-P4-001** | 上传 4 张图后图片占满全屏 | `DataPage.jsx` 使用 `.preview-strip` / `.preview-item` 等类，但 `main.jsx` 未 import 任何 `data-page.css`，所有类回退到 UA 默认样式，`<img>` 按原像素渲染 | DATA-001 |
+| **BUG-P4-002** | 上传按钮消失 | 同 BUG-P4-001 根因；`<input type="file">` 被块级预览 div 推下/挤出可视区 | DATA-001 |
+| **BUG-P4-003** | 数据管理页像 21 世纪初网页 | 同 BUG-P4-001 根因；浏览器回退到 Times New Roman / 灰色边框 / 无圆角阴影 | 全局样式 |
+| **BUG-P4-004** | 首页最近操作数量显示 0 | `HomePage.jsx` `RecentOps` 直接透传后端 `summary` 文本；后端 AI 解析失败/模型未返回时 summary 退化为"解析 0 只基金"字符串，前端无异常检测 | DATA-G-012、HOME-008 |
+| **BUG-P4-005** | 首页六大类分布表格行高过高 | `global.css` `.ratio-table td, th` padding = `10px 12px`，无固定行高；6 行 + 合计 ≈ 280px | 全局样式 |
+| **BUG-P4-006**（衍生）| 基金小计 null 收益被显示为 +0.00 | `SixCategoryGroup` 小计判断条件用 `sumFunds(funds) > 0`（求 amount 和），所有 holdingProfit=null 时 `safeNumber(null, 0)`=0 求和后显示 `+0.00`，违反"全 null 才显示 —" | DATA-G-013、HOME-005 |
+| **BUG-P4-007**（衍生）| 目标比例硬编码 | `HomePage` 第 465 行 `const targetRatios = { '货币类': 10, ... }` 写死，不读 `userConfigStore` | DATA-G-004 |
+
+### 9.2 实施任务
+
+| # | 任务 | 优先级 | 验收 | 关联 Bug |
+|---|------|--------|------|---|
+| 1b.3.11 | 新建 `fincontrol-frontend/src/styles/data-page.css`（约 200 行）+ `main.jsx` 引入 | P0 | 4 张图预览 ≤ 120px 高；上传按钮始终可见；非 21 世纪初风格 | BUG-P4-001/002/003 |
+| 1b.3.12 | `HomePage.jsx` `RecentOps` 加 `isZeroFundAnomaly` 检测 + 异常标注 | P0 | "解析 0 只基金" 后跟 ⚠"基金数未知" | BUG-P4-004 |
+| 1b.3.13 | `global.css` `.ratio-table` 压缩 padding 到 `8px 10px`、固定 `height: 36px` | P1 | 六大类配置表行高 ≈ 36px | BUG-P4-005 |
+| 1b.3.14 | `HomePage.jsx` `SixCategoryGroup` 用 `sumIfAllDefined` 重写小计 | P1 | 港股 +3.84 + -3.84 小计 = 0.00；全 null 才 — | BUG-P4-006 |
+| 1b.3.15 | `HomePage.jsx` `targetRatios` 改 `useUserConfigStore` 订阅 | P2 | 配置修改后首页偏差表同步刷新 | BUG-P4-007 |
+
+### 9.3 保护范围（明确不做）
+
+- ❌ 不重写 `CumulativeReturnCard.jsx`（累计/持有收益现行标准）
+- ❌ 不改 `phase1_simple` 算法与余额宝 fallback 逻辑
+- ❌ 不动决策 27 is_latest/is_current 双层语义
+- ❌ 不改后端任何 Java 代码
+- ❌ 不改 store action 方法
+- ❌ 不改路由结构
+- ❌ 不改侧边栏菜单
+- ❌ 不改 `Sidebar.jsx` 与未启用页面的灰显处理
+
+### 9.4 实施顺序
+
+1. **A 段（文档）**：先更新 work-plan / acceptance-plan / acceptance-report → 1 个 docs commit + push
+2. **B 段（代码）**：依次执行 1b.3.11 → 1b.3.15 → 1 个 fix commit（不 push）
+
+### 9.5 退出条件（DoD）
+
+- [ ] docs commit 已 push 到 origin
+- [ ] 5 项代码修复全部落地
+- [ ] `mvn -f fincontrol-backend/pom.xml test` 仍全绿（无后端改动，理应不受影响）
+- [ ] `npm --prefix fincontrol-frontend run build` 通过
+- [ ] 浏览器视觉验收：DataPage 4 张图不溢出、上传按钮可见、首页六大类表格行高正常、最近操作"0 只基金"有 ⚠ 标注
+- [ ] 累计/持有收益现行标准无任何回归
+- [ ] 后续用户提出新需求时严格按"只改用户指出的范围"执行
+
+---
+
+*1b.3 Phase 4 工作计划 2026-07-23 17:18 GMT+8 追加*
