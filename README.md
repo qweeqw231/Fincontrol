@@ -38,29 +38,78 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 
 ---
 
-## 仓库结构（polyrepo）
+## 仓库结构（polyrepo · 2026-07-23 现状）
 
 ```text
-Fincontrol/
-├── docs/                              ← 跨端架构文档与评审记录
-│   ├── README.md                      ← 文档目录索引
-│   ├── SETUP.md                       ← 本地开发环境搭建指南（含视觉模型 API Key 配置）
-│   ├── phase-0/                       ← Phase 0 决策 / API 契约 / db-schema
-│   ├── phase-1/                       ← Phase 1 验收 / 子阶段计划 / 1a.2 测试教程
-│   │   ├── USER-MANUAL.md             ← 【1a 使用说明书（详细）】  ← NEW
-│   │   ├── checklists/phase-1a.md     ← Phase 1a 实时验收清单（✅ 全部完成）
-│   │   └── work-plans/                ← 1a.8 / 1a.9 / 1a.10 工作计划
-│   └── test-records/manual-tests/     ← 1a.3 / 1a.7 / 1a.8 / 1a.9 / 1a.10 验收报告
+Fincontrol/                                      ← 工作区根（单仓多子目录，git polyrepo 协作）
+├── docs/                                          ← 跨端架构 / 决策 / 验收文档
+│   ├── README.md                                  ← 文档目录索引
+│   ├── SETUP.md                                   ← 本地开发环境搭建（含 vision API Key 配置）
+│   ├── requirements/                              ← 跨阶段页面/功能需求基线（1b.3 起固化）
+│   ├── architecture/                              ← 架构主文档 + review 记录
+│   ├── phase-0/                                   ← Phase 0 决策 / API 契约 / db-schema
+│   └── phase-1/                                   ← Phase 1 验收 / 子阶段计划
+│       ├── USER-MANUAL.md                         ← 1a 使用说明书（详细）
+│       ├── acceptance-criteria.md                 ← 47 项 + 18 项 P0
+│       ├── subphase-plan.md                       ← 1a.1–1a.7 + 1b.1–1b.4
+│       ├── testing-guide-1a2.md                   ← curl + mvn test 教程
+│       ├── chat-prompt-issues.md                  ← prompt 调优迭代记录
+│       ├── checklists/                            ← Phase 1a/b 实时验收清单
+│       │   ├── phase-1a.md  (✅ 全部完成)
+│       │   └── phase-1b.md  (🟢 1b.3 已完成)
+│       ├── decisions/                             ← 决策 15–28（双层 is_latest / FundCount / axios timeout …）
+│       ├── designs/                               ← 视觉/交互设计稿
+│       └── work-plans/                            ← 各子阶段工作计划
+│           ├── README.md
+│           ├── 1a/                                ← 1a.8 / 1a.9 / 1a.10 工作计划
+│           └── 1b/                                ← 1b.1 / 1b.2 / 1b.3（+ 补救）工作计划
 │
-├── fincontrol-backend/                ← 【子仓库 1】Spring Boot 后端（✅ Phase 1a 完成）
-│   ├── src/main/java/com/fincontrol/   ← controller / service / entity / mapper / config / common / dto / ai
-│   ├── src/main/resources/            ← application.yml + application-local.yml
-│   └── src/test/java/                 ← 单元测试（Mockito strict）+ H2 集成测试
+│   └── test-records/                              ← 测试记录与产物
+│       ├── README.md
+│       ├── manual-tests/                          ← 手动验收报告
+│       │   ├── 0/                                ← Phase 0 早期记录
+│       │   ├── 1a/                               ← Phase 1a 验收报告
+│       │   └── 1b/                               ← Phase 1b 验收报告（含补救 / 综合）
+│       ├── automated-smoke/                       ← 自动化 smoke 脚本与报告（1a7 / 1a8）
+│       ├── ocr-results/                           ← OCR 解析结果按日期归档
+│       └── screenshots/                           ← 截图原始资料
 │
-├── fincontrol-frontend/               ← 【子仓库 2】React 前端（🟡 1b 准备启动）
+├── fincontrol-backend/                            ← 【子仓库 1】Spring Boot 后端（✅ Phase 1a + 1b.3 后端 R1–R4）
+│   ├── Dockerfile                                 ← 容器镜像构建
+│   ├── .dockerignore
+│   ├── pom.xml
+│   ├── docs/                                      ← 后端专属说明 + OCR / AI 结果归档
+│   ├── scripts/                                   ← SQL / 数据迁移脚本（1b3/00-snapshot-meta.sql …）
+│   ├── src/main/java/com/fincontrol/              ← ai / common / controller / dto / entity / mapper / service (+ FincontrolApplication)
+│   ├── src/main/resources/                        ← application.yml + application-local.yml
+│   └── src/test/java/                             ← 单元测试（Mockito strict）+ H2 集成测试
 │
-├── .gitignore                         ← 工作区级忽略规则
-└── README.md                          ← 本文件
+├── fincontrol-frontend/                           ← 【子仓库 2】React + Vite 前端（🟢 Phase 1b.3 完成）
+│   ├── index.html
+│   ├── vite.config.js
+│   ├── package.json / package-lock.json
+│   └── src/                                       ← main.jsx / App.jsx + 模块划分
+│       ├── api/                                   ← Axios 客户端 + endpoints.js
+│       ├── components/                            ← 业务组件（含 common/、layout/ 子目录）
+│       ├── pages/                                 ← 路由页面（Home / Data / Config / NAV / Ratio / Correction / Quarterly）
+│       ├── stores/                                ← Zustand stores（assetSnapshot / userConfig / operation / chat）
+│       ├── styles/                                ← 全局 + 页面级 CSS（variables / global / sidebar / data-page / cumulative-return …）
+│       ├── utils/                                 ← formatters / categoryColors
+│       └── tests/                                 ← Vitest 单测 + setup.js
+│
+├── scripts/                                       ← 跨端运维 / smoke / git 辅助
+│   ├── README.md
+│   ├── 1b/                                        ← 后端 / 前端启动 / 重启脚本
+│   ├── git/                                       ← push-deferred / 提交辅助
+│   └── smoke/                                     ← smoke 测试入口
+│
+├── test/                                          ← 临时调试与联调记录（不入正式规范）
+│   └── 1b/                                        ← Phase 1b step1–8 联调 / push-deferred 笔记
+│
+├── docker-compose.yml                             ← 工作区级 compose（MySQL + backend，可选）
+├── package.json / package-lock.json               ← 工作区级 workspaces / 公共脚本
+├── .gitignore                                     ← 工作区级忽略规则
+└── README.md                                      ← 本文件
 ```
 
 ---
