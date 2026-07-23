@@ -379,18 +379,28 @@ export default function DataPage() {
                 </table>
               </div>
 
-              {/* 基金明细 */}
+              {/* 基金明细 - P6-2: 加 持有收益/累计收益 列 */}
               <div className="overview-detail"
                 style={{ marginTop: '16px' }}>
                 <h3>基金明细（{parsedSummary.fundCount} 只）</h3>
                 <table className="data-table">
-                  <thead><tr><th>基金名称</th><th>类别</th><th>金额（元）</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>基金名称</th>
+                      <th>类别</th>
+                      <th>金额（元）</th>
+                      <th>持有收益（元）</th>
+                      <th>累计收益（元）</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {parsedSummary.categories.flatMap((c) => (c.funds || []).map((f) => (
                       <tr key={`${c.categoryName}-${f.fundName}`}>
                         <td>{f.fundName}</td>
                         <td>{c.categoryName}</td>
                         <td>¥{Number(f.amount || 0).toFixed(2)}</td>
+                        <td>{f.holdingProfit == null ? '—' : `¥${Number(f.holdingProfit).toFixed(2)}`}</td>
+                        <td>{f.cumulativeProfit == null ? '—' : `¥${Number(f.cumulativeProfit).toFixed(2)}`}</td>
                       </tr>
                     )))}
                   </tbody>

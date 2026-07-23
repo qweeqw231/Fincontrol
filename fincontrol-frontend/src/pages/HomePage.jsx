@@ -163,12 +163,12 @@ function SixPiePanel({ sixCats, sixTotal, categories, targetRatios, open, onTogg
         <span className="tag">基于 {formatYuan(sixTotal)} 元（不含余额类）</span>
       </div>
       <div className="six-pie-row">
-        <div className="pie-wrap" style={{ minHeight: 280 }}>
+        <div className="pie-wrap">
           {open ? (
             <PieChart data={sixCats} sixTotal={sixTotal} />
           ) : (
-            <div className="empty" style={{ minHeight: 280, lineHeight: '280px' }}>
-              点击下方展开按钮查看环形图
+            <div className="empty" style={{ padding: '24px 0', color: '#8C8C8C' }}>
+              （环形图已收起，点击下方按钮切换）
             </div>
           )}
         </div>
@@ -184,7 +184,7 @@ function SixPiePanel({ sixCats, sixTotal, categories, targetRatios, open, onTogg
           className="cat-detail-toggle"
           onClick={onToggle}
         >
-          {open ? '收起' : '展开'} 分布图
+          {open ? '切换为表格' : '切换为环形图'}
         </button>
       </div>
     </div>

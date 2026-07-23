@@ -204,6 +204,8 @@ public class DedupEngine {
                     CategoryBlock cb = new CategoryBlock();
                     cb.setCategoryName(ac.categoryName);
                     cb.setCategoryTotal(ac.totalAmount);
+                    // P6-3 修复：DedupeEngine 重建 CategoryBlock 时复制 fundCount
+                    cb.setFundCount(ac.fundCount);
                     // categoryPercentage / targetRatio / deviation 由 AssetSnapshotService 在 1a.3 写入时按 user_config 算
                     List<FundLine> funds = mergedFunds.values().stream()
                             .filter(mf -> Objects.equals(mf.categoryName, ac.categoryName))
