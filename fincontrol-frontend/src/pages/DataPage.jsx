@@ -204,29 +204,40 @@ export default function DataPage() {
 
       <section className="card">
         <h2>1. 上传 4 张图</h2>
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={handleFiles}
-          data-testid="upload-input"
-        />
-        <div className="preview-grid">
-          {filePreviews.map((p, i) => (
-            <div key={i} className="preview-item">
-              <img src={p.url} alt={p.name} />
-              <span>{p.name}</span>
-              <button onClick={() => removeFile(i)} className="rm-btn">×</button>
+        <p className="hint">选 4 张支付宝基金截图 → 自动截取前 4 张。已选 {files.length}/4。</p>
+        <div className="upload-bar">
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFiles}
+            data-testid="upload-input"
+          />
+          {filePreviews.length > 0 && (
+            <div className="preview-strip">
+              {filePreviews.map((p, i) => (
+                <div key={i} className="preview-item" title={p.name}>
+                  <img src={p.url} alt={p.name} />
+                  <span>{p.name}</span>
+                  <button
+                    onClick={() => removeFile(i)}
+                    className="rm-btn"
+                    aria-label="删除"
+                    type="button"
+                  >×</button>
+                </div>
+              ))}
             </div>
-          ))}
-          {filePreviews.length === 0 && (
-            <div className="preview-empty">请选择 4 张图（建议 0716 数据）</div>
           )}
         </div>
+        {filePreviews.length === 0 && (
+          <div className="preview-empty">请选择 4 张图（建议 0716 数据）</div>
+        )}
       </section>
 
       <section className="card">
         <h2>2. 解析与日期</h2>
+        <p className="hint">选择解析模式与截图数据日期，再点 "上传并解析"。</p>
         <div className="form-row">
           <label>
             <span>解析模式</span>
@@ -244,6 +255,8 @@ export default function DataPage() {
               data-testid="date-input"
             />
           </label>
+        </div>
+        <div style={{ marginTop: 8 }}>
           <button
             onClick={uploadAndParse}
             disabled={step === 'uploading' || step === 'parsing' || files.length !== 4}
