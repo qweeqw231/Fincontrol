@@ -965,36 +965,6 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 | 5 | Phase 1 验收标准追加 P0 | ✅ | 第四轮 4.3.1 / 4.3.2 |
 | 6 | Phase 计划修订（新增 Phase 0）| ✅ | 第四轮 4.3.3 / 4.3.4 / 4.3.7 / 4.3.8 |
 | 7 | profit 字段拆分 holding_profit / cumulative_profit | ✅ | 1a.8.7 实测发现 |
-| 8 | fund 分类归一化 + 双向 cache | ✅ | 1a.8.8 |
-| 9 | 总资产双轨 + DISCREPANCY 1% 报警 | ✅ | 1a.9 |
-| 10 | 双路径并存（4×单图+confirm / 1×parse-batch）| ✅ | 1a.10 |
-| 11 | 缓存验证（同 JVM 3 HIT 加速 460x）| ✅ | 1a.10 缓存 |
-| 12 | 豆包 vision 路径暂时废弃（minimax-only）| ✅ | 1a 收官 |
-| 13 | snapshotDate 来源优先级 + dataTime 字段 | ✅ | 1a.10 |
-| 14 | fund 分类 AI 辅助 + 用户自定义（1b+）| ⏳ | 1b+ |
-| 15 | Chat prompt 已知缺陷（1b+ 聚合修复）| 📝 | 1a.10 |
-| 16 | 图表库 = Recharts | ✅ | 1b.7 验收项 ECharts→Recharts 调整 |
-| 17 | UI 库 = 纯 CSS（移除 antd）| ✅ | 工科风 + 学习价值 |
-| 18 | Phase 1b 文档目录子目录隔离 | ✅ | 文件数量增加后的可维护性 |
-| 19 | 阶段验收必更新根目录 README | ✅ | 1b.1 完成时 README 未及时更新 |
-| 20 | 根目录 \`test/\` 文件夹规范 | ✅ | 1b.2 联调产物管理 |
-| 21 | \`uploads/screenshots/\` 缓存清理规范 | ✅ | 1b.2 测试文件依赖 |
-| **22** | 决策总结表位置约定（末尾单一份）| ✅ | 2026-07-22 用户明令规定 |
-| **23** | 文档更新必 commit + push | ✅ | 2026-07-22 用户明令规定 |
-| **24** | 后端 restart 必须用 scripts/1b/restart-backend.ps1 | ✅ | 1b.2 联调 jar 重建暴露 file lock |
-| **25** | 累计收益查询双保险（snapshot_date = MAX 过滤） | ✅ | 1b.2 联调发现测试数据 user_id=19999 混入 |
-
----
-
-## 决策 24：后端 restart 必须用 `scripts/1b/restart-backend.ps1`（2026-07-22）
-
-**状态**：✅ 已锁定
-
-**背景**：
-- 1b.2 step 7 端到端联调发现：手动 `Start-Process java -jar` 启动的后端进程（PID 40308）持锁 `target/fincontrol-backend.jar`
-- 后续 `mvn package` 反复在 `spring-boot-maven-plugin:repackage` 阶段失败：`Unable to rename ... to .jar.original` (file lock)
-- 用户洞察："1b.3、1b.4 都要联调，jar 绕不过去，这是把雷放到后面炸了"
-
 **决策**：
 所有后端代码改动后，**必须**用 `scripts/1b/restart-backend.ps1` 脚本重启后端，**禁止**手动 `Start-Process java -jar` 或 `mvn spring-boot:run`。脚本保证以下 5 步幂等：
 

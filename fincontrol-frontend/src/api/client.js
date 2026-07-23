@@ -10,7 +10,7 @@ import axios from 'axios'
 
 export const apiClient = axios.create({
   baseURL: '/api',
-  timeout: 60000,
+  timeout: 120000,  // 1b.3 P6 决策 28：临时从 60s 延长到 120s（AI vision 单图/批处理易超时）
   headers: { 'Content-Type': 'application/json; charset=UTF-8' },
 })
 
