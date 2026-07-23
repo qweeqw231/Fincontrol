@@ -115,6 +115,28 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
             "AND snapshot_date = (SELECT MAX(snapshot_date) FROM asset_raw " +
             "                       WHERE user_id = #{userId} AND is_latest = 1)")
     java.util.Map<String, Object> sumReturnFieldsByUser(@Param("userId") Long userId);
+
+    /**
+     * 1b.3 P7 修复：定向把指定 (user, fund, dates) 的 category 改为 newCategory。
+     * 仅供 1b.3 一次性数据修复脚本使用（长城短债债券A / 鹏华纯债债券D 误归 A股权益类 改回 固收类）。
+     * <p>使用：{@code UPDATE asset_raw SET category=#{newCategory} WHERE user_id=#{userId} AND fund_name=#{fundName} AND snapshot_date IN (...)}。
+     * <p>is_latest 状态不变；只动 is_latest=1 行（保留历史行不动以备审计）。
+     */
+    @Update("<script>" +
+            "UPDATE asset_raw SET category = #{newCategory} " +
+            "WHERE user_id = #{userId} " +
+            "AND fund_name = #{fundName} " +
+            "AND is_latest = 1 " +
+            "AND snapshot_date IN " +
+            "<foreach collection='snapshotDates' item='d' open='(' separator=',' close=')'>" +
+            "#{d}" +
+            "</foreach>" +
+            "</script>")
+    int updateCategoryByUserAndFundAndDates(
+            @Param("userId") Long userId,
+            @Param("fundName") String fundName,
+            @Param("newCategory") String newCategory,
+            @Param("snapshotDates") List<java.time.LocalDate> snapshotDates);
 }
 
 

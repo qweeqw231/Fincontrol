@@ -162,22 +162,24 @@ function SixPiePanel({ sixCats, sixTotal, categories, targetRatios, open, onTogg
         六大类分布
         <span className="tag">基于 {formatYuan(sixTotal)} 元（不含余额类）</span>
       </div>
-      <div className="six-pie-row">
-        <div className="pie-wrap">
-          {open ? (
+      {open ? (
+        <div className="six-pie-row">
+          <div className="pie-wrap">
             <PieChart data={sixCats} sixTotal={sixTotal} />
-          ) : (
-            <div className="empty" style={{ padding: '24px 0', color: '#8C8C8C' }}>
-              （环形图已收起，点击下方按钮切换）
-            </div>
-          )}
+          </div>
+          <ConfigDeviationTable
+            sixCats={sixCats}
+            sixTotal={sixTotal}
+            targetRatios={targetRatios}
+          />
         </div>
+      ) : (
         <ConfigDeviationTable
           sixCats={sixCats}
           sixTotal={sixTotal}
           targetRatios={targetRatios}
         />
-      </div>
+      )}
       <div style={{ marginTop: 12, textAlign: 'right' }}>
         <button
           type="button"

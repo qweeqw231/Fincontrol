@@ -59,10 +59,28 @@ public interface AssetSnapshotMapper extends BaseMapper<AssetSnapshot> {
     java.time.LocalDate selectLatestSnapshotDate(@Param("userId") Long userId);
 
     /**
-     * 1a.4 快照查询：列出 user 在 [from, to] 区间内存在 is_latest=true 行的 snapshot_date 集合，按日期倒序。
+     * 1a.4 启动用：列出 user 在 [from, to] 区间内存在 is_latest=true 行的 snapshot_date 集合，按日期倒序。
      */
     List<java.time.LocalDate> selectHistoryDates(
             @Param("userId") Long userId,
             @Param("from") java.time.LocalDate from,
             @Param("to") java.time.LocalDate to);
+
+    /**
+     * 1b.3 P7 修复：定向重算 (user, snapshot_date, categories) 的 total_amount。
+     * <p>供 1b.3 一次性数据修复脚本使用：把误归 A股 的债基移回 固收 后，
+     * 同步重算 A股 + 固收 总额，确保 asset_snapshot 与 asset_raw 镜像一致。
+     * <p>实现见 XML — UPDATE asset_snapshot SET total_amount=(SELECT SUM(...) FROM asset_raw ...)。
+     */
+    int recalcTotalAmountByUserAndDateAndCategory(
+            @Param("userId") Long userId,
+            @Param("snapshotDate") java.time.LocalDate snapshotDate,
+            @Param("categories") List<String> categories);
+
+    /**
+     * 1b.3 P7 修复：定向插入 (user, snapshot_date, category) 缺失的汇总行。
+     * <p>供 1b.3 一次性数据修复脚本使用：以前没有固收类行（如 2026-07-21）时，
+     * 通过此接口插入一条 total_amount=已计算值的固收类汇总行。
+     */
+    int insertSummaryIfMissing(AssetSnapshot snap);
 }

@@ -1254,6 +1254,70 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 
 ---
 
+## 决策 28：AI vision 前端 timeout 临时延长 + 基金分类映射不自动升级（2026-07-23）
+
+**状态**：✅ 已锁定（2026-07-23）
+
+**背景**：
+- 2026-07-23 22:09 重新解析 4 张图时，AI vision 单图 / 批处理频繁超过 60s（minimax 路径），前端 axios 主动 abort
+- 4 张图属于同一时点（同一账户同一日），即使 batch 也偶尔超时
+- 现有 60s timeout 对 4 张图（特别是 0720 标号 4 张真实截图）不够宽松
+- 1b.3 P7 真实联调时发现：AI 视觉模型在 2026-07-21 / 2026-07-23 把两只短债/纯债误归 A股权益类，confirm 流程又把 ai_guess 错误地升级为 user_correct，导致后续 confirm 一直被错误映射覆盖，固收类消失
+
+**决策**：
+
+1. **前端 axios timeout 临时延长 60s → 120s**（仅 1b.3 一次性放宽）
+   - `fincontrol-frontend/src/api/client.js`：`timeout: 60000` → `timeout: 120000`（AI vision 单图/批处理易超时）
+   - 长期方案待用户指示：异步轮询 / 服务端缓存 / 减少 AI timeout / 拆 4 图为单图串行
+2. **基金分类映射生命周期修复**（SnapShotConfirmService.writeFundCategoryMap）：
+   - `existing == null` → `source='ai_guess'`（首次入库）
+   - `existing.source == 'ai_guess'` → 保持 `ai_guess`，**不**自动升级为 user_correct
+   - `existing.source == 'user_correct' / 'user_manual'` → 保持原 source（明确用户映射）
+3. **一次性数据修复脚本** `fincontrol-backend/scripts/1b3/01-repair-bond-category-2026-07-23.sql`：
+   - 把误归 A股 的两只短债/纯债移回固收类
+   - 重算 4 个日期的 asset_snapshot 总额
+   - 安信新价值灵活配置混合A 维持 A股权益类（按用户决定，本轮不主动归固收）
+4. **新增 mapper 工具方法**（供 Phase 2 复用，本轮暂不调用）：
+   - `AssetRawMapper.updateCategoryByUserAndFundAndDates(userId, fundName, newCategory, snapshotDates)`
+   - `AssetSnapshotMapper.recalcTotalAmountByUserAndDateAndCategory(userId, date, categories)`
+   - `AssetSnapshotMapper.insertSummaryIfMissing(snap)`
+
+**实现位置**：
+- `fincontrol-frontend/src/api/client.js`（commit a83bbd3，timeout 60000 → 120000）
+- `fincontrol-backend/src/main/java/com/fincontrol/service/SnapShotConfirmService.java`（writeFundCategoryMap 语义修复）
+- `fincontrol-backend/src/main/java/com/fincontrol/mapper/AssetRawMapper.java`（updateCategoryByUserAndFundAndDates）
+- `fincontrol-backend/src/main/java/com/fincontrol/mapper/AssetSnapshotMapper.java`（recalcTotalAmountByUserAndDateAndCategory + insertSummaryIfMissing）
+- `fincontrol-backend/src/main/resources/mapper/AssetSnapshotMapper.xml`（recalc / insertSummaryIfMissing 实现）
+- `fincontrol-backend/src/main/resources/mapper/FundCategoryMapMapper.xml`（无改动，使用现有 upsertByFundName）
+- `fincontrol-backend/src/test/java/com/fincontrol/service/SnapShotConfirmServiceP7Test.java`（4 个回归测试）
+- `fincontrol-backend/scripts/1b3/01-repair-bond-category-2026-07-23.sql`（一次性数据修复）
+- `fincontrol-frontend/src/pages/HomePage.jsx`（六大类分布收起时不再渲染左侧 .pie-wrap 占位）
+
+**理由**：
+- 60s → 120s：minimax 4 图真实场景需要更宽松窗口，但不替代长期异步轮询方案
+- ai_guess 不自动升级：原本 `existing == null ? 'ai_guess' : 'user_correct'` 逻辑把 AI 一次错误"固化"为"用户已确认"，需严格区分自动 AI 写入 vs 明确用户纠正
+- 一次性数据修复：定向精准修复 2 只债基（按用户指示安信新价值不动），不批量改动其他基金/日期/类别
+
+**影响**：
+- 1b.3 P7：confirm 不再因 AI 一次错误而永久覆盖正确分类
+- 1b.3 验证：4 张图重试后 A股=2199.40 / 固收=890.47 / 余额=219.92 / 总额=7825.05（与决策 25v3 修复结果一致）
+- 后续：若需进一步减少超时，参考长期方案清单（异步轮询 / 服务端缓存 / 拆 4 图为单图串行）
+
+**回退条件**：
+- 若前端 timeout 120s 仍不够 → 引入异步轮询 + task_id 机制
+- 若 Phase 2 决定将 ai_guess 升级 → 写库层加固（决策 25v3 Phase 2 路径）+ 用户明确 override
+
+**长期方案**（待用户指示）：
+1. 异步轮询：前端 POST 解析 → 后端返回 task_id → 轮询 GET task 状态
+2. 服务端缓存：相同 (fileIds, promptVersion) 复用上次结果
+3. 减少 AI timeout：调小 provider `timeoutSeconds` + 重试 + fallback
+4. 拆 4 图为单图串行：4 次单图 confirm，独立超时控制
+
+*最近更新：2026-07-23 22:13 决策 28 落地（前端 timeout 120s + writeFundCategoryMap 语义修复 + 一次性数据修复）*
+*触发：1b.3 P7 真实联调发现 AI 误归导致后续 confirm 一直被错误映射覆盖（fund_category_map 错误固化）*
+
+---
+
 ## 决策总结表（追加后）
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
@@ -1283,3 +1347,4 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 | 25 v3 | 持有收益 Smart Fallback（余额宝 holding=NULL 用 cumulative 替代）| ✅ | 1b.2 累计/持有双列 | 1b.2 |
 | 26 | parse 模式开关 single | multi（前端 toggle）| ✅ | 1b.2 验证稳定性 | 1b.2 |
 | 27 | is_latest 双层语义 + 跨日期 is_current | 🚧 | 1b.2 5-Fund 状态覆盖 Bug | f42b323 |
+| 28 | AI vision 前端 timeout 临时延长 60s→120s + 基金分类映射不自动升级（1b.3 P7）| ✅ | 1b.3 P7 联调 | a83bbd3 |

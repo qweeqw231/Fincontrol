@@ -271,8 +271,20 @@ public class SnapShotConfirmService {
                 FundCategoryMap map = new FundCategoryMap();
                 map.setUserId(req.getUserId());
                 map.setFundName(fund.getFundName());
-                map.setCategory(cat.getCategoryName());
-                map.setSource(existing == null ? "ai_guess" : "user_correct");
+                // 1b.3 P7 修复：仅 user_correct / user_manual 才能覆写 AI 解析结果。
+                //   ai_guess 行不自动升级为 user_correct（否则 AI 一次错误会被永久固化为"用户已确认"）。
+                String existingSource = existing == null ? null : existing.getSource();
+                String finalCategory = cat.getCategoryName();
+                String finalSource;
+                if (existingSource == null) {
+                    finalSource = "ai_guess";
+                } else if ("ai_guess".equals(existingSource)) {
+                    finalSource = "ai_guess";
+                } else {
+                    finalSource = existingSource;
+                }
+                map.setCategory(finalCategory);
+                map.setSource(finalSource);
                 map.setConfirmedAt(LocalDateTime.now());
                 fundCategoryMapMapper.upsertByFundName(map);  // upsert 同步写 last_seen_at
                 count++;

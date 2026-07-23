@@ -89,4 +89,48 @@
         ORDER BY snapshot_date DESC
     </select>
 
+    <!-- 1b.3 P7 修复：定向重算 (user, snapshot_date, category) 的 total_amount。
+         供一次性数据修复脚本使用：把两只误归 A股 的债基移回 固收 后，
+         需要同步重算当日 A股/固收 总额。-->
+    <update id="recalcTotalAmountByUserAndDateAndCategory">
+        UPDATE asset_snapshot
+        SET total_amount = (
+            SELECT COALESCE(SUM(ar.amount), 0)
+            FROM asset_raw ar
+            WHERE ar.user_id = asset_snapshot.user_id
+              AND ar.snapshot_date = asset_snapshot.snapshot_date
+              AND ar.category = asset_snapshot.category
+              AND ar.is_latest = true
+        ),
+        updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = #{userId}
+          AND snapshot_date = #{snapshotDate}
+          AND category IN
+          <foreach collection='categories' item='c' open='(' separator=',' close=')'>
+              #{c}
+          </foreach>
+          AND is_latest = true
+    </update>
+
+    <!-- 1b.3 P7 修复：定向插入 (user, snapshot_date, category) 缺失的汇总行。
+         供一次性数据修复脚本使用：以前没有固收类行（如 2026-07-21）时，需插入固收类行。-->
+    <insert id="insertSummaryIfMissing" parameterType="com.fincontrol.entity.AssetSnapshot">
+        INSERT INTO asset_snapshot
+            (user_id, snapshot_date, category, total_amount, target_ratio, actual_ratio,
+             balance_fund, sub_detail, total_asset_source, is_latest, created_at, updated_at)
+        SELECT
+            #{userId}, #{snapshotDate}, #{category}, #{totalAmount},
+            #{targetRatio}, #{actualRatio}, #{balanceFund}, #{subDetail},
+            COALESCE(#{totalAssetSource}, 'top'),
+            true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM dual
+        WHERE NOT EXISTS (
+            SELECT 1 FROM asset_snapshot
+            WHERE user_id = #{userId}
+              AND snapshot_date = #{snapshotDate}
+              AND category = #{category}
+              AND is_latest = true
+        )
+    </insert>
+
 </mapper>
