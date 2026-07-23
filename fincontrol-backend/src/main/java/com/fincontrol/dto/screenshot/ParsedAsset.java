@@ -47,6 +47,9 @@ public class ParsedAsset {
         private BigDecimal categoryPercentage;
         private BigDecimal targetRatio;
         private BigDecimal deviation;
+        // 1b.3 P6 修复（P5-3 + P6-3 配套）：前端"各类小计"基金数显示依赖此字段
+        // Lombok @Data 自动生成 getFundCount() / setFundCount(Integer)
+        private Integer fundCount;
     }
 
     @Data
