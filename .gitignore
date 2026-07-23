@@ -166,6 +166,11 @@ docs/test-records/automated-smoke/**/api-test-output/
 # 1a.8 v3 真实 OCR 原始响应（可能含用户资产数据，不入仓）
 /docs/test-records/ocr-results/
 
+# 2026-07-23：临时联调 / 调试草稿记录（不入仓；正式记录走 docs/test-records/）
+#   例如 test/1b/2026-07-22-stepN-联调记录.md
+#   正式归档应放在 docs/test-records/manual-tests/<phase>/ 下
+test/
+
 # 豁免：自动化 smoke log 本身要 commit（历史回溯价值）
 # 默认 `*.log` 忽略工作区根的随机 log，但 smoke log 走精确路径匹配
 !docs/test-records/automated-smoke/**/*.log
