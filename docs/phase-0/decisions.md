@@ -1415,6 +1415,11 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
 > 每次新增决策须就地追加一行（按决策顺序）。
+>
+> **总表优先原则（2026-07-24 PR5 补充）**：本表是项目决策的**唯一权威汇总**，最早、最全、最权威。
+> 各阶段子决策文档（`docs/phase-N/decisions/decision-XX-*.md`）保留**详细背景 + 实施细节**作为子档，但**所有决策 ID 必须在此总表追加一行**才能视为正式锁定。
+> 子档若未在总表登记，视为未生效决策，代码不可引用。
+> 1b.4 三项决策 30 / 31 / 32 于 2026-07-24 首次总表登记（PR5 收官）。
 
 | # | 决策 | 状态 | 关联评审 | 触发 commit |
 |---|------|------|----------|-------------|
@@ -1444,3 +1449,6 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 | 27 | is_latest 双层语义 + 跨日期 is_current | 🚧 | 1b.2 5-Fund 状态覆盖 Bug | f42b323 |
 | 28 | AI vision 前端 timeout 临时延长 60s→120s + 基金分类映射不自动升级（1b.3 P7）| ✅ | 1b.3 P7 联调 | a83bbd3 |
 | 29 | 端口统一 5173（Vite default，1b.4 起）| ✅ | 1b.4 PR2 用户反馈"我访问不了前端" | a6329f0 |
+| 30 | 取消硬编码历史限制（改读 settings.max_snapshot_age_days）| ✅ | 1b.4 PR3plus 用户实拍 7/13/7/14 截图被 7 天硬限拒绝 | 1b98b8c |
+| 31 | 引入 settings 全局配置表（userId PK + max_snapshot_age_days 默认 7）| ✅ | 1b.4 PR3plus 决策 30 配套 | 1b98b8c |
+| 32 | AI 跨 category 重复分类的优雅处理（user_correct 优先 + CATEGORY_CONFLICT 警告）| ✅ | 1b.4 PR3plus 14号 截图 confirm 500 修复 | b0dc7a1 |
