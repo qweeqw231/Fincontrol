@@ -1696,6 +1696,72 @@ if (existingSource == null) {
 
 ---
 
+## 决策 33 详述：1b.4-pr6b 模块 B 大类确认 UX 完整实施（v2 1b.4-pr6b）
+
+**状态**：✅ 已锁定（2026-07-25 全部 P0+P1+P2+R5 完成 + 主页 V6 修复）
+
+**背景**：
+- 1b.4 PR6b 阶段（2026-07-25）将决策 32 提出的"AI 重复分类优雅处理"具象化为端到端 UX
+- 7 个触发问题已全部在 v2 决策落地：AI 误归 A 股权益类、首页双重计入、入库前手动纠正 UI 缺失、user_correct 重复弹确认、退出 modal state 残留、消失-重现无机制、V6 收尾 Fix D 不完整
+- 关键场景：用户实盘 19 只基金，其中 3 只（鹏华纯债/长城短债/安信新价值）AI 频繁误归 A 股权益类
+
+**决策（七条 UX 规则 + V6 修复）**：
+
+1. **D1 严格阻塞**：preview modal 中存在 🤖 ai_guess 行 → 「确认入库」按钮 disabled + tooltip「还有 N 条 AI 猜测未确认」
+2. **D2 二次确认 modal**：confirm 时检测「dropdown 改动但未点 ✓」 → 弹 modal「全部提交 / 仅已 ✓ 的 / 返回修改」
+3. **D3 实时联动**：改 dropdown → useMemo 重算 → preview「各类小计」即时刷新
+4. **D4 双重计入修复**（决策 32 基础）：`SnapShotConfirmService.writeAssetSnapshot()` 前置 `assetSnapshotMapper.updateIsLatestBySnapshotDate()` 清理旧行
+5. **D5 user_correct 自动套用**：DataPage 打开 preview modal 前调 `/api/category-map/match?funds=...` → 把 user_correct 合并到 categoryOverrides → dropdown 默认值 = user_correct.category → badge = ✅ 已确认
+6. **D6 退出 reload**：DataPage unmount 时清 categoryOverrides / categoryDirty / overridesSaving / pendingReConfirms
+7. **D7 消失-重现特别提示**：fund_category_map 新增 `last_seen_snapshot_date` + `first_missing_snapshot_date` 字段；match API 返 first_missing_snapshot_date 非 NULL → 黄色 banner「上次确认 t0，您可能于 t1 及之前清仓」
+8. **V6 收尾**（1b.4-pr6b-recovery）：
+   - **Bug A — 主页固收类缺失**：`SnapshotQueryService.buildLatestResponse()` 仅迭代原始 AssetSnapshot 构造 summary，AI 误归导致固收类行从未写入 → 修复为 `buildCanonicalSummaries()` 永远以 6 大类 canonical 全集为 key
+   - **Bug B — HomePage stale-cache**：useEffect `[]` + `!snap` 守卫 + 未订阅 `refreshCounter` → 修复为订阅 refreshCounter + deps `[refreshCounter]`，每次 counter 变化都 fetchLatest(1)
+
+**Schema 升级**（R5 消失-重现）：
+```sql
+ALTER TABLE fund_category_map ADD COLUMN last_seen_snapshot_date DATE NULL;
+ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
+```
+
+**锚点算法**（基于 last_seen MAX，与 is_current 解耦）：
+- 任意 `snapshotDate >= anchorDate` → 新锚点（forward inference）
+- 任意 `snapshotDate < anchorDate` → 回填（仅入库，不修改 last_seen/first_missing）
+- 为什么不用 `is_current`：`snapshot_meta.is_current` = 首页展示日期（用户选/默认），**不一定是最新的**
+
+**实现位置**：
+- 后端 `SnapshotQueryService.java` 新增 `buildCanonicalSummaries()`（V6 修复）
+- 后端 `SnapShotConfirmService.java` confirm 内 R5 锚点检测（D7 实现）
+- 前端 `DataPage.jsx` 5 个 useState（categoryOverrides / categoryDirty / overridesSaving / showSubmitDirtyModal / pendingReConfirms）
+- 前端 `HomePage.jsx` useEffect deps `[refreshCounter]`（V6 修复）
+- 前端 `AssetSnapshotStore` 新增 `bumpRefresh` + `refreshCounter`（V6 修复）
+
+**验收口径（V1-V6 · 53 用例 · 用户亲自跑通）**：
+- V1 22 用例 前端 DataPage.test.jsx T1-T22 全绿
+- V2 8 用例 后端 SnapShotConfirmServiceP7Test B1-B8 全绿
+- V3 7 用例 联调端到端
+- V4 4 用例 双重计入修复
+- V5 4 用例 消失-重现机制
+- **V6 8 用例 主页固收类 + HomePage stale-cache（本次新增）**
+- 总计 53/53 通过
+
+**回退条件**：
+- 若 Phase 2 引入"用户映射表维护 UI"，Decision 33 D5-D7 中「user_correct 自动套用 + 消失-重现」可重审
+- V6 修复（refreshCounter 订阅）若未来引入更精细的 store 选择器（如 useShallow），可改用更细粒度订阅优化重渲染
+
+**关联 commits**：
+- `1b98b8c feat(pr3plus): 历史限制可配置 + settings 全局配置表`
+- `b0dc7a1 fix(pr3plus): resolve category conflicts and null fund count`
+- `a6329f0 fix(1b.4 PR2): port 5173`
+- `f42b323 1b4-pr3plus work`
+- `1b4pr6b` 系列 6 个 commit（D1-D7 实现）
+- **`9207b2b fix(pr6b-recovery): V6 — homepage 固收类 + stale-cache 双 bug 修复**（V6 收尾核心 commit，已 push origin main）
+
+*最近更新：2026-07-25 V6 收尾完成 + 用户验收通过（commit 9207b2b push origin main）*
+*触发：1b.4-pr6b 阶段收尾，V6 修复主页固收类缺失（-1,189.92 元）与 stale-cache（绕一圈 workaround）*
+
+---
+
 ## 决策总结表（追加后）
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
@@ -1737,3 +1803,4 @@ if (existingSource == null) {
 | 30 | 取消硬编码历史限制（改读 settings.max_snapshot_age_days）| ✅ | 1b.4 PR3plus 用户实拍 7/13/7/14 截图被 7 天硬限拒绝 | 1b98b8c |
 | 31 | 引入 settings 全局配置表（userId PK + max_snapshot_age_days 默认 7）| ✅ | 1b.4 PR3plus 决策 30 配套 | 1b98b8c |
 | 32 | AI 跨 category 重复分类的优雅处理（user_correct 优先 + CATEGORY_CONFLICT 警告）| ✅ | 1b.4 PR3plus 14号 截图 confirm 500 修复 | b0dc7a1 |
+| 33 | 1b.4-pr6b 模块 B 大类确认 UX 完整实施（D1-D7 + V6 主页固收类 + HomePage stale-cache 修复）| ✅ | 1b.4 PR6b 阶段 + V6 收尾 | 9207b2b |
