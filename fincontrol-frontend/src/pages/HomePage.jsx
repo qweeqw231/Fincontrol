@@ -458,19 +458,25 @@ export default function HomePage() {
   const loading = useAssetSnapshotStore((s) => s.loading)
   const error = useAssetSnapshotStore((s) => s.error)
   const fetchLatest = useAssetSnapshotStore((s) => s.fetchLatest)
+  // 1b4pr6b-recovery (2026-07-25)：订阅 refreshCounter，让 DataPage confirm 后 bumpRefresh()
+  // 能驱动 HomePage 主动重拉（原先「[]」+「!snap」守卫会导致 Homepage 吃到 stale 数据）。
+  const refreshCounter = useAssetSnapshotStore((s) => s.refreshCounter)
   // 1b.3.15：目标比例从 userConfigStore 订阅（DATA-G-004：user_config 为权威源）
   const storedTargetRatios = useUserConfigStore((s) => s.targetRatios)
   const navigate = useNavigate()
   const [pieOpen, setPieOpen] = useState(false)
   const [fundOpen, setFundOpen] = useState(false)
 
-  // PR1 修复 HOME-001：进入首页时若 store 无数据则自动拉取一次
+  // 1b4pr6b-recovery (2026-07-25)：同时触发于 ①首页 mount ②DataPage bumpRefresh()。
+  // 依赖列表改为 [refreshCounter]：store 默认 0 触发起始拉取，
+  // DataPage confirm 成功调 bumpRefresh → refreshCounter 递增 → 本 effect 重跑。
   useEffect(() => {
-    if (!snap && !loading && !error) {
-      fetchLatest(1)
-    }
+    if (error) return
+    if (loading) return
+    fetchLatest(1)
+    // fetchLatest 本身未含在 deps 不影响本 effect 语义
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [refreshCounter])
 
   // PR1 修复 HOME-003：加载中 → StateShell
   if (loading) {
@@ -519,7 +525,10 @@ export default function HomePage() {
 
   const categories = Array.isArray(snap.categories) ? snap.categories : []
   const sixCats = categories.filter((c) => !isBalanceCategory(c.categoryName))
-  const sixTotal = sumSixTotal(categories) || safeNumber(snap.sixCategoriesTotal, 0)
+  // 1b4pr6b-recovery (2026-07-25 03:30+)：优先信后端权威总额，仅在后端未传时才退到 sumSixTotal
+  // 防止 categories 数组漏类时，sumSixTotal 误把后端已算对的总额覆盖掉（原 bug）。
+  const sixTotal =
+    safeNumber(snap.sixCategoriesTotal, 0) || sumSixTotal(categories)
   const balanceTotal =
     sumBalanceTotal(categories) || safeNumber(snap.balanceFund, 0)
   const totalAll = sixTotal + balanceTotal

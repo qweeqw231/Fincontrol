@@ -261,3 +261,74 @@ useEffect(() => {
 ## 七、确认
 
 按用户原话"同意，全做，先落盘工作计划，然后是验收计划（均做更新），过程中的测试（重要）报告落盘C:\Users\lbc19\Desktop\Fincontrol\test\1b"，当前任务清单已建立，**接下来按 Step 顺序实施**。
+
+---
+
+## 八、收尾：pr6b 主页 固收类 缺失 bug 修复（2026-07-25 03:30+ · 1b4pr6b-recovery）
+
+> **会话时点**：2026-07-25 03:30
+> **触发条件**：联调验收 step 9 发现 homepage `六大类` 总值 6,433.22（应为 7,623.14），固收类 1,189.92 完全不出现在六大类分布
+> **根因**：Fix D（commit 92c66ad）`buildLatestResponse()` 只遍历原始 AssetSnapshot 构造 summary；而 AI 把"长城短债 A / 鹏华纯债 D / 安信新价值 A"误归为 A 股权益类，从未在 asset_snapshot 表写固收类行。response.categories 数组里**根本没有固收类 entry**。
+> **二次放大**：HomePage 用了 `sumSixTotal(categories) || snap.sixCategoriesTotal`；因为前者返回 6,433.22（5 类相加）是 truthy，把后端算对的 7,623.14 覆盖掉。
+
+### 8.1 修复步骤
+
+#### Step 17.1 后端 `SnapshotQueryService.buildLatestResponse()` —— 让响应 categories 始终含 7 大类（6 类 + 余额）
+
+- 不再只迭代 `snapshots`。改为：以 **effectiveByCat 全集（货币类/固收类/商品类/A股权益类/海外权益类/港股大中华类；余额类按 includeBalance）** 为权威 keySet 构造 summaries。
+- 对 `effectiveByCat` 中存在的 category：构造 summary，`categoryTotal = effectiveByCat.get(category)`，`funds = toFundDetailsWithOverride(...)`，fundCount = 该类下有效基金数。
+- 对**原始 snapshots 里也存在**的 category：补回 `updatedAt` 等元数据。
+- 对 effective 集合里有但 original snapshots 里没的（典型：固收类由 user_correct 引入）：直接生成新 summary。
+- 这样保证 `sum(response.categories.非余额.categoryTotal) === response.sixCategoriesTotal` 严格成立。
+
+#### Step 17.2 后端 `buildByDateResponse()` —— 同上修复
+
+#### Step 17.3 后端 `buildHistoryItem()` —— 同上修复（`categoryCount` 也按 effective 集计）
+
+#### Step 17.4 前端 `HomePage.jsx` —— 兜底优先信后端总额
+
+- 把 `const sixTotal = sumSixTotal(categories) || safeNumber(snap.sixCategoriesTotal, 0)`
+- 改为 `const sixTotal = safeNumber(snap.sixCategoriesTotal, 0) || sumSixTotal(categories)`
+- 这样即便后端 categories 又漏类，前端仍用后端权威总额兜底，避免再次出现"总额缩水"事故。
+
+#### Step 17.5 后端单测 `SnapshotQueryServiceTest` —— 补 1 用例
+
+- **`latest_userCorrectAddsNewCategory_固收类`**
+  - mock AssetSnapshot 仅含 5 大类（货币类/商品类/A股权益类/海外权益类/港股大中华类）+ 余额类
+  - mock userCorrectMap 含「鹏华纯债债券D → 固收类」「长城短债债券A → 固收类」「安信新价值灵活配置混合A → 固收类」
+  - mock asset_raw 三个对应行
+  - 断言：`resp.categories` 含固收类 entry、`categoryTotal == 1189.92`、`sixCategoriesTotal == 7623.14`、`totalAssetWithBalance == 7764.08`
+
+#### Step 17.6 重启后端 + 联调 curl 验证
+
+- `scripts/1b/restart-backend.ps1`
+- `curl 'http://localhost:8080/api/snapshot/latest?includeDetail=true' -H 'X-User-Id: 1'`
+- 断言：`categories` 数组长度 = 7（含固收类）、`sixCategoriesTotal == 7623.14`、`balanceFund == 140.94`、`totalAssetWithBalance == 7764.08`
+
+#### Step 17.7 重启前端 + 浏览器首页截图
+
+- `npm run dev`
+- 访问 `http://localhost:5174/`
+- 截图核对：固收类行出现、A股权益类从 1,882.50 降至 692.58、固收类 1,189.92、六大类合计 7,623.14、总资产 7,764.08、基金数 18+1
+
+#### Step 17.8 过程报告 + 验收签字
+
+- 续写 `test/1b/2026-07-25-1b4-pr6b-联调记录.md`（v4 收尾版）
+- 落 `docs/test-records/manual-tests/1b/2026-07-25_1b4-pr6b-acceptance-report.md`（V6 全绿）
+
+### 8.2 风险
+
+| 风险 | 缓解 |
+|---|---|
+| 响应 categories 多出"固收类 0"（极端场景：user 当天一个固收类都没有） | 0 金额类别不出现在分布（前端 `cTotal > 0` 已自然隐藏）；response 里仍保留以便后续扩展 |
+| `recomputeSixTotal` 路径切换导致老接口行为变化 | 总额字段保持兼容；categories 多一两条 entry 不影响按名字判断的各种 filter |
+| user_correctMap 缺失时退化 | 走"原始 snapshots"分支，单测 `latest_ratiosAreRecomputed` 已覆盖 |
+
+### 8.3 文件清单
+
+**修改**：
+- `fincontrol-backend/src/main/java/com/fincontrol/service/SnapshotQueryService.java`
+- `fincontrol-frontend/src/pages/HomePage.jsx`
+- `fincontrol-backend/src/test/java/com/fincontrol/service/SnapshotQueryServiceTest.java`
+
+**新增**：无

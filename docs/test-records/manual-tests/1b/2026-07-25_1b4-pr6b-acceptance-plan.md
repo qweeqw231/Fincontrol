@@ -16,7 +16,8 @@
 | 联调端到端（前端 + 后端） | V3 | 7 | ⏳ |
 | 双重计入修复 | V4 | 4 | ⏳ |
 | 消失-重现机制（R5 端到端） | V5 | 4 | ⏳ |
-| **合计** | V1-V5 | **45** | ⏳ |
+| **主页 固收类 缺失 bug 修复（1b4pr6b-recovery）** | **V6** | **8** | ⏳ |
+| **合计** | V1-V6 | **53** | ⏳ |
 
 ---
 
@@ -162,3 +163,66 @@
 - [ ] 决策 33 v2 标记为「✅ 已实施」（v1 标记为「v1 · 已实施」）
 - [ ] 工作计划 `2026-07-25_1b4-pr6b-work-plan.md` 标记为「✅ 已完成」
 - [ ] 联调记录 `2026-07-25-1b4-pr6b-联调记录.md` 最终版落盘
+
+---
+
+## 十一、V6 · 主页 固收类 缺失 bug 修复验收（8 用例 · 1b4pr6b-recovery）
+
+> **背景**：本章为 pr6b 验收阶段收尾。主页固收类金额从余额汇总中「消失」导致总额错位 1,189.92。本章验收标准是用户场景验证：「重跑后端 + 重启前端 + curl + 浏览器」四项同步验证。这与六件折中类错列（V4）是同源的，皆属于 **Fix D 不完整** 的违綤。
+
+### V6.1 后端 SnapshotQueryService 修改验收（2 用例）
+
+| ID | 测试 | 验收标准 | 通过 |
+|---|---|---|---|
+| V6.1.1 | **buildLatestResponse()不再只迭代 original snapshots** | curl `/api/snapshot/latest?includeDetail=true` 返回 categories 数组包含「固收类」entry 且 categoryTotal == 1189.92 | ☐ |
+| V6.1.2 | **buildByDateResponse() 同上** | curl `/api/snapshot/by-date/2026-07-24?includeBalance=true` 返回 categories 含「固收类」entry | ☐ |
+
+### V6.2 后端连续性验收（2 用例）
+
+| ID | 测试 | 验收标准 | 通过 |
+|---|---|---|---|
+| V6.2.1 | **sixCategoriesTotal 包含固收类后总额与 effective 集合一致** | curl latest → sixCategoriesTotal == 7623.14且 totalAssetWithBalance == 7764.08、balanceFund == 140.94 | ☐ |
+| V6.2.2 | **buildHistoryItem 的 categoryCount 能反咉 effective 集合** | curl `/api/snapshot/history?includeBalance=true` → 当前快照的 categoryCount == 7（含余额类） | ☐ |
+
+### V6.3 前端 HomePage 优先信后端总额验收（2 用例）
+
+| ID | 测试 | 验收标准 | 通过 |
+|---|---|---|---|
+| V6.3.1 | **HomePage 的 `sixTotal` 优先使用 snap.sixCategoriesTotal** | `sixTotal = safeNumber(snap.sixCategoriesTotal, 0) || sumSixTotal(categories)`（防后端漏类时总额错位） | ☐ |
+| V6.3.2 | **前端其它 sums仍然准确** | `formatYuan(totalAll)` === 7764.08、`formatYuan(sixTotal)` === 7623.14 | ☐ |
+
+### V6.4 后端单测验收（1 用例）
+
+| ID | 测试 | 验收标准 | 通过 |
+|---|---|---|---|
+| **V6.4.1** | **SnapshotQueryServiceTest.latest_userCorrectAddsNewCategory_固收类** | mock AssetSnapshot 仅 5 大类 + 余额类；mock userCorrectMap 添加 3 只【A 股 → 固收】，mock asset_raw 对应行；断言 `resp.categories` 有「固收类」且 total == 1189.92、sixCategoriesTotal == 7623.14、totalAssetWithBalance == 7764.08 | ☐ |
+
+### V6.5 端到端浏览器验收（1 用例）
+
+| ID | 测试 | 验收标准 | 通过 |
+|---|---|---|---|
+| **V6.5.1** | **主页正确显示固收类（其他 5 大类 + 余额类 + 总额）** | http://localhost:5174/ 截图：固收类行出现且金额 1,189.92；A股权益类从 1,882.50 隆至 692.58；六大类合计 7,623.14；总资产 7,764.08；基金数 18 + 1 余额。 | ☐ |
+
+### V6.6 重启验证（1 用例）
+
+| ID | 测试 | 验收标准 | 通过 |
+|---|---|---|---|
+| V6.6.1 | **mvn package + java -jar 后端重启及 curl 响应包含固收类** | `scripts/1b/restart-backend.ps1` 完成后，curl latest → 响应包含「固收类」entry且上述连续性验收三个值都对了 | ☐ |
+
+### V6.7 错误用例验收（1 用例）
+
+| ID | 测试 | 验收标准 | 通过 |
+|---|---|---|---|
+| V6.7.1 | **仅有 5 类原始快照的 user 不变** | 备份 DB 表后删除一个快照，确认响应还正常工作（不出现遗留 entry） | ☐ |
+
+### V6.8 验收依赖（V6 须走在其他验证之前）
+
+- 写在 V1-V5 之后验证，避免引入额外变动。
+- mvn test 全绿、DataPage 22 用例全绿后取 V6。
+
+### V6.9 文件依赖
+
+- `fincontrol-backend/src/main/java/com/fincontrol/service/SnapshotQueryService.java` — 修改
+- `fincontrol-frontend/src/pages/HomePage.jsx` — 修改
+- `fincontrol-backend/src/test/java/com/fincontrol/service/SnapshotQueryServiceTest.java` — 加 1 用例
+

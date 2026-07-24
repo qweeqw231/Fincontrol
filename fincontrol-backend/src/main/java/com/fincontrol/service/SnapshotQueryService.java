@@ -54,6 +54,16 @@ public class SnapshotQueryService {
     /** 6 大类合计除以自身的归一化基数 */
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
+    /**
+     * 1b4pr6b-recovery：6 大类 canonical 固定顺序，用于 buildCanonicalSummaries
+     * 使响应 categories 数组始终齐全 6 行，即使用原始 AssetSnapshot 都被 AI 误猜也补齐。
+     */
+    private static final List<String> CANONICAL_SIX_CATEGORIES = List.of(
+            "货币类", "固收类", "商品类", "A股权益类", "海外权益类", "港股大中华类");
+
+    /** 余额类单独处理。 */
+    private static final String BALANCE_CATEGORY = "余额类";
+
     private static final Logger log = LoggerFactory.getLogger(SnapshotQueryService.class);
 
     private final AssetSnapshotMapper assetSnapshotMapper;
@@ -124,13 +134,12 @@ public class SnapshotQueryService {
                 confirmedAt = snap.getUpdatedAt();
             }
         }
-        List<SnapshotCategorySummary> summaries = new ArrayList<>();
-        for (AssetSnapshot snap : snapshots) {
-            String cat = snap.getCategory();
-            if (!includeBalance && "余额类".equals(cat)) continue;
-            // 1b4pr6b Fix D 完整实现：传递 userCorrectMap 到 summary 生成
-            summaries.add(toCategorySummary(userId, snapshotDate, snap, sixTotal, balanceTotal, userCorrectMap, targetRatios, includeDetail));
-        }
+        // 1b4pr6b-recovery：始终输出 7 大类（6类+可选余额类）summary，含由 user_correct 引入的新类
+        // 不再只迭代原始 snapshots，新以 CANONICAL_SIX_CATEGORIES 为全集 key
+        List<SnapshotCategorySummary> summaries = buildCanonicalSummaries(
+                userId, snapshotDate, snapshots,
+                sixTotal, balanceTotal, userCorrectMap, targetRatios,
+                includeBalance, includeDetail);
         BigDecimal sixWithBalance = sixTotal.add(balanceTotal);
         return SnapshotLatestResponse.builder()
                 .snapshotDate(snapshotDate)
@@ -207,10 +216,120 @@ public class SnapshotQueryService {
     }
 
     /**
+     * 1b4pr6b-recovery (2026-07-25 03:30+)：
+     * 始终构造 6 大类 + （可选余额类）的 SnapshotCategorySummary。
+     * 即使用原始 AssetSnapshot 没某一类（例如 AI 将固收类三只都误判为 A 股权益类），
+     * 也会补一行 total=0 / fundCount=0 的 summary 使前端补齐。
+     * <p>与 Fix D 差异：不再只迭代原始 snapshots，新以 CANONICAL_SIX_CATEGORIES 为全集 key。
+     *
+     * @param snapshots         原始 AssetSnapshot（仅作为 noOverride 路径的中含 totalAmount / category 来源）
+     * @param sixTotal          已重算后的六大类合计（recomputeSixTotal 输出）
+     * @param balanceTotal      已重算后的余额类合计（recomputeBalanceTotal 输出；未含余额类查0）
+     * @param userCorrectMap    user_correct 覆盖映射（可能为空）
+     * @param targetRatios      六类目标比例
+     * @param includeBalance    是否含余额类行
+     * @param includeDetail     是否含 funds 明细
+     */
+    private List<SnapshotCategorySummary> buildCanonicalSummaries(
+            Long userId,
+            LocalDate snapshotDate,
+            List<AssetSnapshot> snapshots,
+            BigDecimal sixTotal,
+            BigDecimal balanceTotal,
+            Map<String, String> userCorrectMap,
+            Map<String, BigDecimal> targetRatios,
+            boolean includeBalance,
+            boolean includeDetail) {
+        boolean hasOverride = userCorrectMap != null && !userCorrectMap.isEmpty();
+
+        // no-override 路径：从原始 AssetSnapshot 取 categoryTotal
+        Map<String, BigDecimal> totalByCategoryFromSnap = new HashMap<>();
+        for (AssetSnapshot s : snapshots) {
+            totalByCategoryFromSnap.merge(s.getCategory(), nz(s.getTotalAmount()), BigDecimal::add);
+        }
+        // override 路径：提前采 effective / fund count 集
+        Map<String, BigDecimal> effectiveSixByCategory = hasOverride
+                ? aggregateByEffectiveCategory(userId, snapshotDate, userCorrectMap, true)
+                : Collections.emptyMap();
+        Map<String, BigDecimal> effectiveBalanceByCategory = hasOverride
+                ? aggregateByEffectiveCategory(userId, snapshotDate, userCorrectMap, false)
+                : Collections.emptyMap();
+        Map<String, Integer> effectiveFundCount = hasOverride
+                ? countFundsByEffectiveCategory(userId, snapshotDate, userCorrectMap)
+                : Collections.emptyMap();
+
+        List<SnapshotCategorySummary> summaries = new ArrayList<>(CANONICAL_SIX_CATEGORIES.size() + 1);
+
+        // 6 大类：始终输出（即使为 0）
+        for (String category : CANONICAL_SIX_CATEGORIES) {
+            BigDecimal total = hasOverride
+                    ? effectiveSixByCategory.getOrDefault(category, BigDecimal.ZERO)
+                    : totalByCategoryFromSnap.getOrDefault(category, BigDecimal.ZERO);
+            BigDecimal actualRatio = sixTotal.signum() == 0
+                    ? BigDecimal.ZERO
+                    : total.multiply(HUNDRED).divide(sixTotal, 2, RoundingMode.HALF_UP);
+            BigDecimal targetRatio = targetRatios.getOrDefault(category, BigDecimal.ZERO);
+            BigDecimal deviation = actualRatio.subtract(targetRatio);
+            Integer fundCount = hasOverride
+                    ? effectiveFundCount.getOrDefault(category, 0)
+                    : assetRawMapper.countFundsByUserAndDateAndCategory(userId, snapshotDate, category);
+            List<SnapshotFundDetail> funds = includeDetail
+                    ? toFundDetailsWithOverride(userId, snapshotDate, category, userCorrectMap)
+                    : null;
+            summaries.add(SnapshotCategorySummary.builder()
+                    .categoryName(category)
+                    .categoryTotal(total)
+                    .actualRatio(actualRatio)
+                    .targetRatio(targetRatio)
+                    .deviation(deviation)
+                    .fundCount(fundCount)
+                    .funds(funds)
+                    .build());
+        }
+        // 余额类：仅 includeBalance 时输出
+        if (includeBalance) {
+            BigDecimal total = hasOverride
+                    ? effectiveBalanceByCategory.getOrDefault(BALANCE_CATEGORY, BigDecimal.ZERO)
+                    : totalByCategoryFromSnap.getOrDefault(BALANCE_CATEGORY, BigDecimal.ZERO);
+            // 后端可能传入 0 余额类，但仍需以 user_correct 后为准
+            if (!hasOverride && balanceTotal != null) {
+                total = balanceTotal; // 迫位为最终送来的 balanceTotal
+            }
+            Integer fundCount = hasOverride
+                    ? effectiveFundCount.getOrDefault(BALANCE_CATEGORY, 0)
+                    : assetRawMapper.countFundsByUserAndDateAndCategory(userId, snapshotDate, BALANCE_CATEGORY);
+            List<SnapshotFundDetail> funds = includeDetail
+                    ? toFundDetailsWithOverride(userId, snapshotDate, BALANCE_CATEGORY, userCorrectMap)
+                    : null;
+            summaries.add(SnapshotCategorySummary.builder()
+                    .categoryName(BALANCE_CATEGORY)
+                    .categoryTotal(total)
+                    .actualRatio(null)    // 余额类不参与六大类配置
+                    .targetRatio(null)
+                    .deviation(null)
+                    .fundCount(fundCount)
+                    .funds(funds)
+                    .build());
+        }
+        return summaries;
+    }
+
+    /**
      * 1b4pr6b Fix D：按 effective category 计算六大类（不含余额类）总金额
      * 取代依赖 AssetSnapshot.totalAmount 的旧逻辑。
      */
     private BigDecimal recomputeSixTotal(Long userId, LocalDate snapshotDate, Map<String, String> userCorrectMap) {
+        // 无 user_correct 覆盖时,直接用 AssetSnapshot 总额(兼容 1a.4 老测试)
+        if (userCorrectMap == null || userCorrectMap.isEmpty()) {
+            List<AssetSnapshot> snaps = Optional.ofNullable(
+                    assetSnapshotMapper.selectLatestByUserAndDate(userId, snapshotDate))
+                    .orElse(Collections.emptyList());
+            return snaps.stream()
+                    .filter(s -> !"余额类".equals(s.getCategory()))
+                    .map(s -> nz(s.getTotalAmount()))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        // 有 user_correct 覆盖:按 effective raw 重新聚合
         Map<String, BigDecimal> byCat = aggregateByEffectiveCategory(userId, snapshotDate, userCorrectMap, true);
         BigDecimal sum = BigDecimal.ZERO;
         for (BigDecimal amt : byCat.values()) {
@@ -223,10 +342,19 @@ public class SnapshotQueryService {
      * 1b4pr6b Fix D：按 effective category 计算余额类总金额
      */
     private BigDecimal recomputeBalanceTotal(Long userId, LocalDate snapshotDate, Map<String, String> userCorrectMap) {
+        // 无 user_correct 覆盖:从 AssetSnapshot 取余额类总额
+        if (userCorrectMap == null || userCorrectMap.isEmpty()) {
+            List<AssetSnapshot> snaps = Optional.ofNullable(
+                    assetSnapshotMapper.selectLatestByUserAndDate(userId, snapshotDate))
+                    .orElse(Collections.emptyList());
+            return snaps.stream()
+                    .filter(s -> "余额类".equals(s.getCategory()))
+                    .map(s -> nz(s.getTotalAmount()))
+                    .findFirst()
+                    .orElse(BigDecimal.ZERO);
+        }
+        // 有 user_correct 覆盖:按 effective raw 重新聚合
         Map<String, BigDecimal> byCat = aggregateByEffectiveCategory(userId, snapshotDate, userCorrectMap, false);
-        // 如果有效余额被改去其它类，查询会返回空；为 0
-        // 如果有效余额还在余额类，查询返回 Map{余额类 -> total}
-        // 如果 user_correct 把某只基金从余额类改到其它类，那只基金不会出现在此 map
         return byCat.getOrDefault("余额类", BigDecimal.ZERO);
     }
 
@@ -248,10 +376,7 @@ public class SnapshotQueryService {
         return result;
     }
 
-    private SnapshotCategorySummary toCategorySummary(Long userId,
-                                                     LocalDate snapshotDate,
-                                                     AssetSnapshot snap,
-                                                     BigDecimal sixTotal,
+    private SnapshotCategorySummary toCategorySummary(Long userId,LocalDate snapshotDate,AssetSnapshot snap,BigDecimal sixTotal,
                                                      BigDecimal balanceTotal,
                                                      Map<String, String> userCorrectMap,
                                                      Map<String, BigDecimal> targetRatios,
@@ -265,16 +390,30 @@ public class SnapshotQueryService {
         // （从 asset_raw 按 effective 重新聚合出来的 Map 中取值）
         Map<String, BigDecimal> effectiveByCat;
         Map<String, Integer> effectiveCount;
-        if (isBalance) {
-            effectiveByCat = aggregateByEffectiveCategory(userId, snapshotDate, userCorrectMap, false);
-            effectiveCount = Map.of("余额类", effectiveByCat.containsKey("余额类")
-                    ? assetRawMapper.countFundsByUserAndDateAndCategory(userId, snapshotDate, "余额类")
-                    : 0);
+        BigDecimal total;
+        if (userCorrectMap == null || userCorrectMap.isEmpty()) {
+            // 无 user_correct 覆盖:直接用 AssetSnapshot 总额(兼容 1a.4 老测试)
+            total = nz(snap.getTotalAmount());
+            if (isBalance) {
+                effectiveCount = Map.of("余额类", 
+                    assetRawMapper.countFundsByUserAndDateAndCategory(userId, snapshotDate, "余额类"));
+            } else {
+                effectiveCount = Map.of(category, 
+                    assetRawMapper.countFundsByUserAndDateAndCategory(userId, snapshotDate, category));
+            }
+            effectiveByCat = Collections.emptyMap();
         } else {
-            effectiveByCat = aggregateByEffectiveCategory(userId, snapshotDate, userCorrectMap, true);
-            effectiveCount = countFundsByEffectiveCategory(userId, snapshotDate, userCorrectMap);
+            if (isBalance) {
+                effectiveByCat = aggregateByEffectiveCategory(userId, snapshotDate, userCorrectMap, false);
+                effectiveCount = Map.of("余额类", effectiveByCat.containsKey("余额类")
+                        ? assetRawMapper.countFundsByUserAndDateAndCategory(userId, snapshotDate, "余额类")
+                        : 0);
+            } else {
+                effectiveByCat = aggregateByEffectiveCategory(userId, snapshotDate, userCorrectMap, true);
+                effectiveCount = countFundsByEffectiveCategory(userId, snapshotDate, userCorrectMap);
+            }
+            total = effectiveByCat.getOrDefault(category, BigDecimal.ZERO);
         }
-        BigDecimal total = effectiveByCat.getOrDefault(category, BigDecimal.ZERO);
         // 如果该 snap 的 category 已无任何基金（全部被改走了），total = 0
         // 这时仍展示该 category（act as placeholder）但 fundCount=0
         Integer fundCount = effectiveCount.getOrDefault(category, 0);
@@ -433,12 +572,11 @@ public class SnapshotQueryService {
                 confirmedAt = snap.getUpdatedAt();
             }
         }
-        List<SnapshotCategorySummary> summaries = new ArrayList<>();
-        for (AssetSnapshot snap : snapshots) {
-            String cat = snap.getCategory();
-            if (!includeBalance && "余额类".equals(cat)) continue;
-            summaries.add(toCategorySummary(userId, date, snap, sixTotal, balanceTotal, userCorrectMap, targetRatios, false));
-        }
+        // 1b4pr6b-recovery：与 latest 一致始终输出 7 大类 summary
+        List<SnapshotCategorySummary> summaries = buildCanonicalSummaries(
+                userId, date, snapshots,
+                sixTotal, balanceTotal, userCorrectMap, targetRatios,
+                includeBalance, /* includeDetail */ false);
         return SnapshotByDateResponse.builder()
                 .snapshotDate(date)
                 .snapshotConfirmedAt(confirmedAt)
