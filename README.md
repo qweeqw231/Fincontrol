@@ -28,8 +28,10 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 | **1b.1** 前端骨架 + 全局状态管理 | done | [1b.1 验收报告](docs/test-records/manual-tests/1b/2026-07-21_phase1b1-acceptance-report.md) |
 | **1b.2** 首页资产总览 + Recharts 环形图 | pending | - |
 | **1b.3** 数据管理页（最复杂）| ✅ 已完成（P0–P7 全过） | [1b.3 验收报告](docs/test-records/manual-tests/1b/2026-07-22_phase1b3-acceptance-report.md) · [综合验收](docs/test-records/manual-tests/1b/2026-07-22_phase1b3-comprehensive-acceptance-report.md) |
-| **1b.4** AI 顾问页 | pending | - |
-| **Phase 1b 整体** | partial (1b.1 + 1b.3 / 4) | - |
+| **1b.4** 设计债务修复（重定义）| ✅ 已完成（7 个 PR 全收官：PR0→PR1→PR2→PR3→PR3+→PR3plus→PR4a→PR4 wrap-up→PR5；29 条 bug 全部关闭，需求 v1.0 冻结） | [PR4a 验收报告](docs/test-records/manual-tests/1b/2026-07-24_1b4-pr4a-acceptance-report.md) · [phase-1b.md](docs/phase-1/checklists/phase-1b.md) · [修复追踪表](docs/phase-1/checklists/2026-07-23_phase1b3-design-bug-list.md) |
+| **Phase 1b 整体** | ✅ 已收官（1b.1–1b.4 全完成，需求 v1.0 冻结，2026-07-24 退出） | [phase-1b.md](docs/phase-1/checklists/phase-1b.md) |
+| **1b.5** 数据管理完整流程（顺延，原 1b.20–1b.22）| ⏳ 待启动 | — |
+| **1b.6** AI 顾问完整版（顺延）| ⏳ 待启动 | — |
 | **Phase 2** 核心业务 | ⏳ 待启动 | — |
 
 **架构文档**：[技术设计文档 v2.0](docs/architecture/技术设计文档v2.docx)（2026-06-10）
