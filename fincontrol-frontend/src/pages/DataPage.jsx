@@ -794,7 +794,7 @@ export default function DataPage() {
                 </table>
               </div>
 
-              {/* 基金明细 - P6-2: 加 持有收益/累计收益 列 */}
+              {/* 决策 33 v2 · 预览 modal 表格（带 dropdown + 状态 + 操作 + D7 banner） */}
               <div className="overview-detail"
                 style={{ marginTop: '16px' }}>
                 <h3>基金明细（{parsedSummary.fundCount} 只）</h3>
@@ -802,22 +802,73 @@ export default function DataPage() {
                   <thead>
                     <tr>
                       <th>基金名称</th>
-                      <th>类别</th>
+                      <th>类别（dropdown）</th>
                       <th>金额（元）</th>
-                      <th>持有收益（元）</th>
-                      <th>累计收益（元）</th>
+                      <th>状态</th>
+                      <th>操作</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {parsedSummary.categories.flatMap((c) => (c.funds || []).map((f) => (
-                      <tr key={`${c.categoryName}-${f.fundName}`}>
-                        <td>{f.fundName}</td>
-                        <td>{c.categoryName}</td>
-                        <td>¥{Number(f.amount || 0).toFixed(2)}</td>
-                        <td>{f.holdingProfit == null ? '—' : `¥${Number(f.holdingProfit).toFixed(2)}`}</td>
-                        <td>{f.cumulativeProfit == null ? '—' : `¥${Number(f.cumulativeProfit).toFixed(2)}`}</td>
-                      </tr>
-                    )))}
+                    {parsedSummary.categories.flatMap((c) => (c.funds || []).map((f) => {
+                      const override = categoryOverrides[f.fundName]
+                      const dirty = categoryDirty[f.fundName]
+                      const dropdownVal = override ? override.category : (dirty || c.categoryName)
+                      const isOverridden = !!override
+                      const isDirty = !!dirty
+                      const saving = !!overridesSaving[f.fundName]
+                      const reConfirm = pendingReConfirms[f.fundName]
+                      return (
+                        <tr key={`${c.categoryName}-${f.fundName}`}
+                            className={isOverridden ? 'fund-row-verified' : 'fund-row-pending'}>
+                          <td>{f.fundName}</td>
+                          <td>
+                            {reConfirm && (
+                              <div className="modal-warning-banner re-confirm" style={{ marginBottom: 4 }}>
+                                ⚠ 上次确认 {reConfirm.lastSeenSnapshotDate}，可能于 {reConfirm.firstMissingSnapshotDate} 及之前清仓。本次确认后，日期会更新。
+                              </div>
+                            )}
+                            <select
+                              value={dropdownVal}
+                              disabled={saving}
+                              onChange={(e) => {
+                                const v = e.target.value
+                                if (v === c.categoryName) {
+                                  setCategoryDirty((d) => { const n = { ...d }; delete n[f.fundName]; return n })
+                                } else {
+                                  setCategoryDirty((d) => ({ ...d, [f.fundName]: v }))
+                                }
+                              }}
+                              data-testid={`category-select-${f.fundName}`}
+                            >
+                              {FUND_CATEGORIES.map((cat) => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td>¥{Number(f.amount || 0).toFixed(2)}</td>
+                          <td>
+                            {isOverridden ? (
+                              <span className="badge badge-verified" data-testid="status-verified">✅ 已确认</span>
+                            ) : (
+                              <span className="badge badge-guess" data-testid="status-guess">🤖 ai_guess</span>
+                            )}
+                          </td>
+                          <td>
+                            {isOverridden ? (
+                              <button className="link-btn" disabled={saving}
+                                onClick={() => resetOverride(f.fundName)}
+                                data-testid={`reset-btn-${f.fundName}`}>↺ 重置</button>
+                            ) : (
+                              <button className="primary-btn" disabled={!isDirty || saving}
+                                onClick={() => confirmOverride(f.fundName, dirty)}
+                                data-testid={`confirm-btn-${f.fundName}`}>
+                                {saving ? '提交中…' : '✓ 确认'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    }))}
                   </tbody>
                 </table>
               </div>
