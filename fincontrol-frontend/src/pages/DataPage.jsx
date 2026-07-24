@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
 import { apiClient } from '../api/client.js'
 import { ENDPOINTS } from '../api/endpoints.js'
+import { revokeAll, revokeOne } from '../utils/blob.js'
 
 /**
  * 1b.3 数据管理页
@@ -52,6 +53,8 @@ export default function DataPage() {
   useEffect(() => {
     fetchLatest(1)
     fetchMetaList()
+    // PR1 修复 GLOBAL-015：组件卸载时释放所有 blob URL，避免内存泄漏
+    return () => revokeAll(filePreviews)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -69,13 +72,19 @@ export default function DataPage() {
     }
   }
 
-  // 1b.3.6 文件选择
+  // 1b.3.6 文件选择（PR1 修复 GLOBAL-015：先释放旧的 blob URL，再创建新的）
   function handleFiles(e) {
     const list = Array.from(e.target.files || [])
+    if (list.length === 0) return
     if (list.length > 4) {
-      alert('最多 4 张图，已自动截取前 4 张')
+      setError(`最多 4 张图，当前选了 ${list.length} 张`)
+      return
     }
     const next = list.slice(0, 4)
+
+    // PR1：释放旧的 blob，避免泄漏
+    revokeAll(filePreviews)
+
     setFiles(next)
     setFilePreviews(next.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })))
     setStep('idle')
@@ -83,9 +92,11 @@ export default function DataPage() {
     setParsedAsset(null)
   }
 
+  // 1b.3.6 单张删除（PR1 修复 GLOBAL-015：释放被删的 blob URL）
   function removeFile(idx) {
-    const next = files.filter((_, i) => i !== idx)
-    setFiles(next)
+    const removed = filePreviews[idx]
+    if (removed) revokeOne(removed)
+    setFiles(files.filter((_, i) => i !== idx))
     setFilePreviews(filePreviews.filter((_, i) => i !== idx))
   }
 
@@ -156,7 +167,7 @@ export default function DataPage() {
     setShowConfirmModal(true)
   }
 
-  // 1b.3.8 confirm
+  // 1b.3.8 confirm（PR1 修复 GLOBAL-015：成功后释放所有 blob URL）
   async function confirm() {
     if (!parsedAsset) return
     setStep('confirming')
@@ -169,6 +180,8 @@ export default function DataPage() {
       setStep('confirmed')
       await fetchLatest(1)
       await fetchMetaList()
+      // PR1：释放所有 blob URL（成功后才清，避免预览阶段误释放）
+      revokeAll(filePreviews)
       setFiles([])
       setFilePreviews([])
       setParsedAsset(null)

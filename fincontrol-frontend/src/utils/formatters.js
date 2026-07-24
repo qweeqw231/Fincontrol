@@ -109,3 +109,41 @@ export function formatRatioSafe(p) {
   if (p == null) return '—';
   return Number(p).toFixed(2) + '%';
 }
+
+/**
+ * 把 axios error 转换为面向用户的友好文案（Phase 1b.4 PR1 · 修复 GLOBAL-007）
+ *
+ * - 避免暴露 axios stack / 业务码给最终用户
+ * - 未知错误返回通用文案
+ *
+ * 兼容：
+ *   - null / undefined         → "未知错误"
+ *   - string                   → 直接返回
+ *   - { code, message }        → 业务码映射（0 / 4xx / 5xx）
+ *   - { message: long string } → 通用文案（避免暴露 stack）
+ *   - { message: short string }→ 透传（业务友好提示）
+ */
+export function friendlyError(err) {
+  if (err == null) return '未知错误'
+  if (typeof err === 'string') return err
+
+  // 业务错误：{ code, message }
+  if (typeof err.code === 'number') {
+    if (err.code === 0) return '网络异常，请检查后端服务'
+    if (err.code >= 400 && err.code < 500) return '请求参数错误'
+    if (err.code >= 500) return '服务器错误，请稍后重试'
+    if (err.message) return err.message
+    return '请求失败'
+  }
+
+  // axios 错误：err.message 可能含 stack
+  if (
+    err.message &&
+    err.message.length < 80 &&
+    !err.message.includes('\n')
+  ) {
+    return err.message
+  }
+
+  return '加载失败，请稍后重试'
+}

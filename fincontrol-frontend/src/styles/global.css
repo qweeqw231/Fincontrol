@@ -1,6 +1,8 @@
 /* =========================================================================
  * FinControl 全局 reset + 基础排版 + 1b.3 视觉补救样式
  * 数据口径和颜色参考 docs/requirements/2026-07-22_fincontrol-page-requirements.md
+ * =========================================================================
+ * 2026-07-24 PR1 追加：StateShell 三态视觉统一（修复 HOME-003）
  * ========================================================================= */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -213,9 +215,63 @@ table { border-collapse: collapse; width: 100%; position: relative; z-index: 1; 
 .empty, .loading, .error { color: #8C8C8C; font-size: 13px; text-align: center; padding: 20px; }
 .error { color: #FF4D4F; }
 
+/* ============================================================
+ * PR1 修复 HOME-003：StateShell 三态视觉统一
+ * ============================================================ */
+.state-shell {
+  background: #fff;
+  border-radius: 8px;
+  padding: 64px 32px;
+  margin: 16px 0;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+.state-icon {
+  font-size: 64px;
+  line-height: 1;
+  margin-bottom: 16px;
+}
+.state-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #262626;
+  margin-bottom: 8px;
+}
+.state-sub {
+  font-size: 14px;
+  color: #595959;
+  margin-bottom: 24px;
+  line-height: 1.6;
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.state-action {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+.state-action .primary-btn {
+  background: #0A59F7;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.state-action .primary-btn:hover {
+  background: #0847c4;
+}
+
 @media (max-width: 960px) {
   .stat-row { grid-template-columns: 1fr; }
   .two-col { grid-template-columns: 1fr; }
   .quick-actions { grid-template-columns: 1fr; }
   .six-pie-row { flex-direction: column; }
+  .state-shell { padding: 40px 20px; }
+  .state-icon { font-size: 48px; }
+  .state-title { font-size: 18px; }
 }

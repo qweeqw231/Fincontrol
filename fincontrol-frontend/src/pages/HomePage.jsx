@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
 import { useUserConfigStore } from '../stores/userConfigStore.js'
 import { useNavigate } from 'react-router-dom'
 import { CumulativeReturnCard } from '../components/CumulativeReturnCard.jsx'
+import { StateShell } from '../components/home/StateShell.jsx'
 import {
   formatYuan,
   formatSignedAmount,
   formatSignedPercent,
   formatRatioSafe,
   safeNumber,
+  friendlyError,
   getCategoryColor,
   getCategoryFundCount,
   getTotalFundCount,
@@ -454,40 +456,63 @@ export default function HomePage() {
   const ops = useAssetSnapshotStore((s) => s.operationsRecent)
   const loading = useAssetSnapshotStore((s) => s.loading)
   const error = useAssetSnapshotStore((s) => s.error)
+  const fetchLatest = useAssetSnapshotStore((s) => s.fetchLatest)
   // 1b.3.15：目标比例从 userConfigStore 订阅（DATA-G-004：user_config 为权威源）
   const storedTargetRatios = useUserConfigStore((s) => s.targetRatios)
   const navigate = useNavigate()
   const [pieOpen, setPieOpen] = useState(false)
   const [fundOpen, setFundOpen] = useState(false)
 
+  // PR1 修复 HOME-001：进入首页时若 store 无数据则自动拉取一次
+  useEffect(() => {
+    if (!snap && !loading && !error) {
+      fetchLatest(1)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // PR1 修复 HOME-003：加载中 → StateShell
   if (loading) {
-    return <div className="page-shell"><div className="empty">加载中...</div></div>
+    return <StateShell icon="⏳" title="加载中..." sub="正在拉取最新快照" />
   }
+
+  // PR1 修复 HOME-003 + GLOBAL-007：错误 → StateShell + friendlyError + 重试按钮
   if (error) {
     return (
-      <div className="page-shell">
-        <div className="error">加载失败：{String(error)}</div>
-      </div>
+      <StateShell
+        icon="⚠️"
+        title="加载失败"
+        sub={friendlyError(error)}
+        action={
+          <button
+            className="primary-btn"
+            onClick={() => fetchLatest(1)}
+            type="button"
+          >
+            重试
+          </button>
+        }
+      />
     )
   }
+
+  // PR1 修复 HOME-002 + HOME-003：空 → StateShell + 立即上传按钮
   if (!snap) {
     return (
-      <div className="page-shell">
-        <header className="app-header">
-          <div className="brand">
-            <span className="logo">💰</span>
-            <div className="brand-text">
-              <h1>FinControl</h1>
-              <div className="sub">个人资产配置全景 · 支付宝快照</div>
-            </div>
-          </div>
-          <div className="meta">
-            <div className="date">—</div>
-            <div>来源：支付宝</div>
-          </div>
-        </header>
-        <div className="empty">暂无快照数据，请先到 /data 上传资产截图。</div>
-      </div>
+      <StateShell
+        icon="📊"
+        title="暂无资产快照"
+        sub="上传 4 张支付宝基金截图，自动解析你的六大类配置"
+        action={
+          <button
+            className="primary-btn"
+            onClick={() => navigate('/data')}
+            type="button"
+          >
+            立即上传 →
+          </button>
+        }
+      />
     )
   }
 
@@ -574,13 +599,13 @@ export default function HomePage() {
           </div>
           <div className="note-box" style={{ marginBottom: 0 }}>
             <div className="note-title">📌 数据口径</div>
-            “六大类”仅含货币类、固收类、商品类、A股权益类、海外权益类、港股大中华类。
+            "六大类"仅含货币类、固收类、商品类、A股权益类、海外权益类、港股大中华类。
             余额类不参与占六大类比例与目标偏差；首页所有金额、收益、基金数均绑定
             <code style={{ background: '#fff', padding: '0 4px' }}>
               snapshot_meta.is_current
             </code>
-            对应日期，避免跨日累加。基金明细“类内占比”分母为大类金额；配置表
-            “占六大类”分母为六大类总值；零值（如 +3.84 + -3.84）须显示
+            对应日期，避免跨日累加。基金明细"类内占比"分母为大类金额；配置表
+            "占六大类"分母为六大类总值；零值（如 +3.84 + -3.84）须显示
             <code style={{ background: '#fff', padding: '0 4px' }}>0.00</code>
             ，未知的 null 才显示
             <code style={{ background: '#fff', padding: '0 4px' }}>—</code>。
