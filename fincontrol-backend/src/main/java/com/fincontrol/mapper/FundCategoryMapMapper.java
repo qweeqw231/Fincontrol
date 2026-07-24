@@ -86,4 +86,14 @@ public interface FundCategoryMapMapper extends BaseMapper<FundCategoryMap> {
     int deleteByUserAndFundName(
             @Param("userId") Long userId,
             @Param("fundName") String fundName);
+
+    /**
+     * 1b4pr6b 决策 33 D7（R5）：锚点计算 - 用户的 fund_category_map 中所有 last_seen_snapshot_date 的最大值。
+     * 若全为 NULL（首次 confirm 或全表无数据），返 null。
+     * 用于判断本次 confirm 是否推进锚点（snapshotDate >= anchorDate 才触发 R5）。
+     */
+    @org.apache.ibatis.annotations.Select(
+        "SELECT MAX(last_seen_snapshot_date) FROM fund_category_map WHERE user_id = #{userId}"
+    )
+    java.time.LocalDate selectMaxLastSeenSnapshotDate(@Param("userId") Long userId);
 }

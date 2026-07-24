@@ -76,6 +76,8 @@ class SnapShotConfirmServiceP7Test {
                 dedupEngine, snapshotMetaMapper, settingsService);
         // 1a.3 镜像校验：写新批次前先翻 is_latest（无 existing 行时返回 0）
         when(assetRawMapper.updateIsLatestBySnapshotDate(anyLong(), any(LocalDate.class))).thenReturn(0);
+        // 决策 33 D4：writeAssetSnapshot 同样需要在循环前清旧行
+        when(assetSnapshotMapper.updateIsLatestBySnapshotDate(anyLong(), any(LocalDate.class))).thenReturn(0);
         // 维度 E 检测：本测试不需要 existing fund
         when(fundCategoryMapMapper.selectFundNamesByUserAndSnapshotDate(anyLong(), any(LocalDate.class)))
                 .thenReturn(Collections.emptySet());

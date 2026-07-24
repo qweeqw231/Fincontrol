@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -139,6 +140,8 @@ public class SnapShotConfirmService {
         int assetRawInserted = writeAssetRaw(req, dedup);
         int assetSnapshotUpserted = writeAssetSnapshot(req, dedup);
         int fundMapUpserted = writeFundCategoryMap(req, dedup);
+        // 决策 33 D7（R5）：消失-重现机制 - 仅在 isAnchorUpdate 时更新 last_seen / first_missing
+        int r5Updated = detectAndUpdateDisappearReappear(req, dedup);
         // 1b.3.2 决策 27：写 snapshot_meta 元数据（per-date is_latest + cross-date is_current）
         int snapshotMetaUpserted = writeSnapshotMeta(req, dedup);
 
@@ -249,6 +252,8 @@ public class SnapShotConfirmService {
     }
 
     private int writeAssetSnapshot(SnapshotConfirmRequest req, DedupResult dedup) {
+        // 决策 33 D4：与 writeAssetRaw 对称，写新批次前先翻旧 asset_snapshot 行 is_latest=false
+        assetSnapshotMapper.updateIsLatestBySnapshotDate(req.getUserId(), req.getSnapshotDate());
         int count = 0;
         // 1a.9：从 dedup 结果获取 totalAssetSource（“top” 或 “visible_sum”）；所有 category 行同值
         String totalAssetSource = dedup.merged().getTotalAssetSource() != null
@@ -350,6 +355,94 @@ public class SnapShotConfirmService {
     // ========================================================================
     // 镜像校验
     // ========================================================================
+
+    // ========================================================================
+    // 决策 33 D7：消失-重现机制（R5）
+    //   锉点 = MAX(last_seen_snapshot_date) for user_id
+    //   仅当 snapshotDate >= anchorDate（isAnchorUpdate=true）时执行 forward inference
+    //   历史回填（snapshotDate < anchorDate）仅入库，不修改 last_seen / first_missing
+    // ========================================================================
+
+    /**
+     * 决策 33 D7（R5）：锉点计算 + 消失-重现检测。
+     * <p>仅在 {@code snapshotDate >= anchorDate}（isAnchorUpdate）时执行 forward inference：
+     * <ul>
+     *   <li>本次出现 → 更新 last_seen_snapshot_date</li>
+     *   <li>本次出现 + 之前 first_missing 非 NULL → 清 first_missing（重现事件）</li>
+     *   <li>本次未出现 + last_seen ≤ snapshotDate + first_missing 为 NULL → 标记 first_missing</li>
+     *   <li>历史回填 → 仅入库，锉点不变</li>
+     * </ul>
+     * <p>返回更新的记录数（调试用）。
+     */
+    private int detectAndUpdateDisappearReappear(SnapshotConfirmRequest req, DedupResult dedup) {
+        LocalDate snapshotDate = req.getSnapshotDate();
+        Long userId = req.getUserId();
+
+        LocalDate anchorDate = fundCategoryMapMapper.selectMaxLastSeenSnapshotDate(userId);
+        boolean isAnchorUpdate = anchorDate == null || !snapshotDate.isBefore(anchorDate);
+
+        if (!isAnchorUpdate) {
+            log.info("决策 33 D7 (R5): 回填 snapshotDate={} < anchorDate={}，跳过锉点更新",
+                    snapshotDate, anchorDate);
+            return 0;
+        }
+
+        Set<String> currentFunds = req.getParsedAssets().stream()
+                .filter(java.util.Objects::nonNull)
+                .flatMap(a -> Optional.ofNullable(a.getCategories()).orElse(Collections.emptyList()).stream())
+                .filter(java.util.Objects::nonNull)
+                .flatMap(c -> Optional.ofNullable(c.getFunds()).orElse(Collections.emptyList()).stream())
+                .filter(java.util.Objects::nonNull)
+                .map(FundLine::getFundName)
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toSet());
+
+        List<String> knownFundNames = fundCategoryMapMapper.selectFundNamesByUser(userId);
+        int updated = 0;
+        int reappeared = 0;
+        int newlyDisappeared = 0;
+
+        for (String fundName : knownFundNames) {
+            FundCategoryMap rec = fundCategoryMapMapper.selectByUserAndFundName(userId, fundName);
+            if (rec == null) continue;
+
+            if (currentFunds.contains(fundName)) {
+                // 本次出现 → 更新 last_seen_snapshot_date
+                boolean wasFirstMissing = rec.getFirstMissingSnapshotDate() != null;
+                rec.setLastSeenSnapshotDate(snapshotDate);
+                if (wasFirstMissing) {
+                    // 重现事件：清 first_missing_snapshot_date
+                    rec.setFirstMissingSnapshotDate(null);
+                    reappeared++;
+                    log.info("决策 33 D7 (R5): 基金 {} 重现（previous first_missing={}），清 first_missing_snapshot_date",
+                            fundName, snapshotDate);
+                }
+                fundCategoryMapMapper.updateById(rec);
+                updated++;
+            } else {
+                // 本次未出现 → 可能是清仓
+                if (rec.getLastSeenSnapshotDate() != null
+                        && !rec.getLastSeenSnapshotDate().isAfter(snapshotDate)) {
+                    if (rec.getFirstMissingSnapshotDate() == null) {
+                        // 第一次发现消失
+                        rec.setFirstMissingSnapshotDate(snapshotDate);
+                        fundCategoryMapMapper.updateById(rec);
+                        updated++;
+                        newlyDisappeared++;
+                        log.info("决策 33 D7 (R5): 基金 {} 在 snapshotDate={} 第一次发现消失",
+                                fundName, snapshotDate);
+                    }
+                    // 否则 first_missing 已有 → 保持（不要覆盖原始发现日）
+                }
+            }
+        }
+
+        log.info("决策 33 D7 (R5): snapshotDate={} anchorDate={} updated={} reappeared={} newlyDisappeared={}",
+                snapshotDate, anchorDate, updated, reappeared, newlyDisappeared);
+        return updated;
+    }
 
     private void verifyMirror(SnapshotConfirmRequest req, DedupResult dedup) {
         // 校验 1: fund_category_map 中的 fund_name 集合 = asset_raw 中的 fund_name 集合

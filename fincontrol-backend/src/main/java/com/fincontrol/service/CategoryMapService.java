@@ -122,6 +122,9 @@ public class CategoryMapService {
                         .category(row.getCategory())
                         .source(row.getSource())
                         .confirmedAt(row.getConfirmedAt())
+                        // 决策 33 D7（R5）：填充消失-重现状态字段
+                        .lastSeenSnapshotDate(row.getLastSeenSnapshotDate())
+                        .firstMissingSnapshotDate(row.getFirstMissingSnapshotDate())
                         .build());
             }
         }

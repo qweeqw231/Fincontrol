@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -42,4 +43,20 @@ public class FundCategoryMap {
     /** 1a.8.8：最近一次出现在截图中的时间。stale 判定 + re-confirm 去弹窗。 */
     @TableField("last_seen_at")
     private LocalDateTime lastSeenAt;
+
+    /**
+     * 1b4pr6b 决策 33 D7（R5）：上次有该基金的 confirm snapshot_date。
+     * 锚点计算 = MAX(last_seen_snapshot_date) for user_id。
+     * 仅在 isAnchorUpdate（snapshotDate >= anchorDate）的 confirm 中更新。
+     */
+    @TableField("last_seen_snapshot_date")
+    private LocalDate lastSeenSnapshotDate;
+
+    /**
+     * 1b4pr6b 决策 33 D7（R5）：第一次发现该基金缺失的 confirm snapshot_date。
+     * 重现时（snapshotDate >= anchorDate 且 fund 重新出现）被清空。
+     * 前端 preview modal 用此字段渲染「您可能于 t1 之前清仓」黄色 banner。
+     */
+    @TableField("first_missing_snapshot_date")
+    private LocalDate firstMissingSnapshotDate;
 }

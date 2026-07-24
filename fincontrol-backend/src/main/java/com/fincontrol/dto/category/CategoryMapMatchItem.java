@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -31,4 +32,17 @@ public class CategoryMapMatchItem {
     private String source;
 
     private LocalDateTime confirmedAt;
+
+    /**
+     * 1b4pr6b 决策 33 D7（R5）：上次有该基金的 confirm snapshot_date。
+     * 前端 preview modal 用此字段判断是否在「消失-重现」状态。
+     */
+    private LocalDate lastSeenSnapshotDate;
+
+    /**
+     * 1b4pr6b 决策 33 D7（R5）：第一次发现该基金缺失的 confirm snapshot_date。
+     * NULL = 当前未处于缺失状态。
+     * 非 NULL = 之前消失过，前端需渲染「您可能于 t1 之前清仓」黄色 banner。
+     */
+    private LocalDate firstMissingSnapshotDate;
 }
