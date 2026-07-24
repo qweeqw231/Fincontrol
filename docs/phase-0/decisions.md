@@ -1369,6 +1369,48 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 
 ---
 
+## 决策 29：端口统一 5173（Vite default，1b.4 起）（2026-07-24）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- 1b.2 / 1b.3 阶段为避开 vite dev 冲突，前端端口被临时改为 `5174`（写入 `vite.config.js`）
+- 2026-07-24 1b.4 PR2 用户反馈 "我自己也访问不了前端" + 要求把所有相关配置改回 5173
+- 5174 是临时测试端口（仅 1b.2/1b.3 使用），无历史价值，统一回 Vite 默认 5173 是用户强制要求
+- PR2 commit `fe6a0a2` 未动端口（聚焦 token 重构），envfix commit `a6329f0` 落盘端口统一
+
+**决策**：
+
+> 1b.4+ 起所有前端开发服务器统一回 **Vite 默认 5173**。`5174` 仅在 5173 端口被占用时作为临时 fallback（且**必须**同步改 `vite.config.js` 的 `server.port` 与本决策注释）。
+
+**实现位置**：
+- `fincontrol-frontend/vite.config.js`：`port: 5174` → `port: 5173`（加注释说明 5174 是 1b.2/1b.3 临时端口）
+- `docs/SETUP.md`：文字 "修改 `server.port: 5174`" → "Vite 默认端口；若占用改为 5174 等并同步改 `vite.config.js` 的 `server.port`"
+- `docs/test-records/manual-tests/1b/2026-07-22_phase1b2-acceptance-plan.md` 等 4 个 1b.2/1b.3 历史报告里 "访问 localhost:5174"：**不动**（历史档案保留当时端口）
+
+**理由**：
+- Vite 默认 5173 是社区共识，与 React/Vue 模板、`npm run dev` 默认行为对齐
+- 端口冲突时 fallback 链（kill / `--port` flag / 改 vite.config.js）已成熟，不需要"专属 5174"作为占位
+- 文档 + 配置双改保证团队 onboarding 零歧义（新 dev 跑 `npm run dev` 即可访问 5173）
+
+**回退条件**：
+- 1b.4+ 期间若发现 5173 被其他服务长期占用 → 临时改 5174 并在 commit message 注明「5173 conflict」
+- 不建立 "5174 = 1b.4 默认" 之类的子约定（避免再次漂移）
+
+**关联 commit**：
+- `a6329f0` fix(1b.4-PR2.envfix): 端口 5174→5173 + jsdom env 修复（5 files / +1235 -1020）
+- `0939928` fix(1b.4-PR2.hotfix): 恢复 .cat-detail-table 块（不涉及端口）
+
+**影响**：
+- 1b.4+ 阶段所有 dev workflow 走 5173
+- 1b.5+/1b.6+ 阶段验收报告默认 URL 改写为 `http://localhost:5173/`
+- 与 Vite 社区文档、所有 npm 模板默认对齐，新成员上手零学习成本
+
+*最近更新：2026-07-24 15:16 决策 29 落地（端口统一 5173，1b.4 起）*
+*触发：1b.4 PR2 用户反馈 "我自己也访问不了前端"，明令改回 5173 并要求相关配置全部更正*
+
+---
+
 ## 决策总结表（追加后）
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
@@ -1401,3 +1443,4 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 | 26 | parse 模式开关 single \| multi（前端 toggle）| ✅ | 1b.2 验证稳定性 | 1b.2 |
 | 27 | is_latest 双层语义 + 跨日期 is_current | 🚧 | 1b.2 5-Fund 状态覆盖 Bug | f42b323 |
 | 28 | AI vision 前端 timeout 临时延长 60s→120s + 基金分类映射不自动升级（1b.3 P7）| ✅ | 1b.3 P7 联调 | a83bbd3 |
+| 29 | 端口统一 5173（Vite default，1b.4 起）| ✅ | 1b.4 PR2 用户反馈"我访问不了前端" | a6329f0 |
