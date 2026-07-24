@@ -30,6 +30,13 @@ import java.util.stream.Collectors;
  *   <li><b>E. 同 snapshot_date 已存在</b>：警告 + 用户确认 overwrite
  * </ul>
  *
+ * <p>1b.4-pr3plus 决策 32：维度 D 冲突不再抛 500（之前 14号 报 500 真根因），改为：
+ * <ol>
+ *   <li>优先采纳 user_correct 的 category（fund_category_map 中 source='user_correct' 的行）</li>
+ *   <li>未命中则保留首次出现的 category（LinkedHashMap putIfAbsent 语义）</li>
+ *   <li>记一条 CATEGORY_CONFLICT warning（含 fundName / keptCategory / aiCategory / resolution）</li>
+ * </ol>
+ *
  * <p>纯 Java 函数式 — 无 Spring 依赖 — 单测独立可跑。
  *
  * <p>设计详见：{@code docs/phase-1/designs/1a3-dedup-strategy.md}
@@ -65,6 +72,10 @@ public class DedupEngine {
     public record DedupInput(
             List<ParsedAsset> parsedAssets,                  // 1a.3 confirm 接收的 N 条 ParsedAsset
             Set<String> existingFundNamesForSnapshot,        // 维度 C 检测（库中已存在的 fund_name 集合）
+            // 1b.4-pr3plus 决策 32：fund_name → user_correct category 映射。维度 D 冲突时优先采纳
+            // user_correct 的 category（用户手动确认的映射）；未命中则保留首次出现的 category。
+            // 调用方从 fund_category_map 读 source='user_correct' 行构造；可为空。
+            Map<String, String> existingUserCorrectCategories,
             LocalDate snapshotDate,                          // 维度 E 检测键
             boolean confirmedOverwrite                       // 维度 E 标志
     ) {}
@@ -94,8 +105,14 @@ public class DedupEngine {
     /**
      * 主 dedup 入口。
      *
+     * <p>维度 D 冲突不再抛异常（1b.4-pr3plus 决策 32），改为：
+     * <ul>
+     *   <li>user_correct 优先 → 用 user_correct 的 category 覆盖 existing</li>
+     *   <li>未命中 user_correct → 保留首次出现的 category（LinkedHashMap putIfAbsent）</li>
+     *   <li>记 CATEGORY_CONFLICT warning（含 resolution=kept_first / resolved_by_user_correct）</li>
+     * </ul>
+     *
      * @return DedupResult.merged 永远是 1 个 ParsedAsset（如全 drop 则 categories=[]）
-     * @throws BusinessException 仅在维度 D 出现 fund_name 跨 category 冲突时（数据矛盾）抛 1001
      */
     public DedupResult deduplicate(DedupInput input) {
         if (input.parsedAssets() == null || input.parsedAssets().isEmpty()) {
@@ -161,15 +178,39 @@ public class DedupEngine {
                         mergedFunds.put(key, new MergedFund(
                                 key, categoryName, fund.getAmount(), holding, cumulative,
                                 Boolean.TRUE.equals(fund.getIsUserConfirmed()), fund.getConfirmedAt()));
-                    } else {
-                        // 维度 D 检查：同 fund_name 的两条完整记录若 category 不同，数据冲突。
-                        if (!Objects.equals(existing.categoryName, categoryName)) {
-                            throw new BusinessException(
-                                    ErrorCode.INTERNAL_ERROR,
-                                    "fund '" + key + "' 在 " + existing.categoryName + " 与 " + categoryName + " 之间冲突"
-                            );
+                    } else if (!Objects.equals(existing.categoryName, categoryName)) {
+                        // 1b.4-pr3plus 决策 32：维度 D 冲突 → 优先采纳 user_correct 的 category。
+                        // 1) fund_category_map.source='user_correct' 有该 fund → 以 user_correct 为准
+                        // 2) 无 user_correct → 保留首次出现的 category（LinkedHashMap putIfAbsent 语义），
+                        //    记一条 CATEGORY_CONFLICT warning，不阻塞入库
+                        String userCorrectCategory = input.existingUserCorrectCategories() == null
+                                ? null
+                                : input.existingUserCorrectCategories().get(key);
+                        if (userCorrectCategory != null
+                                && !Objects.equals(userCorrectCategory, existing.categoryName)) {
+                            // 采纳 user_correct：覆盖 existing.categoryName，amount/holding/cumulative
+                            // 用 AI 最新值（后入优先）。context 记下 "ai原猜" 用于 UI 提示。
+                            log.info("dedup CATEGORY_CONFLICT resolved by user_correct: fund='{}' ai='{}' → user_correct='{}' (ai_rejected='{}')",
+                                    key, categoryName, userCorrectCategory, existing.categoryName);
+                            existing.categoryName = userCorrectCategory;
+                            existing.amount = fund.getAmount();
+                            existing.profit = holding;
+                            existing.holdingProfit = holding;
+                            existing.cumulativeProfit = cumulative;
+                            existing.userConfirmed = Boolean.TRUE.equals(fund.getIsUserConfirmed());
+                            existing.confirmedAt = fund.getConfirmedAt();
+                            addCategoryConflictWarning(warnings, key, existing.categoryName,
+                                    categoryName, "resolved_by_user_correct", userCorrectCategory);
+                        } else {
+                            // 无 user_correct（或 user_correct == existing）→ 保留首次，丢弃后来重复
+                            log.warn("dedup CATEGORY_CONFLICT: fund='{}' 已在 category='{}' 出现过，"
+                                    + "AI 又把它分到 category='{}'，保留首次并跳过",
+                                    key, existing.categoryName, categoryName);
+                            addCategoryConflictWarning(warnings, key, existing.categoryName,
+                                    categoryName, "kept_first", null);
                         }
-                        // 维度 C：两条都完整时后入优先（覆盖 amount / holding / cumulative）。
+                    } else {
+                        // 维度 C：两条都完整且 category 相同 → 后入优先（覆盖 amount / holding / cumulative）。
                         existing.amount = fund.getAmount();
                         existing.profit = holding;
                         existing.holdingProfit = holding;
@@ -371,6 +412,44 @@ public class DedupEngine {
                 "忽略不完整基金记录 fund='" + (fundName == null ? "<missing>" : fundName)
                         + "' missing=" + missingFields,
                 context));
+    }
+
+    /**
+     * 1b.4-pr3plus 决策 32：维度 D 冲突的 CATEGORY_CONFLICT warning helper。
+     * <ul>
+     *   <li>resolution="kept_first"：AI 重复分类被忽略，保留首次出现的 category</li>
+     *   <li>resolution="resolved_by_user_correct"：采纳 user_correct 的 category 覆盖</li>
+     * </ul>
+     * @param warnings      dedup 报告的 warning 列表
+     * @param fundName      冲突的基金名
+     * @param keptCategory  保留/采纳的 category（kept_first 为首次 category，user_correct 为用户映射）
+     * @param aiCategory    AI 后入的 category（被忽略 / 被覆盖）
+     * @param resolution    {@code kept_first} | {@code resolved_by_user_correct}
+     * @param userCorrect   若 resolution=user_correct 传用户映射的 category；否则传 null
+     */
+    private static void addCategoryConflictWarning(List<DedupWarning> warnings,
+                                                   String fundName,
+                                                   String keptCategory,
+                                                   String aiCategory,
+                                                   String resolution,
+                                                   String userCorrect) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("fundName", fundName);
+        context.put("keptCategory", keptCategory);
+        context.put("aiCategory", aiCategory);
+        context.put("resolution", resolution);
+        if (userCorrect != null) {
+            context.put("userCorrect", userCorrect);
+        }
+        String message;
+        if ("resolved_by_user_correct".equals(resolution)) {
+            message = "fund '" + fundName + "' 跨 category 冲突，采纳 user_correct 映射 → '"
+                    + keptCategory + "'（AI 猜 '" + aiCategory + "' 被覆盖）";
+        } else {
+            message = "fund '" + fundName + "' 跨 category 冲突（AI 猜 '" + aiCategory
+                    + "' 与已有 '" + keptCategory + "'），保留首次并跳过";
+        }
+        warnings.add(new DedupWarning("CATEGORY_CONFLICT", message, context));
     }
 
     private static List<String> missingFields(String categoryName, FundLine fund) {

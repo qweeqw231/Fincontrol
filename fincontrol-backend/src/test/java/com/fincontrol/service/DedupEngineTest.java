@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +26,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * DedupEngine 单测 — 5 维度 dedup 完整覆盖。
  *
  * <p>对应设计文档：{@code docs/phase-1/designs/1a3-dedup-strategy.md} §3.3。
+ *
+ * <p>1b.4-pr3plus 决策 32 更新：
+ * <ul>
+ *   <li>DedupInput 新增 existingUserCorrectCategories 第 3 参</li>
+ *   <li>维度 D 冲突不再抛异常（保留首次 + CATEGORY_CONFLICT warning）</li>
+ *   <li>user_correct 优先采纳（如有）</li>
+ * </ul>
  *
  * <p>维度 B（同 SHA256）暂未实现 — 留 1a.4 接入真实 SHA256 后启用。
  * 当前 DedupEngine 中 B 维度无代码，测试 2 占位说明。
@@ -86,6 +94,7 @@ class DedupEngineTest {
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 input,
                 new HashSet<>(),
+                Map.of(),
                 LocalDate.of(2026, 7, 16),
                 false
         ));
@@ -127,6 +136,7 @@ class DedupEngineTest {
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 input,
                 new HashSet<>(),
+                Map.of(),
                 LocalDate.of(2026, 7, 16),
                 false
         ));
@@ -156,6 +166,7 @@ class DedupEngineTest {
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 input,
                 new HashSet<>(),
+                Map.of(),
                 LocalDate.of(2026, 7, 16),
                 false
         ));
@@ -190,6 +201,7 @@ class DedupEngineTest {
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 input,
                 new HashSet<>(),
+                Map.of(),
                 LocalDate.of(2026, 7, 16),
                 false
         ));
@@ -211,26 +223,68 @@ class DedupEngineTest {
                 });
     }
 
+    /**
+     * 1b.4-pr3plus 决策 32：D 冲突不再抛异常。改为：保留首次 + 记 CATEGORY_CONFLICT warning。
+     * 旧版（修复前）测试是 "dedup_throwsOnFundNameCategoryConflict"，已弃用并改造为 3 个新行为测试。
+     */
     @Test
-    @DisplayName("D · 同 fund_name 不同 category → 抛 INTERNAL_ERROR（数据冲突）")
-    void dedup_throwsOnFundNameCategoryConflict() {
-        // 同一 fund "天弘纳指A" 在 img1 属权益类，img2 属商品类 → 数据矛盾
+    @DisplayName("1b.4-pr3plus 决策 32 · D 冲突（无 user_correct）→ 保留首次 + CATEGORY_CONFLICT warning")
+    void dedup_D_conflict_keepsFirstWithWarning() {
+        // 同一 fund "天弘纳指A" 在 img1 属权益类，img2 属商品类 → 不再抛异常
+        // 行为：保留首次出现（img1/权益类），丢弃 img2 重复，记 CATEGORY_CONFLICT warning
         List<ParsedAsset> input = new ArrayList<>();
         input.add(singleFundAsset("img1", "2026-07-16", "权益类", "天弘纳指A", "100.00", "5.00"));
         input.add(singleFundAsset("img2", "2026-07-16", "商品类", "天弘纳指A", "50.00", "2.00"));
 
-        assertThatThrownBy(() -> new DedupEngine().deduplicate(new DedupInput(
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 input,
                 new HashSet<>(),
+                Map.of(),  // 无 user_correct
                 LocalDate.of(2026, 7, 16),
                 false
-        )))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> {
-                    BusinessException be = (BusinessException) ex;
-                    assertThat(be.getErrorCode()).isEqualTo(ErrorCode.INTERNAL_ERROR);
-                    assertThat(be.getMessage()).contains("天弘纳指A").contains("权益类").contains("商品类");
-                });
+        ));
+
+        // 不抛异常
+        // 保留首次：权益类，amount=100
+        assertThat(result.merged().getMatchedFunds()).containsExactly("天弘纳指A");
+        assertThat(result.merged().getCategories())
+                .filteredOn(c -> "权益类".equals(c.getCategoryName()))
+                .singleElement()
+                .satisfies(c -> assertThat(c.getCategoryTotal())
+                        .isEqualByComparingTo(new BigDecimal("100.00")));
+        // 记 CATEGORY_CONFLICT warning（resolution=kept_first）
+        assertThat(result.report().warnings())
+                .anyMatch(w -> "CATEGORY_CONFLICT".equals(w.code())
+                        && "kept_first".equals(w.context().get("resolution")));
+    }
+
+    @Test
+    @DisplayName("1b.4-pr3plus 决策 32 · D 冲突 + user_correct → 用 user_correct + 记 warning")
+    void dedup_D_conflict_userCorrect_overrides() {
+        // 同一 fund "天弘纳指A" 在 img1 属权益类，img2 属商品类
+        // user_correct 映射到 "海外权益类" → 用 user_correct
+        Map<String, String> userCorrect = Map.of("天弘纳指A", "海外权益类");
+        List<ParsedAsset> input = new ArrayList<>();
+        input.add(singleFundAsset("img1", "2026-07-16", "权益类", "天弘纳指A", "100.00", "5.00"));
+        input.add(singleFundAsset("img2", "2026-07-16", "商品类", "天弘纳指A", "50.00", "2.00"));
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                input,
+                new HashSet<>(),
+                userCorrect,
+                LocalDate.of(2026, 7, 16),
+                false
+        ));
+
+        // 不抛异常
+        // 用 user_correct：海外权益类，amount 取后入 img2 的 50
+        assertThat(result.merged().getMatchedFunds()).containsExactly("天弘纳指A");
+        assertThat(result.merged().getCategories())
+                .anyMatch(c -> "海外权益类".equals(c.getCategoryName()));
+        // 记 CATEGORY_CONFLICT warning（resolution=resolved_by_user_correct）
+        assertThat(result.report().warnings())
+                .anyMatch(w -> "CATEGORY_CONFLICT".equals(w.code())
+                        && "resolved_by_user_correct".equals(w.context().get("resolution")));
     }
 
     // ========================================================================
@@ -248,6 +302,7 @@ class DedupEngineTest {
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 List.of(singleFundAsset("img1", "2026-07-16", "权益类", "天弘纳指A", "100.00", "5.00")),
                 existing,
+                Map.of(),
                 LocalDate.of(2026, 7, 16),
                 false
         ));
@@ -267,6 +322,7 @@ class DedupEngineTest {
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 List.of(singleFundAsset("img1", "2026-07-16", "权益类", "天弘纳指A", "100.00", "5.00")),
                 existing,
+                Map.of(),
                 LocalDate.of(2026, 7, 16),
                 true
         ));
@@ -313,6 +369,7 @@ class DedupEngineTest {
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 input,
                 existing,
+                Map.of(),
                 LocalDate.of(2026, 7, 16),
                 true  // confirmedOverwrite
         ));
@@ -340,6 +397,7 @@ class DedupEngineTest {
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
                 new ArrayList<>(),
                 new HashSet<>(),
+                Map.of(),
                 LocalDate.of(2026, 7, 16),
                 false
         ));
@@ -379,7 +437,7 @@ class DedupEngineTest {
         );
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                input, new HashSet<>(), LocalDate.of(2026, 7, 16), false));
+                input, new HashSet<>(), Map.of(), LocalDate.of(2026, 7, 16), false));
 
         assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("7884.68"));
         assertThat(result.merged().getTotalAssetSource()).isEqualTo("top");
@@ -409,7 +467,7 @@ class DedupEngineTest {
         input.add(img4);
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                input, new HashSet<>(), LocalDate.of(2026, 7, 16), false));
+                input, new HashSet<>(), Map.of(), LocalDate.of(2026, 7, 16), false));
 
         // 报警：4 页顶部不一致
         assertThat(result.report().warnings())
@@ -438,7 +496,7 @@ class DedupEngineTest {
         input.get(2).setTotalAsset(new BigDecimal("1000.00"));
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                input, new HashSet<>(), LocalDate.of(2026, 7, 16), false));
+                input, new HashSet<>(), Map.of(), LocalDate.of(2026, 7, 16), false));
 
         // top=1000 (4 页一致)，deduped=600 (3 只 unique 200) → 偏差 40% > 1%
         assertThat(result.report().warnings())
@@ -467,7 +525,7 @@ class DedupEngineTest {
         page.setCategories(List.of(cat));
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                List.of(page), new HashSet<>(), LocalDate.of(2026, 7, 16), false));
+                List.of(page), new HashSet<>(), Map.of(), LocalDate.of(2026, 7, 16), false));
 
         // top=1000, deduped=990 → 偏差 1% (恰好阈值，不报)
         assertThat(result.report().warnings())
@@ -492,7 +550,7 @@ class DedupEngineTest {
         cat.setFunds(List.of(fund));
         page.setCategories(List.of(cat));
         DedupInput input = new DedupInput(
-                List.of(page), new HashSet<>(), LocalDate.of(2026, 7, 16), false);
+                List.of(page), new HashSet<>(), Map.of(), LocalDate.of(2026, 7, 16), false);
 
         DedupResult fivePercent = new DedupEngine(new BigDecimal("0.05")).deduplicate(input);
         assertThat(fivePercent.report().warnings())

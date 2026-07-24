@@ -34,6 +34,12 @@ import java.util.stream.Collectors;
  * <p>{@code @Transactional} 三表写入 + DedupEngine 5 维 dedup + 镜像校验。
  * 任一异常触发全局回滚。
  *
+ * <p>1b.4-pr3plus 决策 32 修复：
+ * <ul>
+ *   <li>P7 完整：writeFundCategoryMap 保留 user_correct 的 category，不再被 AI 覆盖</li>
+ *   <li>user_correct map 入参：DedupInput 维度 D 冲突时优先采纳</li>
+ * </ul>
+ *
  * <p>写库顺序：
  * <ol>
  *   <li>{@link AssetRawMapper#insert}  每只 fund 一行</li>
@@ -85,10 +91,22 @@ public class SnapShotConfirmService {
         validateRequest(req);
 
         // ============ Step 0: dedup 阶段（不写库） ============
+        // 1b.4-pr3plus 决策 32：构建 existingUserCorrectCategories map（fund_name → category）
+        // 用途：DedupEngine 维度 D 冲突时，user_correct 优先；未命中保留首次。
+        // 性能：当前 N 次单查可接受，因 user_correct 行数通常 < 50；未来可优化为单次 SQL IN 查询。
+        Map<String, String> userCorrectMap = new HashMap<>();
+        for (String fundName : fundCategoryMapMapper.selectFundNamesByUser(req.getUserId())) {
+            FundCategoryMap entry = fundCategoryMapMapper.selectByUserAndFundName(
+                    req.getUserId(), fundName);
+            if (entry != null && "user_correct".equals(entry.getSource())) {
+                userCorrectMap.put(fundName, entry.getCategory());
+            }
+        }
         DedupResult dedup = dedupEngine.deduplicate(new DedupInput(
                 req.getParsedAssets(),
                 fundCategoryMapMapper.selectFundNamesByUserAndSnapshotDate(
                         req.getUserId(), req.getSnapshotDate()),
+                userCorrectMap,
                 req.getSnapshotDate(),
                 Boolean.TRUE.equals(req.getConfirmedOverwrite())
         ));
@@ -262,12 +280,10 @@ public class SnapShotConfirmService {
     }
 
     /**
-     * 1a.8.8 二态写：
-     * <ul>
-     *   <li>首次 upsert（无现有行）→ source='ai_guess'，last_seen_at=NOW()（由 mapper upsertByFundName 同步写）</li>
-     *   <li>已有行 → source='user_correct'，last_seen_at=NOW()（re-confirm 后由 user_correct 覆盖 ai_guess）</li>
-     * </ul>
-     * <p>这样清仓后再出现：上次已 user_correct → resolver 返回 isUserConfirmed=true → 前端不弹确认窗。
+     * 1b.4-pr3plus 决策 32：P7 修复完整版 — user_correct / user_manual 行不覆写
+     *   （保留用户的明确分类 + 保留 source 标记）。
+     *   ai_guess 行可被 AI 新结果更新（source 保持 ai_guess，不自动升 user_correct）。
+     *   首次入库：source='ai_guess'，category=AI 解析值。
      */
     private int writeFundCategoryMap(SnapshotConfirmRequest req, DedupResult dedup) {
         int count = 0;
@@ -278,16 +294,23 @@ public class SnapShotConfirmService {
                 FundCategoryMap map = new FundCategoryMap();
                 map.setUserId(req.getUserId());
                 map.setFundName(fund.getFundName());
-                // 1b.3 P7 修复：仅 user_correct / user_manual 才能覆写 AI 解析结果。
-                //   ai_guess 行不自动升级为 user_correct（否则 AI 一次错误会被永久固化为"用户已确认"）。
                 String existingSource = existing == null ? null : existing.getSource();
-                String finalCategory = cat.getCategoryName();
+                String existingCategory = existing == null ? null : existing.getCategory();
+                String aiCategory = cat.getCategoryName();
+                String finalCategory;
                 String finalSource;
                 if (existingSource == null) {
+                    // 首次入库
+                    finalCategory = aiCategory;
                     finalSource = "ai_guess";
                 } else if ("ai_guess".equals(existingSource)) {
+                    // AI 可更新自己的 guess（但 source 保持 ai_guess，不自动升 user_correct）
+                    finalCategory = aiCategory;
                     finalSource = "ai_guess";
                 } else {
+                    // user_correct / user_manual：保留用户已确认的 category 和 source，
+                    // 拒绝 AI 覆盖（否则一次 AI 错误会偷偷"纠正"用户决策）。
+                    finalCategory = existingCategory != null ? existingCategory : aiCategory;
                     finalSource = existingSource;
                 }
                 map.setCategory(finalCategory);

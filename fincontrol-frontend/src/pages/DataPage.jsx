@@ -258,7 +258,7 @@ export default function DataPage() {
       setFiles([])
       setFilePreviews([])
       setParsedAsset(null)
-      setParseInfo(null)  // PR3+hotfix BUG-006：避免成功 banner 渲染时访问已卸载的 parseInfo
+      setParseInfo(null)  // 清理 parseInfo（banner 已用 optional chaining 安全访问 fundCount）
       setStep('idle')
       // 4）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
       setConfirmSuccess(true)
@@ -426,7 +426,7 @@ export default function DataPage() {
         </button>
         {/* PR3+ BUG-001：独立 confirmSuccess state 控制 banner（不耦合 step 状态机） */}
         {confirmSuccess && (
-          <div className="success-banner">✓ 入库成功！首页应已显示 {parseInfo.fundCount ?? 0} 只基金</div>
+          <div className="success-banner">✓ 入库成功！首页应已显示 {parseInfo?.fundCount ?? 0} 只基金</div>
         )}
       </section>
 

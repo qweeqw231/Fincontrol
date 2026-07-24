@@ -275,10 +275,10 @@ public class ScreenshotService {
         writeOcrLog("batch-single-" + mergedConvId, "minimax", false,
                 "single-mode-merged-" + imageCount + "-files", merged, null);
 
-        // DedupEngine 内部去重
+        // DedupEngine 内部去重（1b.4-pr3plus 决策 32：传空 user_correct map，parse 阶段无 user_correct 上下文）
         LocalDate dedupDate = parseDateOrToday(merged.getSnapshotDate());
         DedupEngine.DedupResult dedup = dedupEngine.deduplicate(new DedupEngine.DedupInput(
-                List.of(merged), Set.of(), dedupDate, true));
+                List.of(merged), Set.of(), Map.of(), dedupDate, true));
         ParsedAsset dedupMerged = dedup.merged();
         dedupMerged.setConversationId(mergedConvId);
         dedupMerged.setSnapshotDate(merged.getSnapshotDate());
@@ -434,8 +434,9 @@ public class ScreenshotService {
         LocalDate dedupDate = parseDateOrToday(parsed.getSnapshotDate());
         DedupEngine.DedupResult dedup;
         try {
+            // 1b.4-pr3plus 决策 32：parse 阶段无 user_correct 上下文，传空 map
             dedup = dedupEngine.deduplicate(new DedupEngine.DedupInput(
-                    List.of(parsed), Set.of(), dedupDate, true));
+                    List.of(parsed), Set.of(), java.util.Map.of(), dedupDate, true));
         } catch (BusinessException e) {
             persistAssistantError(conversationId, req.getUserId(), e, raw,
                     visionResult.usedProvider(), visionResult.fallbackTriggered());

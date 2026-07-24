@@ -95,8 +95,9 @@ class Phase1a8RealFourPageFixtureTest {
     void dedup_totalAsset_topConsistentAcrossPages_usesTop() {
         Fixture fixture = Phase1a8RealFourPageFixture.load();
 
+        // 1b.4-pr3plus 决策 32：传空 user_correct map 保持兼容性
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                fixture.parsedAssets(), Set.of(), LocalDate.parse(fixture.snapshotDate()), false));
+                fixture.parsedAssets(), Set.of(), java.util.Map.of(), LocalDate.parse(fixture.snapshotDate()), false));
 
         // 1a.9 dual-track：4 页顶部 total_asset 都是 7884.68 → merged 用 top
         assertThat(result.merged().getTotalAsset()).isEqualByComparingTo(new BigDecimal("7884.68"));
@@ -118,7 +119,7 @@ class Phase1a8RealFourPageFixtureTest {
         assets.get(1).setTotalAsset(new BigDecimal("2987.32"));
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                assets, Set.of(), LocalDate.parse(fixture.snapshotDate()), false));
+                assets, Set.of(), java.util.Map.of(), LocalDate.parse(fixture.snapshotDate()), false));
 
         // 1a.9 dual-track：4 页顶部不一致 → fallback deduped sum + totalAssetSource=visible_sum
         assertThat(result.merged().getTotalAssetSource()).isEqualTo("visible_sum");
@@ -144,8 +145,9 @@ class Phase1a8RealFourPageFixtureTest {
     void dedup_realFourPages_merges20To19WithExactHoldingAndCumulative() {
         Fixture fixture = Phase1a8RealFourPageFixture.load();
 
+        // 1b.4-pr3plus 决策 32：传空 user_correct map 保持兼容性
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                fixture.parsedAssets(), Set.of(), LocalDate.parse(fixture.snapshotDate()), false));
+                fixture.parsedAssets(), Set.of(), java.util.Map.of(), LocalDate.parse(fixture.snapshotDate()), false));
 
         assertThat(result.report().inputRecordCount()).isEqualTo(20);
         assertThat(result.report().mergedRecordCount()).isEqualTo(19);
@@ -200,7 +202,7 @@ class Phase1a8RealFourPageFixtureTest {
         withHeaders.add(trailingHeaders);
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                withHeaders, Set.of(), LocalDate.parse(fixture.snapshotDate()), false));
+                withHeaders, Set.of(), java.util.Map.of(), LocalDate.parse(fixture.snapshotDate()), false));
 
         assertThat(result.report().mergedRecordCount()).isEqualTo(19);
         assertThat(result.report().droppedCount()).isEqualTo(4);
