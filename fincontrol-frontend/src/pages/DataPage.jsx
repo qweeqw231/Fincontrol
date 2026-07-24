@@ -80,7 +80,47 @@ export default function DataPage() {
 
   // PR3+ BUG-001：独立 confirmSuccess state（不耦合 step 状态机，让"✓ 入库成功"banner 必现）
   const [confirmSuccess, setConfirmSuccess] = useState(false)
+
+  // PR6 (1b.4 后 PR)：预览弹窗快照日期可点击修改（2-step UX：点击 → 确认弹窗 → 日期选择器）
+  // 1) confirmingDateEdit=true 弹确认问询（不破坏页面主结构）
+  // 2) editingDate=true 弹年/月/日 3 select 滚轮
+  // 3) 确定时调 setSnapshotDate + setShowConfirmModal 保持预览，AI 解析结果不变（只改提交时的日期）
+  const [confirmingDateEdit, setConfirmingDateEdit] = useState(false)
+  const [editingDate, setEditingDate] = useState(false)
+  const [editYear, setEditYear] = useState(new Date().getFullYear())
+  const [editMonth, setEditMonth] = useState(new Date().getMonth() + 1)
+  const [editDay, setEditDay] = useState(new Date().getDate())
+  function openDateEdit() {
+    // 解析当前 snapshotDate 为年/月/日初值
+    const parts = (snapshotDate || '').split('-')
+    if (parts.length === 3) {
+      setEditYear(parseInt(parts[0], 10))
+      setEditMonth(parseInt(parts[1], 10))
+      setEditDay(parseInt(parts[2], 10))
+    }
+    setConfirmingDateEdit(true)  // 先弹确认
+  }
+  function confirmDateEdit() {
+    // 确认 → 进入日期选择
+    setConfirmingDateEdit(false)
+    setEditingDate(true)
+  }
+  function cancelDateEdit() {
+    // 取消（无论在确认态还是编辑态）
+    setConfirmingDateEdit(false)
+    setEditingDate(false)
+  }
+  function applyDateEdit() {
+    // 确定 → 应用新日期到 snapshotDate
+    const yyyy = String(editYear).padStart(4, '0')
+    const mm = String(editMonth).padStart(2, '0')
+    const dd = String(editDay).padStart(2, '0')
+    setSnapshotDate(`${yyyy}-${mm}-${dd}`)
+    setEditingDate(false)
+  }
   // PR4a DATA-012：editingDate/editYear/editMonth/editDay 编辑状态机已删除（日期移到 header 副标题）
+  // PR6 恢复：editingDate + editYear/Month/Day 状态机在 2-step 弹窗内使用（点击日期 → 确认弹窗 → 日期选择器）
+  // 注：confirm() 中使用 snapshotDate 提交，编辑时修改 snapshotDate 即可（不改 AI 解析结果）
 
   useEffect(() => {
     fetchLatest(1)
@@ -492,16 +532,86 @@ export default function DataPage() {
       {showConfirmModal && parsedSummary && parsedSummary.fundCount != null && (
         <div className="modal-backdrop" onClick={() => setShowConfirmModal(false)}>
           <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
-            {/* 1b.4 PR4a · DATA-012：快照日期移到 modal-header 副标题 */}
+            {/* 1b.4 PR4a · DATA-012：快照日期移到 modal-header 副标题（PR6 增强：点击修改） */}
             <div className="modal-header">
               <h2>
                 📊 今日资产预览 ·{' '}
-                <span className="modal-date" data-testid="modal-snapshot-date">
-                  {snapshotDate}
+                <span
+                  className="modal-date modal-date-clickable"
+                  data-testid="modal-snapshot-date"
+                  onClick={openDateEdit}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openDateEdit() }}
+                  title="点击修改快照日期"
+                >
+                  {snapshotDate} <span className="modal-date-edit-hint">✎</span>
                 </span>
               </h2>
               <button className="modal-close" onClick={() => setShowConfirmModal(false)} aria-label="关闭">×</button>
             </div>
+
+            {/* PR6：点击日期 → 确认弹窗（"需要修改吗？"）→ 点击确认才出现 3 select 滚轮 */}
+            {confirmingDateEdit && (
+              <div className="modal-confirm-backdrop" onClick={cancelDateEdit}>
+                <div className="modal-confirm-card" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-confirm-title">需要修改快照日期吗？</div>
+                  <div className="modal-confirm-sub">
+                    当前入库的是 <strong>{snapshotDate}</strong> 的快照。
+                    取消则返回预览；确认则进入日期选择。
+                  </div>
+                  <div className="modal-confirm-actions">
+                    <button className="secondary-btn" onClick={cancelDateEdit}>取消</button>
+                    <button className="primary-btn" onClick={confirmDateEdit}>确认修改</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* PR6：日期选择弹窗（3 select 滚轮 + 确定/取消） */}
+            {editingDate && (
+              <div className="modal-confirm-backdrop" onClick={cancelDateEdit}>
+                <div className="modal-confirm-card" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-confirm-title">选择新的快照日期</div>
+                  <div className="modal-confirm-sub">
+                    改后预览中“今日资产预览 · X” 会立即更新，AI 解析结果不变，仅改提交日期。
+                  </div>
+                  <div className="date-edit-row">
+                    <select
+                      className="date-edit-select"
+                      value={editYear}
+                      onChange={(e) => setEditYear(parseInt(e.target.value, 10))}
+                    >
+                      {Array.from({ length: 5 }, (_, i) => 2023 + i).map((y) => (
+                        <option key={y} value={y}>{y} 年</option>
+                      ))}
+                    </select>
+                    <select
+                      className="date-edit-select"
+                      value={editMonth}
+                      onChange={(e) => setEditMonth(parseInt(e.target.value, 10))}
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                        <option key={m} value={m}>{m} 月</option>
+                      ))}
+                    </select>
+                    <select
+                      className="date-edit-select"
+                      value={editDay}
+                      onChange={(e) => setEditDay(parseInt(e.target.value, 10))}
+                    >
+                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d} 日</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="modal-confirm-actions">
+                    <button className="secondary-btn" onClick={cancelDateEdit}>取消</button>
+                    <button className="primary-btn" onClick={applyDateEdit}>确定</button>
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="modal-body">
               {/* 概览卡片（PR4a DATA-012：5 列 → 4 列） */}
               <div className="overview-summary">

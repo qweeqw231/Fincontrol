@@ -451,3 +451,97 @@
 .data-page .data-table tr:last-child td {
   border-bottom: none;
 }
+
+/* ============================================================
+ * PR6（1b.4 后 PR）：预览弹窗快照日期可点击编辑（2-step UX）
+ * - modal-date-clickable：modal-header 副标题加 cursor pointer + hover 高亮
+ * - modal-date-edit-hint：✎ 图标在 hover 时显示
+ * - modal-confirm-backdrop/card：二次确认 + 3 select 弹窗（不破坏 modal 主结构）
+ * - date-edit-row/select：年/月/日 3 滚轮
+ * ============================================================ */
+.data-page .modal-date-clickable {
+  cursor: pointer;
+  border-bottom: 1px dashed transparent;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.data-page .modal-date-clickable:hover {
+  background: var(--color-bg-blue-light, #e6f4ff);
+  border-bottom-color: var(--color-primary, #0A59F7);
+}
+.data-page .modal-date-clickable:focus {
+  outline: 2px solid var(--color-primary, #0A59F7);
+  outline-offset: 2px;
+}
+.data-page .modal-date-edit-hint {
+  margin-left: 6px;
+  opacity: 0.4;
+  font-size: 12px;
+  transition: opacity 0.15s ease;
+}
+.data-page .modal-date-clickable:hover .modal-date-edit-hint,
+.data-page .modal-date-clickable:focus .modal-date-edit-hint {
+  opacity: 1;
+}
+
+.data-page .modal-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.data-page .modal-confirm-card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 20px 24px;
+  min-width: 320px;
+  max-width: 420px;
+}
+.data-page .modal-confirm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1a1a1a);
+  margin-bottom: 8px;
+}
+.data-page .modal-confirm-sub {
+  font-size: 13px;
+  color: var(--color-text-secondary, #595959);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.data-page .modal-confirm-sub strong {
+  color: var(--color-primary, #0A59F7);
+  font-weight: 600;
+}
+.data-page .modal-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.data-page .date-edit-row {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0 16px 0;
+}
+.data-page .date-edit-select {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border, #d9d9d9);
+  border-radius: 4px;
+  font-size: 14px;
+  background: #fff;
+  cursor: pointer;
+}
+.data-page .date-edit-select:focus {
+  outline: 2px solid var(--color-primary, #0A59F7);
+  outline-offset: 0;
+  border-color: var(--color-primary, #0A59F7);
+}
