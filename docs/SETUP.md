@@ -259,7 +259,7 @@ npm config set registry https://registry.npmmirror.com
 ### Q5：端口冲突
 
 - 后端 8080：修改 `application.yml` 中 `server.port: 8081`
-- 前端 5173：修改 `vite.config.js` 中 `server.port: 5174`
+- 前端 5173：Vite 默认端口；若占用改为 5174 等并同步改 `vite.config.js` 的 `server.port`
 - MySQL 3306：检查是否有其他 MySQL 实例
 
 ### Q6：时区问题（DATETIME 偏差 8 小时）

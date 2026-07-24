@@ -5,7 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5174,
+    // 2026-07-24 PR2.envfix：5174 是 1b.2/1b.3 临时测试端口，1b.4+ 统一回 5173（Vite 默认）
+    port: 5173,
     host: 'localhost',
     proxy: {
       '/api': {
