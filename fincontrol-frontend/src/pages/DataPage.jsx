@@ -651,6 +651,27 @@ export default function DataPage() {
         userId={1}
       />
 
+      {/* 决策 33 D2：二次确认 modal（用户改 dropdown 但未点 ✓ 时拦截） */}
+      {showSubmitDirtyModal && (
+        <div className="modal-backdrop" onClick={() => setShowSubmitDirtyModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h2>⚠️ 还有 {dirtyCount} 行 dropdown 已改动但未 ✓</h2>
+              <button className="modal-close" onClick={() => setShowSubmitDirtyModal(false)} aria-label="关闭">×</button>
+            </div>
+            <div className="modal-body">
+              <p>你修改了 <strong>{dirtyCount}</strong> 条基金的类别，但还没点 ✓ 确认。</p>
+              <p style={{ color: '#6b7280', fontSize: 13 }}>请选择如何处理：</p>
+            </div>
+            <div className="modal-footer">
+              <button className="secondary-btn" onClick={() => setShowSubmitDirtyModal(false)} data-testid="cancel-dirty">返回修改</button>
+              <button className="secondary-btn" onClick={submitOnlyVerified} data-testid="submit-only-verified">仅提交已 ✓ 的</button>
+              <button className="primary-btn" onClick={submitAllDirty} data-testid="submit-all-dirty">全部提交</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1b.3.10 确认入库弹窗（解析数据预览） */}
       {showConfirmModal && parsedSummary && parsedSummary.fundCount != null && (
         <div className="modal-backdrop" onClick={() => setShowConfirmModal(false)}>
