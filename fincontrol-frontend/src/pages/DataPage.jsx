@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
+import { useUserConfigStore } from '../stores/userConfigStore.js'
 import { apiClient } from '../api/client.js'
 import { ENDPOINTS } from '../api/endpoints.js'
 import { revokeAll, revokeOne } from '../utils/blob.js'
+import HistoryLimitDialog from '../components/data/HistoryLimitDialog.jsx'
 
 /**
  * 1b.3 数据管理页
@@ -35,6 +37,12 @@ import { revokeAll, revokeOne } from '../utils/blob.js'
 export default function DataPage() {
   const fetchLatest = useAssetSnapshotStore((s) => s.fetchLatest)
   const snapshot = useAssetSnapshotStore((s) => s.latestSnapshot)
+
+  // PR3plus 决策 30/31：maxSnapshotAgeDays 状态（从 store 读）
+  const maxSnapshotAgeDays = useUserConfigStore((s) => s.maxSnapshotAgeDays)
+  const fetchMaxSnapshotAgeDays = useUserConfigStore((s) => s.fetchMaxSnapshotAgeDays)
+  // PR3plus：HistoryLimitDialog 控制
+  const [showHistoryLimitDialog, setShowHistoryLimitDialog] = useState(false)
 
   // 1b.3.7 toggle + date picker
   const [mode, setMode] = useState('single') // 'single' | 'multi'
@@ -73,6 +81,10 @@ export default function DataPage() {
   useEffect(() => {
     fetchLatest(1)
     fetchMetaList()
+    // PR3plus 决策 30/31：拉取 maxSnapshotAgeDays
+    fetchMaxSnapshotAgeDays(1).catch((e) => {
+      console.warn('PR3plus fetchMaxSnapshotAgeDays failed, use default 7', e)
+    })
     // PR1 修复 GLOBAL-015：组件卸载时释放所有 blob URL，避免内存泄漏
     return () => revokeAll(filePreviews)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -121,7 +133,7 @@ export default function DataPage() {
     setFilePreviews(filePreviews.filter((_, i) => i !== idx))
   }
 
-  // 1b.3.6 + 1b.3.7 一步：上传 + parse
+  // 1b.3.6 + 1b.3.7 一步：上传 + parse（PR3plus 决策 30/31：加预校验）
   async function uploadAndParse() {
     if (files.length !== 4) {
       setError('需要 4 张截图')
@@ -130,6 +142,23 @@ export default function DataPage() {
     if (!snapshotDate) {
       setError('请选择 snapshot_date')
       return
+    }
+    // PR3plus 决策 30/31：前端预校验（maxSnapshotAgeDays 从 store 读，-1 表示不限制）
+    if (maxSnapshotAgeDays !== -1) {
+      const today = new Date()
+      const todayStr = today.toISOString().slice(0, 10)
+      const todayMs = Date.parse(todayStr + 'T00:00:00Z')
+      const dateMs = Date.parse(snapshotDate + 'T00:00:00Z')
+      if (!isNaN(dateMs) && !isNaN(todayMs)) {
+        const daysDiff = Math.abs(Math.round((todayMs - dateMs) / 86400000))
+        if (daysDiff > maxSnapshotAgeDays) {
+          setError(
+            `截图日期 ${snapshotDate} 与当前日相差 ${daysDiff} 天，超过当前限制 ${maxSnapshotAgeDays === -1 ? '不限制' : maxSnapshotAgeDays + ' 天'}。请先点击下方 [修改历史限制] 调整。`
+          )
+          setStep('error')
+          return
+        }
+      }
     }
     setError(null)
     setStep('uploading')
@@ -209,7 +238,7 @@ export default function DataPage() {
     setEditingDate(false)
   }
 
-  // 1b.3.8 confirm（PR1 修复 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/004/005）
+  // 1b.3.8 confirm（PR1 修复 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/004/005 + PR3+hotfix BUG-006）
   async function confirm() {
     if (!parsedAsset) return
     setStep('confirming')
@@ -229,6 +258,7 @@ export default function DataPage() {
       setFiles([])
       setFilePreviews([])
       setParsedAsset(null)
+      setParseInfo(null)  // PR3+hotfix BUG-006：避免成功 banner 渲染时访问已卸载的 parseInfo
       setStep('idle')
       // 4）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
       setConfirmSuccess(true)
@@ -243,6 +273,10 @@ export default function DataPage() {
       setError(`入库失败: ${msg}`)
       setStep('error')
       setConfirmSuccess(false)
+      // PR3+hotfix BUG-006：失败路径也关闭 modal（按钮已先关，但保险），并清理 parseInfo
+      setShowConfirmModal(false)
+      setParsedSummary(null)
+      setParseInfo(null)
     }
 
     // ===== PR3+ BUG-004：独立 try-catch 自动设 is_current =====
@@ -357,9 +391,31 @@ export default function DataPage() {
         )}
       </section>
 
+      {/* PR3plus 决策 30/31：历史限制提示 + 修改按钮（从 store 读，不硬编码） */}
+      <section className="section-card" style={{ background: '#f9fafb' }}>
+        <h2>上传历史限制</h2>
+        <p className="hint">
+          当前历史截图限制：最近{' '}
+          <strong data-testid="current-max-age">
+            {maxSnapshotAgeDays === -1 ? '不限制' : `${maxSnapshotAgeDays} 天`}
+          </strong>
+          <button
+            className="secondary-btn"
+            style={{ marginLeft: 12, padding: '4px 10px', fontSize: 12 }}
+            onClick={() => setShowHistoryLimitDialog(true)}
+            data-testid="open-history-limit-dialog"
+          >
+            修改
+          </button>
+        </p>
+        <p className="hint" style={{ fontSize: 12, color: '#6b7280' }}>
+          为防止误传，超过该限制的截图无法 confirm 入库。
+        </p>
+      </section>
+
       <section className="section-card">
         <h2>确认入库</h2>
-        <p className="hint">确认将 {parseInfo.fundCount}-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
+        <p className="hint">确认将 {parseInfo?.fundCount ?? 0}-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
         <button
           onClick={openConfirmModal}
           disabled={step !== 'parsed' && step !== 'confirming'}
@@ -370,7 +426,7 @@ export default function DataPage() {
         </button>
         {/* PR3+ BUG-001：独立 confirmSuccess state 控制 banner（不耦合 step 状态机） */}
         {confirmSuccess && (
-          <div className="success-banner">✓ 入库成功！首页应已显示 {parseInfo.fundCount} 只基金</div>
+          <div className="success-banner">✓ 入库成功！首页应已显示 {parseInfo.fundCount ?? 0} 只基金</div>
         )}
       </section>
 
@@ -416,8 +472,16 @@ export default function DataPage() {
         </div>
       </section>
 
+      {/* PR3plus 决策 30/31：历史限制修改 4 步 modal */}
+      <HistoryLimitDialog
+        open={showHistoryLimitDialog}
+        onClose={() => setShowHistoryLimitDialog(false)}
+        currentDays={maxSnapshotAgeDays}
+        userId={1}
+      />
+
       {/* 1b.3.10 确认入库弹窗（解析数据预览） */}
-      {showConfirmModal && parsedSummary && (
+      {showConfirmModal && parsedSummary && parsedSummary.fundCount != null && (
         <div className="modal-backdrop" onClick={() => setShowConfirmModal(false)}>
           <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">

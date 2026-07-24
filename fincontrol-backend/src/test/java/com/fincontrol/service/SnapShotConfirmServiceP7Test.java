@@ -60,6 +60,7 @@ class SnapShotConfirmServiceP7Test {
     @Mock private AssetSnapshotMapper assetSnapshotMapper;
     @Mock private FundCategoryMapMapper fundCategoryMapMapper;
     @Mock private SnapshotMetaMapper snapshotMetaMapper;
+    @Mock private SettingsService settingsService; // PR3plus 决策 30/31
 
     @InjectMocks private DedupEngine dedupEngine = new DedupEngine();
 
@@ -72,7 +73,7 @@ class SnapShotConfirmServiceP7Test {
     void setUp() {
         service = new SnapShotConfirmService(
                 assetRawMapper, assetSnapshotMapper, fundCategoryMapMapper,
-                dedupEngine, snapshotMetaMapper);
+                dedupEngine, snapshotMetaMapper, settingsService);
         // 1a.3 镜像校验：写新批次前先翻 is_latest（无 existing 行时返回 0）
         when(assetRawMapper.updateIsLatestBySnapshotDate(anyLong(), any(LocalDate.class))).thenReturn(0);
         // 维度 E 检测：本测试不需要 existing fund
@@ -84,6 +85,8 @@ class SnapShotConfirmServiceP7Test {
                 .thenReturn(new BigDecimal("100.00"));
         when(assetSnapshotMapper.countLatestByUserAndDateAndCategory(anyLong(), any(LocalDate.class), any()))
                 .thenReturn(1);
+        // PR3plus 决策 30/31：默认 7 天限制（testDate 7/22 < 7/24 不会超）
+        when(settingsService.getMaxSnapshotAgeDays(anyLong())).thenReturn(7);
     }
 
     // ========================================================================

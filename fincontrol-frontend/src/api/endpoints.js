@@ -59,6 +59,10 @@ export const ENDPOINTS = {
 
   // 解析日志（11.x）
   PARSE_LOGS: '/parse-logs',
+
+  // PR3plus 决策 30/31：全局配置（settings 表）
+  SETTINGS_MAX_AGE_GET: (userId) => `/settings/${userId}/max-snapshot-age-days`,
+  SETTINGS_MAX_AGE_PUT: (userId) => `/settings/${userId}/max-snapshot-age-days`,
 }
 
 // === Named export（兼容 store 文件的 named import）===
@@ -100,5 +104,8 @@ export const ASSET_OPERATIONS_RECENT = ENDPOINTS.ASSET_OPERATIONS_RECENT
 export const ASSET_CUMULATIVE_RETURN = ENDPOINTS.ASSET_CUMULATIVE_RETURN
 
 export const PARSE_LOGS = ENDPOINTS.PARSE_LOGS
+
+export const SETTINGS_MAX_AGE_GET = ENDPOINTS.SETTINGS_MAX_AGE_GET
+export const SETTINGS_MAX_AGE_PUT = ENDPOINTS.SETTINGS_MAX_AGE_PUT
 
 export default ENDPOINTS

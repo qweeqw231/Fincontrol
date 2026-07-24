@@ -55,17 +55,20 @@ public class SnapShotConfirmService {
     private final FundCategoryMapMapper fundCategoryMapMapper;
     private final DedupEngine dedupEngine;
     private final SnapshotMetaMapper snapshotMetaMapper; // 1b.3.2 决策 27
+    private final SettingsService settingsService; // PR3plus 决策 30/31：读 max_snapshot_age_days
 
     public SnapShotConfirmService(AssetRawMapper assetRawMapper,
                                  AssetSnapshotMapper assetSnapshotMapper,
                                  FundCategoryMapMapper fundCategoryMapMapper,
                                  DedupEngine dedupEngine,
-                                 SnapshotMetaMapper snapshotMetaMapper) {
+                                 SnapshotMetaMapper snapshotMetaMapper,
+                                 SettingsService settingsService) {
         this.assetRawMapper = assetRawMapper;
         this.assetSnapshotMapper = assetSnapshotMapper;
         this.fundCategoryMapMapper = fundCategoryMapMapper;
         this.dedupEngine = dedupEngine;
         this.snapshotMetaMapper = snapshotMetaMapper;
+        this.settingsService = settingsService;
     }
 
     /**
@@ -156,15 +159,19 @@ public class SnapShotConfirmService {
         if (req.getUserId() == null) {
             throw new BusinessException(ErrorCode.INTERNAL_ERROR, "userId 必填");
         }
-        // [P0-1.5] 日期校验：AI 识别日期与系统当前日相差 > 7 天
+        // [P0-1.5] 日期校验（PR3plus 决策 30/31）：从 settings 表读 max_snapshot_age_days
+        // -1 = 不限制；7/14/30/180 = 限定天数（前端可改）
+        // 后端不硬编码，默认从 settings 查，找不到返 7。
         LocalDateTime now = LocalDateTime.now();
         long daysDiff = Math.abs(java.time.temporal.ChronoUnit.DAYS.between(
                 req.getSnapshotDate(),
                 now.toLocalDate()));
-        if (daysDiff > 7) {
+        int maxAge = settingsService.getMaxSnapshotAgeDays(req.getUserId());
+        if (maxAge != -1 && daysDiff > maxAge) {
             throw new BusinessException(
                     ErrorCode.INVALID_SNAPSHOT_DATE,
-                    "snapshot_date " + req.getSnapshotDate() + " 与系统当前日相差 " + daysDiff + " 天（>7 天拒绝）"
+                    "snapshot_date " + req.getSnapshotDate() + " 与系统当前日相差 " + daysDiff
+                            + " 天（>" + maxAge + " 天拒绝，当前限制可在数据管理页点击 [修改历史限制] 调整）"
             );
         }
     }
