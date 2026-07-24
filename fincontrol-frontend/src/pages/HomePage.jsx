@@ -557,7 +557,7 @@ export default function HomePage() {
       </div>
 
       <div className="stat-row">
-        <div className="card">
+        <div className="stat-card">
           <div className="label">
             <span
               className="dot"
@@ -568,7 +568,7 @@ export default function HomePage() {
           <div className="value">¥ {formatYuan(sixTotal)}</div>
           <div className="sub">{totalFundCount} 只基金 · 配置基准</div>
         </div>
-        <div className="card">
+        <div className="stat-card">
           <div className="label">
             <span
               className="dot"

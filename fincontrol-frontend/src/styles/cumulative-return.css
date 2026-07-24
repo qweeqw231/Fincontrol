@@ -1,10 +1,12 @@
 /* =========================================================================
  * CumulativeReturnCard 样式（1b.2 / 决策 4 v2 + 决策 25 v2 / 2026-07-22）
- * 包含：通用 .card / 双列网格 / InfoModal 弹窗
+ * 包含：通用 .stat-card / 双列网格
+ * 注：InfoModal 弹窗样式已统一到 global.css .modal / .modal--wide（PR2 合并）
  * ========================================================================= */
 
-/* 通用卡片（其他 BalanceCard / TotalAssetCard 也复用） */
-.card {
+/* PR2 (GLOBAL-001)：.card 重命名为 .stat-card，区分于 section-card
+   保留 flex: 1 1 0 用于三卡片行等宽分配 */
+.stat-card {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
@@ -14,31 +16,31 @@
   min-width: 0;
 }
 
-.card-title {
+.stat-card-title {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   margin-bottom: var(--space-2);
   font-weight: 500;
 }
 
-.card-value {
+.stat-card-value {
   font-size: var(--text-2xl);
   font-weight: 600;
   color: var(--color-text-primary);
   line-height: 1.2;
 }
 
-.card-sub {
+.stat-card-sub {
   margin-top: var(--space-2);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
 }
 
-.card.error .card-value {
+.stat-card.error .stat-card-value {
   color: var(--color-error);
 }
 
-.card.disabled .card-value {
+.stat-card.disabled .stat-card-value {
   color: var(--color-text-disabled);
 }
 
@@ -50,7 +52,7 @@
   margin-bottom: var(--space-6);
 }
 
-@media (max-width: 768px) {
+@media (max-width: var(--bp-tablet)) {
   .cards-row {
     grid-template-columns: 1fr;
   }
@@ -143,106 +145,6 @@
   border-color: var(--color-primary);
 }
 
-/* InfoModal 弹窗（4 个 ℹ️ 共用） */
-.modal-backdrop {
-  position: fixed;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal {
-  background: var(--color-bg-card);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-md);
-  max-width: 480px;
-  width: 92vw;
-  max-height: 86vh;
-  overflow-y: auto;
-  padding: 0;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-4) var(--space-6);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.modal-header h3 {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.modal-close {
-  font-size: 22px;
-  line-height: 1;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0 4px;
-}
-
-.modal-close:hover {
-  color: var(--color-text-primary);
-}
-
-.modal-body {
-  padding: var(--space-4) var(--space-6);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.modal-row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  font-size: var(--text-sm);
-  line-height: 1.6;
-}
-
-.modal-label {
-  color: var(--color-text-secondary);
-  min-width: 60px;
-  flex: 0 0 auto;
-}
-
-.modal-code {
-  font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
-  background: var(--color-bg);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.9em;
-  word-break: break-all;
-}
-
-.modal-text {
-  flex: 1 1 auto;
-  color: var(--color-text-primary);
-}
-
-.modal-footer {
-  padding: var(--space-3) var(--space-6);
-  border-top: 1px solid var(--color-border);
-  text-align: right;
-}
-
-.modal-btn {
-  padding: var(--space-2) var(--space-4);
-  background: var(--color-primary);
-  color: #fff;
-  border-radius: var(--radius);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
-
-.modal-btn:hover {
-  background: var(--color-primary-hover);
-}
+/* PR2 (GLOBAL-002)：删除原 .modal-backdrop/.modal/.modal-header/.modal-body/
+   .modal-row/.modal-label/.modal-code/.modal-text/.modal-footer/.modal-btn/.modal-close 块（102 行）
+   改用 global.css 中的 .modal (480px) 默认样式 */

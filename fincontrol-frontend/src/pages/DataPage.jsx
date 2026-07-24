@@ -215,7 +215,7 @@ export default function DataPage() {
 
       {error && <div className="error-banner">⚠ {error}</div>}
 
-      <section className="card">
+      <section className="section-card">
         <h2>1. 上传 4 张图</h2>
         <p className="hint">选 4 张支付宝基金截图 → 自动截取前 4 张。已选 {files.length}/4。</p>
         <div className="upload-bar">
@@ -248,7 +248,7 @@ export default function DataPage() {
         )}
       </section>
 
-      <section className="card">
+      <section className="section-card">
         <h2>2. 解析与日期</h2>
         <p className="hint">选择解析模式与截图数据日期，再点 "上传并解析"。</p>
         <div className="form-row">
@@ -287,7 +287,7 @@ export default function DataPage() {
         )}
       </section>
 
-      <section className="card">
+      <section className="section-card">
         <h2>3. 确认入库</h2>
         <p className="hint">确认将 19-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
         <button
@@ -303,7 +303,7 @@ export default function DataPage() {
         )}
       </section>
 
-      <section className="card">
+      <section className="section-card">
         <h2>4. 快照管理（决策 27）</h2>
         <div className="meta-list">
           {metaLoading && <div className="preview-empty">加载中…</div>}
@@ -339,7 +339,7 @@ export default function DataPage() {
       {/* 1b.3.10 确认入库弹窗（解析数据预览） */}
       {showConfirmModal && parsedSummary && (
         <div className="modal-backdrop" onClick={() => setShowConfirmModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>📊 资产入库预览</h2>
               <button className="modal-close" onClick={() => setShowConfirmModal(false)} aria-label="关闭">×</button>

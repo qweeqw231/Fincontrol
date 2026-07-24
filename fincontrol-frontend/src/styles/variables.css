@@ -1,12 +1,15 @@
 /* =========================================================================
  * FinControl 全局 CSS 变量
  * 设计文档 v2.0：工科风 · 简洁专业 · 高信息密度
+ * 2026-07-24 PR2 追加：3 个字号 / 4 个断点 / 6 个色 token（GLOBAL-001/003/004/005）
  * ========================================================================= */
 :root {
   /* 主色 */
-  --color-primary:        #1e40af;
-  --color-primary-hover:  #1d4ed8;
-  --color-primary-light:  #dbeafe;
+  --color-primary:           #1e40af;
+  --color-primary-hover:     #1d4ed8;
+  --color-primary-strong:    #0847c4;   /* PR2: 渐变终止色 + hover 强调 */
+  --color-blue-bright:       #2a7aff;   /* PR2: hero 渐变高光 */
+  --color-primary-light:     #dbeafe;
 
   /* 6 大类 + 余额类（用于环形图等） */
   --color-cat-monetary:   #10b981;
@@ -20,6 +23,8 @@
   /* 灰阶 */
   --color-bg:             #f9fafb;
   --color-bg-card:        #ffffff;
+  --color-bg-blue:        #f0f7ff;    /* PR2: stat-row highlight / brand-tint bg */
+  --color-bg-blue-light:  #d6e8ff;    /* PR2: 浅蓝描边/hover */
   --color-border:         #e5e7eb;
   --color-text-primary:   #111827;
   --color-text-secondary: #6b7280;
@@ -27,8 +32,10 @@
 
   /* 状态色 */
   --color-success:        #10b981;
+  --color-success-strong: #52C41A;    /* PR2: 涨绿 pill / 持有正收益 */
   --color-warning:        #f59e0b;
   --color-error:          #ef4444;
+  --color-error-strong:   #FF4D4F;    /* PR2: 跌红 pill / 持有负收益 / error banner */
 
   /* 间距 */
   --space-1: 4px;
@@ -39,12 +46,15 @@
   --space-8: 32px;
 
   /* 字号 */
-  --text-sm:   12px;
-  --text-base: 14px;
-  --text-lg:   16px;
-  --text-xl:   20px;
-  --text-2xl:  24px;
-  --text-3xl:  32px;
+  --text-xs:      11px;   /* PR2: badge / 角标 / crc-info-btn */
+  --text-sm:      12px;
+  --text-base:    14px;
+  --text-md:      15px;   /* PR2: panel-title / section-title */
+  --text-lg:      16px;
+  --text-xl:      20px;
+  --text-2xl:     24px;
+  --text-3xl:     32px;
+  --text-display: 44px;   /* PR2: hero-value 总资产 */
 
   /* 圆角 + 阴影 */
   --radius:    6px;
@@ -54,4 +64,10 @@
   /* 布局 */
   --sidebar-width:           240px;
   --sidebar-width-collapsed: 64px;
+
+  /* 断点（PR2: GLOBAL-003，media query token 化） */
+  --bp-mobile:  480px;
+  --bp-tablet:  768px;
+  --bp-desktop: 1024px;
+  --bp-wide:    1280px;
 }

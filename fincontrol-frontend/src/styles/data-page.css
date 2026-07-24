@@ -1,8 +1,9 @@
 /* =========================================================================
  * FinControl DataPage 页面级样式（1b.3.11 / 2026-07-23）
  * 修复 BUG-P4-001/002/003：DataPage 全部类样式（4 张图不溢出、按钮可见、非 21 世纪初风格）
- * 注意：本样式以 `.data-page` 作为命名空间，覆盖 cumulative-return.css 中
- *       同名 .card 的 flex 行布局，避免 DataPage 卡片被错误排成一行。
+ * 2026-07-24 PR2 追加：删除 .data-page .card 块（改用 global.css .section-card）
+ *                    删除 .data-page .modal-* 块（改用 global.css .modal--wide）
+ *                    替换色/字号/断点 字面值为 var(--*)  token
  * ========================================================================= */
 
 .data-page {
@@ -15,7 +16,7 @@
 }
 
 .data-page .data-header {
-  background: linear-gradient(135deg, #0A59F7 0%, #0847c4 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-strong) 100%);
   color: #fff;
   padding: 20px 28px;
   border-radius: 8px;
@@ -45,7 +46,7 @@
 }
 
 .data-page h2 {
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--color-text-primary);
   margin: 0 0 12px;
@@ -58,29 +59,21 @@
   display: inline-block;
   width: 3px;
   height: 14px;
-  background: #0A59F7;
+  background: var(--color-primary);
   border-radius: 2px;
   margin-right: 8px;
 }
 
-/* 关键：DataPage 内的 .card 必须是块级堆叠，绝不沿用 cumulative-return.css 的 flex 1 1 0 */
-.data-page .card {
-  display: block;
-  flex: initial;
-  min-width: 0;
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  margin-bottom: 16px;
-}
+/* PR2 (GLOBAL-001)：删除原 .data-page .card 块（原 67-76），
+   DataPage 的 4 个 <section className="card"> 改用 global.css 的 .section-card */
 
+/* 错误 / 成功横幅（仍保留 .data-page 命名空间，因为 .section-card 内不重复定义） */
 .data-page .error-banner {
   padding: 10px 16px;
   background: #fff1f0;
   border: 1px solid #ffa39e;
   border-radius: 4px;
-  color: #FF4D4F;
+  color: var(--color-error-strong);
   margin-bottom: 16px;
   font-size: 13px;
 }
@@ -116,8 +109,8 @@
 }
 
 .data-page .upload-bar input[type="file"]:hover {
-  border-color: #0A59F7;
-  background: #f0f7ff;
+  border-color: var(--color-primary);
+  background: var(--color-bg-blue);
 }
 
 /* 4 张图预览：固定 4 列网格，缩略图高度 120px，object-fit 裁切 */
@@ -128,7 +121,7 @@
   margin-top: 12px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: var(--bp-tablet)) {
   .data-page .preview-strip {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -136,8 +129,8 @@
 
 .data-page .preview-item {
   position: relative;
-  background: #fff;
-  border: 1px solid #f0f0f0;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 8px;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -159,8 +152,8 @@
 
 .data-page .preview-item span {
   display: block;
-  font-size: 12px;
-  color: #595959;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
   margin-top: 6px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -176,7 +169,7 @@
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.6);
   color: #fff;
-  font-size: 14px;
+  font-size: var(--text-base);
   line-height: 1;
   cursor: pointer;
   border: none;
@@ -187,11 +180,11 @@
 }
 
 .data-page .preview-item .rm-btn:hover {
-  background: #FF4D4F;
+  background: var(--color-error-strong);
 }
 
 .data-page .preview-empty {
-  color: #8C8C8C;
+  color: var(--color-text-secondary);
   font-size: 13px;
   padding: 12px 0;
 }
@@ -210,7 +203,7 @@
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
-  color: #595959;
+  color: var(--color-text-secondary);
 }
 
 .data-page .form-row select,
@@ -218,9 +211,9 @@
   padding: 6px 10px;
   border: 1px solid #d9d9d9;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: var(--text-base);
   min-width: 220px;
-  background: #fff;
+  background: var(--color-bg-card);
   color: var(--color-text-primary);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -228,7 +221,7 @@
 .data-page .form-row select:focus,
 .data-page .form-row input[type="date"]:focus {
   outline: none;
-  border-color: #0A59F7;
+  border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(10, 89, 247, 0.1);
 }
 
@@ -246,18 +239,18 @@
 /* === 按钮 === */
 
 .data-page .primary-btn {
-  background: #0A59F7;
+  background: var(--color-primary);
   color: #fff;
   border: none;
   border-radius: 4px;
   padding: 8px 20px;
-  font-size: 14px;
+  font-size: var(--text-base);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .data-page .primary-btn:hover:not(:disabled) {
-  background: #0847c4;
+  background: var(--color-primary-strong);
 }
 
 .data-page .primary-btn:disabled {
@@ -266,18 +259,18 @@
 }
 
 .data-page .secondary-btn {
-  background: #fff;
-  color: #0A59F7;
-  border: 1px solid #0A59F7;
+  background: var(--color-bg-card);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
   border-radius: 4px;
   padding: 7px 19px;
-  font-size: 14px;
+  font-size: var(--text-base);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .data-page .secondary-btn:hover {
-  background: #f0f7ff;
+  background: var(--color-bg-blue);
 }
 
 .data-page .secondary-btn:disabled {
@@ -300,7 +293,7 @@
   justify-content: space-between;
   padding: 12px 16px;
   background: #fafafa;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   transition: background 0.15s, border-color 0.15s;
 }
@@ -310,7 +303,7 @@
 }
 
 .data-page .meta-item.current {
-  background: #f0f7ff;
+  background: var(--color-bg-blue);
   border-color: #91caff;
 }
 
@@ -323,8 +316,8 @@
 }
 
 .data-page .meta-info strong {
-  font-size: 14px;
-  color: #262626;
+  font-size: var(--text-base);
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -332,13 +325,13 @@
   display: inline-block;
   padding: 2px 8px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 500;
 }
 
 .data-page .badge.is-latest {
   background: #f0f0f0;
-  color: #595959;
+  color: var(--color-text-secondary);
 }
 
 .data-page .badge.is-current {
@@ -348,12 +341,12 @@
 
 .data-page .badge.is-current.active {
   background: #fff1f0;
-  color: #FF4D4F;
+  color: var(--color-error-strong);
 }
 
 .data-page .confirmed-at {
-  color: #8C8C8C;
-  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -363,86 +356,9 @@
   flex-shrink: 0;
 }
 
-/* === 入库预览 Modal === */
-
-.data-page .modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 16px;
-}
-
-.data-page .modal-content {
-  background: #fff;
-  border-radius: 8px;
-  max-width: 720px;
-  width: 100%;
-  max-height: 86vh;
-  overflow-y: auto;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  display: flex;
-  flex-direction: column;
-}
-
-.data-page .modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 24px;
-  border-bottom: 1px solid #f0f0f0;
-  position: sticky;
-  top: 0;
-  background: #fff;
-  z-index: 1;
-  border-radius: 8px 8px 0 0;
-}
-
-.data-page .modal-header h2 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-
-.data-page .modal-header h2::before {
-  display: none;
-}
-
-.data-page .modal-close {
-  font-size: 22px;
-  line-height: 1;
-  color: #8C8C8C;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0 4px;
-}
-
-.data-page .modal-close:hover {
-  color: var(--color-text-primary);
-}
-
-.data-page .modal-body {
-  padding: 20px 24px;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.data-page .modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 24px;
-  border-top: 1px solid #f0f0f0;
-  position: sticky;
-  bottom: 0;
-  background: #fff;
-  border-radius: 0 0 8px 8px;
-}
+/* PR2 (GLOBAL-002)：删除原 .data-page .modal-backdrop/.modal-content/
+   .modal-header/.modal-close/.modal-body/.modal-footer 块（原 368-445，共 78 行）
+   DataPage 入库预览改用 global.css 的 .modal.modal--wide 组合（720px + sticky header/footer）*/
 
 /* === 概览卡 === */
 
@@ -453,7 +369,7 @@
   margin-bottom: 20px;
 }
 
-@media (max-width: 768px) {
+@media (max-width: var(--bp-tablet)) {
   .data-page .overview-summary {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -461,26 +377,26 @@
 
 .data-page .overview-card {
   background: #fafafa;
-  border: 1px solid #f0f0f0;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 12px 14px;
 }
 
 .data-page .overview-card.highlight {
-  background: #f0f7ff;
+  background: var(--color-bg-blue);
   border-color: #91caff;
 }
 
 .data-page .overview-card .label {
-  font-size: 12px;
-  color: #8C8C8C;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
   margin-bottom: 4px;
 }
 
 .data-page .overview-card .value {
   font-size: 18px;
   font-weight: 600;
-  color: #262626;
+  color: var(--color-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -489,10 +405,10 @@
 }
 
 .data-page .overview-detail h3 {
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 600;
   margin: 0 0 8px;
-  color: #262626;
+  color: var(--color-text-primary);
 }
 
 /* === 表格 === */
@@ -507,10 +423,10 @@
 .data-page .data-table th {
   background: #fafafa;
   font-weight: 500;
-  color: #595959;
+  color: var(--color-text-secondary);
   padding: 8px 12px;
   text-align: left;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .data-page .data-table th:not(:first-child) {
@@ -519,7 +435,7 @@
 
 .data-page .data-table td {
   padding: 8px 12px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--color-border);
   color: var(--color-text-primary);
 }
 

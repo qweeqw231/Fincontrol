@@ -7,6 +7,7 @@ import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
  * <p>右列：持有收益率 + 持有收益额
  * <p>每个数字旁 ℹ️ 按钮点击弹 InfoModal 显示定义 / 公式 / 算法
  * <p>口径 A = 全口径含余额类（决策 4 v2）
+ * <p>2026-07-24 PR2：className="card"→"stat-card"、.card-title→.stat-card-title 等
  */
 export const CumulativeReturnCard = () => {
   const cum = useAssetSnapshotStore((s) => s.cumulativeReturn)
@@ -16,26 +17,26 @@ export const CumulativeReturnCard = () => {
 
   if (loading) {
     return (
-      <div className="card cumulative-return-card">
-        <div className="card-title">累计 / 持有 收益</div>
-        <div className="card-value">加载中...</div>
+      <div className="stat-card cumulative-return-card">
+        <div className="stat-card-title">累计 / 持有 收益</div>
+        <div className="stat-card-value">加载中...</div>
       </div>
     )
   }
   if (error) {
     return (
-      <div className="card cumulative-return-card error">
-        <div className="card-title">累计 / 持有 收益</div>
-        <div className="card-value">错误</div>
+      <div className="stat-card cumulative-return-card error">
+        <div className="stat-card-title">累计 / 持有 收益</div>
+        <div className="stat-card-value">错误</div>
       </div>
     )
   }
   if (!cum || !cum.available) {
     return (
-      <div className="card cumulative-return-card disabled">
-        <div className="card-title">累计 / 持有 收益</div>
-        <div className="card-value">—</div>
-        <div className="card-sub">{cum?.message || 'Phase 3 上线'}</div>
+      <div className="stat-card cumulative-return-card disabled">
+        <div className="stat-card-title">累计 / 持有 收益</div>
+        <div className="stat-card-value">—</div>
+        <div className="stat-card-sub">{cum?.message || 'Phase 3 上线'}</div>
       </div>
     )
   }
@@ -54,8 +55,8 @@ export const CumulativeReturnCard = () => {
   const formatAmt  = (a) => `${a >= 0 ? '+' : ''}${a.toFixed(2)} 元`
 
   return (
-    <div className="card cumulative-return-card">
-      <div className="card-title">累计 / 持有 收益</div>
+    <div className="stat-card cumulative-return-card">
+      <div className="stat-card-title">累计 / 持有 收益</div>
 
       <div className="crc-grid">
         {/* 左列：累计 */}
@@ -113,7 +114,7 @@ export const CumulativeReturnCard = () => {
         </div>
       </div>
 
-      <div className="card-sub">
+      <div className="stat-card-sub">
         算法：{algo}｜快照：{snap}｜{cum.fundCount ?? 0} 只基金
       </div>
 
@@ -122,7 +123,9 @@ export const CumulativeReturnCard = () => {
   )
 }
 
-/** 4 个 ℹ️ 弹窗：累计/持有 × 率/额（决策 25 v3 持有按 status 动态显示） */
+/** 4 个 ℹ️ 弹窗：累计/持有 × 率/额（决策 25 v3 持有按 status 动态显示）
+ *  2026-07-24 PR2：InfoModal 样式从 cumulative-return.css 合并到 global.css .modal
+ *  JSX 结构不变（仍用 .modal-backdrop / .modal），但定义在 global.css 中 */
 const InfoModal = ({ openKey, onClose }) => {
   const cum = useAssetSnapshotStore((s) => s.cumulativeReturn)
   if (!openKey) return null
