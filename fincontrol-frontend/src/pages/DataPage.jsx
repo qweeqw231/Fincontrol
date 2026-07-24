@@ -18,8 +18,19 @@ import { revokeAll, revokeOne } from '../utils/blob.js'
  *   <li>选 4 张图 → /screenshot/upload 得 4 fileId</li>
  *   <li>选 single/multi + snapshot_date → /screenshot/parse-batch?mode={single|multi} 得 19-fund parsedAsset</li>
  *   <li>触发 /snapshot/confirm 写入 DB → 1b.3.2 自动写 snapshot_meta</li>
+ *   <li>1b.4+ 修复：自动 setCurrent 把新日期设为 ★ CURRENT（PR3+ BUG-004 修复）</li>
  *   <li>列表自动刷新（fetchLatest + fetchMetaList）</li>
  * </ol>
+ * <p>2026-07-24 PR3+ 修改：
+ * <ul>
+ *   <li>PR3 HOME-013：删 v1.0-DRAFT + 简化技术术语（HomePage 改动）</li>
+ *   <li>PR3 HOME-016：删 section 序号硬编码</li>
+ *   <li>PR3 DATA-006：confirm 后 step 回 idle（避免下次上传闪'入库中…'）</li>
+ *   <li>PR3+ BUG-001：confirmSuccess 独立 state 显示"✓ 入库成功"banner</li>
+ *   <li>PR3+ BUG-002：is_current 卡片右侧加 ✓ 当前 badge（视觉等高）</li>
+ *   <li>PR3+ BUG-003：预览弹窗快照日期可点击编辑（3 select 滚轮）</li>
+ *   <li>PR3+ BUG-004：confirm 后自动调 setCurrent（无需手动点"设为当前"）</li>
+ * </ul>
  */
 export default function DataPage() {
   const fetchLatest = useAssetSnapshotStore((s) => s.fetchLatest)
@@ -37,7 +48,7 @@ export default function DataPage() {
   const [filePreviews, setFilePreviews] = useState([])
 
   // 1b.3.6/7/8 流状态
-  const [step, setStep] = useState('idle') // idle | uploading | parsing | parsed | confirming | confirmed | error
+  const [step, setStep] = useState('idle') // idle | uploading | parsing | parsed | confirming | error
   const [error, setError] = useState(null)
   const [parsedAsset, setParsedAsset] = useState(null)
   const [parseInfo, setParseInfo] = useState(null)
@@ -49,6 +60,15 @@ export default function DataPage() {
   // 1b.3.10 确认入库弹窗
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [parsedSummary, setParsedSummary] = useState(null)
+
+  // PR3+ BUG-001：独立 confirmSuccess state（不耦合 step 状态机，让"✓ 入库成功"banner 必现）
+  const [confirmSuccess, setConfirmSuccess] = useState(false)
+
+  // PR3+ BUG-003：解析后日期可点击编辑（3 select 滚轮）
+  const [editingDate, setEditingDate] = useState(false)
+  const [editYear, setEditYear] = useState(new Date().getFullYear())
+  const [editMonth, setEditMonth] = useState(new Date().getMonth() + 1)
+  const [editDay, setEditDay] = useState(new Date().getDate())
 
   useEffect(() => {
     fetchLatest(1)
@@ -90,6 +110,7 @@ export default function DataPage() {
     setStep('idle')
     setError(null)
     setParsedAsset(null)
+    setConfirmSuccess(false)  // PR3+ BUG-001：上传新图时重置 success banner
   }
 
   // 1b.3.6 单张删除（PR1 修复 GLOBAL-015：释放被删的 blob URL）
@@ -167,29 +188,62 @@ export default function DataPage() {
     setShowConfirmModal(true)
   }
 
-  // 1b.3.8 confirm（PR1 修复 GLOBAL-015：成功后释放所有 blob URL）
+  // PR3+ BUG-003：解析后日期编辑状态机 — 进入编辑模式时初始化 year/month/day
+  function startEditDate() {
+    if (!snapshotDate) return
+    const parts = snapshotDate.split('-')
+    if (parts.length === 3) {
+      setEditYear(parseInt(parts[0], 10))
+      setEditMonth(parseInt(parts[1], 10))
+      setEditDay(parseInt(parts[2], 10))
+    }
+    setEditingDate(true)
+  }
+
+  // PR3+ BUG-003：应用编辑后的日期（关闭编辑器）
+  function applyEditDate() {
+    const yyyy = String(editYear).padStart(4, '0')
+    const mm = String(editMonth).padStart(2, '0')
+    const dd = String(editDay).padStart(2, '0')
+    setSnapshotDate(`${yyyy}-${mm}-${dd}`)
+    setEditingDate(false)
+  }
+
+  // 1b.3.8 confirm（PR1 修复 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/004）
   async function confirm() {
     if (!parsedAsset) return
     setStep('confirming')
     try {
+      // 1）入库到 snapshot_meta
       await apiClient.post(
         ENDPOINTS.SNAPSHOT_CONFIRM,
         { userId: 1, snapshotDate, confirmedOverwrite: true, parsedAssets: [parsedAsset] },
         { headers: { 'X-User-Id': '1' } }
       )
-      // PR3 DATA-006：不在“confirming”之后设置为“confirmed”（后者永久卡住，
-      // 下一个上传会闪烁。成功后直接重置为“idle”，由空态分支接管）
+      // 2）PR3+ BUG-004：自动把本次日期设为 is_current=true（★ CURRENT 跳转）
+      //    后端逻辑：旧 current 自动降级为 is_current=false
+      await apiClient.post(
+        ENDPOINTS.SNAPSHOT_SET_CURRENT,
+        { userId: 1, snapshotDate },
+        { headers: { 'X-User-Id': '1' } }
+      )
+      // 3）PR3 DATA-006：成功后直接 setStep('idle')，由空态分支接管
       await fetchLatest(1)
-      await fetchMetaList()
-      // PR1：释放所有 blob URL（成功后才清，避免预览阶段误释放）
+      await fetchMetaList()  // 再刷一次列表（is_current 状态已更新）
+      // 4）PR1：释放所有 blob URL
       revokeAll(filePreviews)
       setFiles([])
       setFilePreviews([])
       setParsedAsset(null)
       setStep('idle')
+      // 5）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
+      setConfirmSuccess(true)
+      // 6）5 秒后自动隐藏 banner（让用户有时间看）
+      setTimeout(() => setConfirmSuccess(false), 5000)
     } catch (e) {
       setError(e?.message || 'confirm 失败')
       setStep('error')
+      setConfirmSuccess(false)
     }
   }
 
@@ -294,13 +348,14 @@ export default function DataPage() {
         <p className="hint">确认将 19-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
         <button
           onClick={openConfirmModal}
-          disabled={step !== 'parsed' && step !== 'confirmed'}
+          disabled={step !== 'parsed' && step !== 'confirming'}
           className="primary-btn"
           data-testid="confirm-btn"
         >
           {step === 'confirming' ? '入库中…' : '确认入库（先预览）'}
         </button>
-        {step === 'confirmed' && (
+        {/* PR3+ BUG-001：独立 confirmSuccess state 控制 banner（不耦合 step 状态机） */}
+        {confirmSuccess && (
           <div className="success-banner">✓ 入库成功！首页应已显示 19 只基金</div>
         )}
       </section>
@@ -322,8 +377,17 @@ export default function DataPage() {
                 </span>
                 <span className="confirmed-at">{m.confirmedAt}</span>
               </div>
+              {/* PR3+ BUG-002：is_current 卡片右侧加 ✓ 当前 badge 占位，与其他卡片等高 */}
               <div className="meta-actions">
-                {!m.isCurrent && (
+                {m.isCurrent ? (
+                  <span
+                    className="badge is-current active"
+                    style={{ padding: '6px 12px' }}
+                    data-testid={`current-badge-${m.snapshotDate}`}
+                  >
+                    ✓ 当前
+                  </span>
+                ) : (
                   <button
                     onClick={() => setCurrent(m.snapshotDate)}
                     className="secondary-btn"
@@ -365,9 +429,77 @@ export default function DataPage() {
                   <div className="label">基金数</div>
                   <div className="value">{parsedSummary.fundCount}</div>
                 </div>
+                {/* PR3+ BUG-003：快照日期可点击编辑（3 select 滚轮） */}
                 <div className="overview-card">
                   <div className="label">快照日期</div>
-                  <div className="value">{snapshotDate}</div>
+                  {editingDate ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>
+                        你解析的是 <strong>{snapshotDate}</strong>，如需修改请选正确日期：
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <select
+                          value={editYear}
+                          onChange={(e) => setEditYear(parseInt(e.target.value, 10))}
+                          style={{ padding: '2px 4px', fontSize: 12 }}
+                        >
+                          {Array.from({ length: 31 }, (_, i) => 2000 + i).map((y) => (
+                            <option key={y} value={y}>
+                              {y}
+                            </option>
+                          ))}
+                        </select>
+                        <span style={{ fontSize: 11 }}>年</span>
+                        <select
+                          value={editMonth}
+                          onChange={(e) => setEditMonth(parseInt(e.target.value, 10))}
+                          style={{ padding: '2px 4px', fontSize: 12 }}
+                        >
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                        <span style={{ fontSize: 11 }}>月</span>
+                        <select
+                          value={editDay}
+                          onChange={(e) => setEditDay(parseInt(e.target.value, 10))}
+                          style={{ padding: '2px 4px', fontSize: 12 }}
+                        >
+                          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                        <span style={{ fontSize: 11 }}>日</span>
+                        <button
+                          type="button"
+                          onClick={applyEditDate}
+                          style={{ padding: '2px 8px', fontSize: 11, background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 3, marginLeft: 4, cursor: 'pointer' }}
+                        >
+                          确定
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingDate(false)}
+                          style={{ padding: '2px 8px', fontSize: 11, background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: 3, cursor: 'pointer' }}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={startEditDate}
+                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                      title="点击修改日期"
+                    >
+                      <div className="value" style={{ fontSize: 18 }}>{snapshotDate}</div>
+                      <span style={{ fontSize: 14, color: '#6b7280' }}>📅</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
