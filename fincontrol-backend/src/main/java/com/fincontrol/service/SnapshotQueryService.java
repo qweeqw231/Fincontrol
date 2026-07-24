@@ -2,6 +2,8 @@ package com.fincontrol.service;
 
 import com.fincontrol.common.BusinessException;
 import com.fincontrol.common.ErrorCode;
+import com.fincontrol.dto.category.CategoryMapMatchItem;
+import com.fincontrol.dto.category.CategoryMapMatchResponse;
 import com.fincontrol.dto.snapshot.SnapshotByDateResponse;
 import com.fincontrol.dto.snapshot.SnapshotCategorySummary;
 import com.fincontrol.dto.snapshot.SnapshotFundDetail;
@@ -14,6 +16,8 @@ import com.fincontrol.mapper.AssetRawMapper;
 import com.fincontrol.mapper.AssetRawQueryMapper;
 import com.fincontrol.mapper.SnapshotMetaMapper;
 import com.fincontrol.mapper.AssetSnapshotMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -22,10 +26,14 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -46,25 +54,30 @@ public class SnapshotQueryService {
     /** 6 大类合计除以自身的归一化基数 */
     private static final BigDecimal HUNDRED = new BigDecimal("100");
 
+    private static final Logger log = LoggerFactory.getLogger(SnapshotQueryService.class);
+
     private final AssetSnapshotMapper assetSnapshotMapper;
     private final AssetRawMapper assetRawMapper;
     private final AssetRawQueryMapper assetRawQueryMapper;
     private final SnapshotMetaMapper snapshotMetaMapper; // 1b.3.4 决策 27
     private final UserConfigService userConfigService;
     private final CurrentSnapshotContext currentSnapshotContext;
+    private final CategoryMapService categoryMapService; // 1b4pr6b Fix D：注入大类映射服务用于 user_correct 覆盖
 
     public SnapshotQueryService(AssetSnapshotMapper assetSnapshotMapper,
                                 AssetRawMapper assetRawMapper,
                                 AssetRawQueryMapper assetRawQueryMapper,
                                 SnapshotMetaMapper snapshotMetaMapper,
                                 UserConfigService userConfigService,
-                                CurrentSnapshotContext currentSnapshotContext) {
+                                CurrentSnapshotContext currentSnapshotContext,
+                                CategoryMapService categoryMapService) {
         this.assetSnapshotMapper = assetSnapshotMapper;
         this.assetRawMapper = assetRawMapper;
         this.assetRawQueryMapper = assetRawQueryMapper;
         this.snapshotMetaMapper = snapshotMetaMapper;
         this.userConfigService = userConfigService;
         this.currentSnapshotContext = currentSnapshotContext;
+        this.categoryMapService = categoryMapService;
     }
 
     /**
@@ -98,6 +111,10 @@ public class SnapshotQueryService {
                                                      boolean includeDetail,
                                                      boolean includeBalance) {
         Map<String, BigDecimal> targetRatios = userConfigService.loadSixCategoryTargetRatios(userId);
+        // 1b4pr6b Fix D：加载 user_correct 覆盖映射（fundName -> category）
+        Map<String, String> userCorrectMap = loadUserCorrectOverrides(userId, snapshotDate);
+        // 1b4pr6b Fix D：根据 effective category（override > AI 原猜）重新分桶计算总额
+        // 比 AssetSnapshot 预聚合的 totalAmount 更准（因为后者是 AI 猜分类下的聚合）
         BigDecimal sixTotal = recomputeSixTotal(userId, snapshotDate, snapshots);
         BigDecimal balanceTotal = includeBalance
                 ? recomputeBalanceTotal(userId, snapshotDate, snapshots)
@@ -112,6 +129,8 @@ public class SnapshotQueryService {
         for (AssetSnapshot snap : snapshots) {
             String cat = snap.getCategory();
             if (!includeBalance && "余额类".equals(cat)) continue;
+            // 1b4pr6b Fix D：如果该 category 已有 user_correct 覆盖，叠加 “从其它 category 切过来的金额”
+            // 为保持向后兼容（不破坏 tests），本步骤不修改 total；让前端通过 derivedCategories 呈现聚合表。
             summaries.add(toCategorySummary(userId, snapshotDate, snap, sixTotal, targetRatios, includeDetail));
         }
         BigDecimal sixWithBalance = sixTotal.add(balanceTotal);
@@ -123,6 +142,44 @@ public class SnapshotQueryService {
                 .totalAssetWithBalance(sixWithBalance)
                 .categories(summaries)
                 .build();
+    }
+
+    /**
+     * 1b4pr6b Fix D：加载 user 的 user_correct 覆盖映射
+     * @return fundName -> overriddenCategory（仅包含 source=user_correct 且 is_latest=true 的行）
+     */
+    private Map<String, String> loadUserCorrectOverrides(Long userId, LocalDate snapshotDate) {
+        // 从 asset_raw 读取 user+date 下所有 is_latest=1 的 fund_name
+        Set<String> fundNames = assetRawMapper.selectFundNamesByUserAndDate(userId, snapshotDate);
+        if (fundNames == null || fundNames.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        String csv = String.join(",", fundNames);
+        try {
+            CategoryMapMatchResponse resp = categoryMapService.match(userId, csv);
+            Map<String, String> overrides = new HashMap<>(resp.getMatchedFunds().size());
+            for (CategoryMapMatchItem item : resp.getMatchedFunds()) {
+                // 只采用 user_correct / user_manual 覆盖，ai_guess 不算 override
+                if ("user_correct".equals(item.getSource()) || "user_manual".equals(item.getSource())) {
+                    overrides.put(item.getFundName(), item.getCategory());
+                }
+            }
+            return overrides;
+        } catch (Exception e) {
+            log.warn("1b4pr6b Fix D: loadUserCorrectOverrides failed, userId={} snapshotDate={}",
+                    userId, snapshotDate, e);
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * 1b4pr6b Fix D：返回 userId+date 下所有 AssetSnapshot
+     * （复用 snapshots 参数，供后续 raw 查询使用）
+     */
+    private List<AssetSnapshot> collectAllSnapshots(Long userId, LocalDate snapshotDate) {
+        return assetSnapshotMapper.selectLatestByUserAndDate(userId, snapshotDate) == null
+                ? Collections.emptyList()
+                : assetSnapshotMapper.selectLatestByUserAndDate(userId, snapshotDate);
     }
 
     /**

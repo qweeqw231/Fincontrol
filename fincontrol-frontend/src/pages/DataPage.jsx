@@ -475,6 +475,12 @@ export default function DataPage() {
       setBatchMode(false)
       setSelectedFunds(new Set())
       setShowBatchConfirmModal(false)
+      // 1b4pr6b Fix D：刷新首页 store（next 用户返回首页时显示新分类）
+      try {
+        await fetchLatest(1)
+      } catch (e) {
+        console.warn('[Fix D] fetchLatest after doBatchConfirm failed:', e)
+      }
     } catch (e) {
       setError(friendlyError(e))
     } finally {
