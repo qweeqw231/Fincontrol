@@ -11,12 +11,19 @@ export function getCategoryColor(name) {
   return CATEGORY_COLORS[name] || '#94a3b8';
 }
 
-export function formatYuan(n) {
+/**
+ * 1b.4 PR4a · 修复 HOME-009：¥ 符号 + thin space（U+2009）
+ * - opts.withSymbol = true → 返回 "¥\u2009{body}"
+ * - 默认行为不变（透传数字）
+ */
+export function formatYuan(n, opts = {}) {
   if (n == null || Number.isNaN(Number(n))) return '—';
-  return Number(n).toLocaleString('zh-CN', {
+  const body = Number(n).toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+  if (opts && opts.withSymbol) return `¥\u2009${body}`;
+  return body;
 }
 
 export function formatSignedAmount(n) {

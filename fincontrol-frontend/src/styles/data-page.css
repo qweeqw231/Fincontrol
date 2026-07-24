@@ -364,7 +364,8 @@
 
 .data-page .overview-summary {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  /* 1b.4 PR4a · DATA-012：modal 中“快照日期”卡移到 header，overview-summary 从 5 列改为 4 列 */
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin-bottom: 20px;
 }

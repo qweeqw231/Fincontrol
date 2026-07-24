@@ -151,7 +151,8 @@ function SixCategoryGroup({ cat, cTotal, funds }) {
         <td>{formatYuan(cTotal)}</td>
         <td>{subtotalHolding == null ? '—' : formatSignedAmount(subtotalHolding)}</td>
         <td>{subtotalCumulative == null ? '—' : formatSignedAmount(subtotalCumulative)}</td>
-        <td>100.00%</td>
+        {/* 1b.4 PR4a · HOME-014 ⚪：100% 是设计意图，防误删加 tooltip */}
+        <td title="大类内部各基金持仓占比之和（恒为 100%）">100.00%</td>
       </tr>
     </>
   )
@@ -549,7 +550,8 @@ export default function HomePage() {
 
       <div className="hero-card">
         <div className="hero-label">总资产（含余额类）</div>
-        <div className="hero-value">¥ {formatYuan(totalAll)}</div>
+        {/* 1b.4 PR4a · HOME-009：¥ 用 thin space + withSymbol */}
+        <div className="hero-value">{formatYuan(totalAll, { withSymbol: true })}</div>
         <div className="hero-foot">
           截至 {cumDate} · 六大类 {formatYuan(sixTotal)} 元 · 余额{' '}
           {formatYuan(balanceTotal)} 元
@@ -565,7 +567,7 @@ export default function HomePage() {
             />
             六大类总值
           </div>
-          <div className="value">¥ {formatYuan(sixTotal)}</div>
+          <div className="value">{formatYuan(sixTotal, { withSymbol: true })}</div>
           <div className="sub">{totalFundCount} 只基金 · 配置基准</div>
         </div>
         <div className="stat-card">
@@ -576,7 +578,7 @@ export default function HomePage() {
             />
             余额类
           </div>
-          <div className="value">¥ {formatYuan(balanceTotal)}</div>
+          <div className="value">{formatYuan(balanceTotal, { withSymbol: true })}</div>
           <div className="sub">{balFundCount} 只基金 · 定投水源</div>
         </div>
         {/* P5-1: 1b.2 累计/持有收益 ℹ️ 提示恢复 —— 用 CumulativeReturnCard 组件自带 4 个 ℹ️ + InfoModal */}

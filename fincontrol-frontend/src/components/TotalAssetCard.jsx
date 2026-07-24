@@ -1,9 +1,11 @@
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
+import { formatYuan } from '../utils/formatters.js'
 
 /**
  * TotalAssetCard — 六大类总值卡片（1b.6）
  * <p>显示 六大类合计金额（不含余额类 / 来自 GET /api/snapshot/latest?includeDetail=true 的 sixCategoriesTotal）。
  * <p>2026-07-24 PR2：className="card"→"stat-card"、.card-title→.stat-card-title 等
+ * <p>2026-07-24 PR4a：¥ 改 formatYuan withSymbol，thinspace
  */
 export const TotalAssetCard = () => {
   const snap = useAssetSnapshotStore((s) => s.latestSnapshot)
@@ -32,7 +34,7 @@ export const TotalAssetCard = () => {
   return (
     <div className="stat-card total-asset-card">
       <div className="stat-card-title">六大类总值</div>
-      <div className="stat-card-value">¥{Number(total).toFixed(2)}</div>
+      <div className="stat-card-value">{formatYuan(total, { withSymbol: true })}</div>
       <div className="stat-card-sub">截至 {snapshotDate}</div>
     </div>
   )

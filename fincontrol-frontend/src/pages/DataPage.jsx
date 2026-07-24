@@ -30,8 +30,17 @@ import HistoryLimitDialog from '../components/data/HistoryLimitDialog.jsx'
  *   <li>PR3 DATA-006：confirm 后 step 回 idle（避免下次上传闪'入库中…'）</li>
  *   <li>PR3+ BUG-001：confirmSuccess 独立 state 显示"✓ 入库成功"banner</li>
  *   <li>PR3+ BUG-002：is_current 卡片右侧加 ✓ 当前 badge（视觉等高）</li>
- *   <li>PR3+ BUG-003：预览弹窗快照日期可点击编辑（3 select 滚轮）</li>
+ *   <li>PR3+ BUG-003：预览弹窗快照日期可点击编辑（3 select 滚轮）— PR4a DATA-012 后改为 modal-header 副标题</li>
  *   <li>PR3+ BUG-004：confirm 后自动调 setCurrent（无需手动点"设为当前"）</li>
+ * </ul>
+ * <p>2026-07-24 PR4a 修改：
+ * <ul>
+ *   <li>GLOBAL-016：handleFiles > 4 张改 setError，移除静默截断</li>
+ *   <li>DATA-002：占位符文案去 0716 残留</li>
+ *   <li>DATA-005：上传按钮加 title tooltip</li>
+ *   <li>DATA-010：解析模式下方加 form-hint</li>
+ *   <li>DATA-011：去掉 asset_raw/snapshot_meta 技术术语</li>
+ *   <li>DATA-012：modal 中快照日期卡移到 header 副标题，overview-summary 5 列 → 4 列</li>
  * </ul>
  */
 export default function DataPage() {
@@ -71,12 +80,7 @@ export default function DataPage() {
 
   // PR3+ BUG-001：独立 confirmSuccess state（不耦合 step 状态机，让"✓ 入库成功"banner 必现）
   const [confirmSuccess, setConfirmSuccess] = useState(false)
-
-  // PR3+ BUG-003：解析后日期可点击编辑（3 select 滚轮）
-  const [editingDate, setEditingDate] = useState(false)
-  const [editYear, setEditYear] = useState(new Date().getFullYear())
-  const [editMonth, setEditMonth] = useState(new Date().getMonth() + 1)
-  const [editDay, setEditDay] = useState(new Date().getDate())
+  // PR4a DATA-012：editingDate/editYear/editMonth/editDay 编辑状态机已删除（日期移到 header 副标题）
 
   useEffect(() => {
     fetchLatest(1)
@@ -105,20 +109,20 @@ export default function DataPage() {
   }
 
   // 1b.3.6 文件选择（PR1 修复 GLOBAL-015：先释放旧的 blob URL，再创建新的）
+  // 1b.4 PR4a GLOBAL-016：> 4 张改 setError，不再静默截断
   function handleFiles(e) {
     const list = Array.from(e.target.files || [])
     if (list.length === 0) return
     if (list.length > 4) {
-      setError(`最多 4 张图，当前选了 ${list.length} 张`)
+      setError(`最多 4 张图，当前选了 ${list.length} 张，请重新选择`)
       return
     }
-    const next = list.slice(0, 4)
 
     // PR1：释放旧的 blob，避免泄漏
     revokeAll(filePreviews)
 
-    setFiles(next)
-    setFilePreviews(next.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })))
+    setFiles(list)
+    setFilePreviews(list.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })))
     setStep('idle')
     setError(null)
     setParsedAsset(null)
@@ -215,27 +219,6 @@ export default function DataPage() {
       categories: cats,
     })
     setShowConfirmModal(true)
-  }
-
-  // PR3+ BUG-003：解析后日期编辑状态机 — 进入编辑模式时初始化 year/month/day
-  function startEditDate() {
-    if (!snapshotDate) return
-    const parts = snapshotDate.split('-')
-    if (parts.length === 3) {
-      setEditYear(parseInt(parts[0], 10))
-      setEditMonth(parseInt(parts[1], 10))
-      setEditDay(parseInt(parts[2], 10))
-    }
-    setEditingDate(true)
-  }
-
-  // PR3+ BUG-003：应用编辑后的日期（关闭编辑器）
-  function applyEditDate() {
-    const yyyy = String(editYear).padStart(4, '0')
-    const mm = String(editMonth).padStart(2, '0')
-    const dd = String(editDay).padStart(2, '0')
-    setSnapshotDate(`${yyyy}-${mm}-${dd}`)
-    setEditingDate(false)
   }
 
   // 1b.3.8 confirm（PR1 修复 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/004/005 + PR3+hotfix BUG-006）
@@ -347,8 +330,9 @@ export default function DataPage() {
             </div>
           )}
         </div>
+        {/* 1b.4 PR4a · DATA-002：去掉'建议 0716 数据'残留 */}
         {filePreviews.length === 0 && (
-          <div className="preview-empty">请选择 4 张图</div>
+          <div className="preview-empty">请选择 4 张支付宝基金截图</div>
         )}
       </section>
 
@@ -362,6 +346,11 @@ export default function DataPage() {
               <option value="single">single（推荐，单图逐张）</option>
               <option value="multi">multi（4 图 batch）</option>
             </select>
+            {/* 1b.4 PR4a · DATA-010：解析模式说明 */}
+            <small className="form-hint">
+              <strong>single</strong>：逐张上传，失败可单独重试；<br />
+              <strong>multi</strong>：4 张一次性发给 AI，速度快但失败需全部重试。
+            </small>
           </label>
           <label>
             <span>截图数据日期</span>
@@ -374,11 +363,13 @@ export default function DataPage() {
           </label>
         </div>
         <div style={{ marginTop: 8 }}>
+          {/* 1b.4 PR4a · DATA-005：上传并解析按钮加 tooltip */}
           <button
             onClick={uploadAndParse}
             disabled={step === 'uploading' || step === 'parsing' || files.length !== 4}
             className="primary-btn"
             data-testid="parse-btn"
+            title="先上传图片，再调用 AI 解析 19 只基金数据"
           >
             {step === 'uploading' ? '上传中…' : step === 'parsing' ? '解析中…' : '上传并解析'}
           </button>
@@ -415,7 +406,8 @@ export default function DataPage() {
 
       <section className="section-card">
         <h2>确认入库</h2>
-        <p className="hint">确认将 {parseInfo?.fundCount ?? 0}-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
+        {/* 1b.4 PR4a · DATA-011：去除技术术语 asset_raw/snapshot_meta */}
+        <p className="hint">确认将今日资产数据写入历史记录</p>
         <button
           onClick={openConfirmModal}
           disabled={step !== 'parsed' && step !== 'confirming'}
@@ -484,12 +476,18 @@ export default function DataPage() {
       {showConfirmModal && parsedSummary && parsedSummary.fundCount != null && (
         <div className="modal-backdrop" onClick={() => setShowConfirmModal(false)}>
           <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+            {/* 1b.4 PR4a · DATA-012：快照日期移到 modal-header 副标题 */}
             <div className="modal-header">
-              <h2>📊 资产入库预览</h2>
+              <h2>
+                📊 今日资产预览 ·{' '}
+                <span className="modal-date" data-testid="modal-snapshot-date">
+                  {snapshotDate}
+                </span>
+              </h2>
               <button className="modal-close" onClick={() => setShowConfirmModal(false)} aria-label="关闭">×</button>
             </div>
             <div className="modal-body">
-              {/* 概览卡片 */}
+              {/* 概览卡片（PR4a DATA-012：5 列 → 4 列） */}
               <div className="overview-summary">
                 <div className="overview-card highlight">
                   <div className="label">总资产（含余额类）</div>
@@ -506,78 +504,6 @@ export default function DataPage() {
                 <div className="overview-card">
                   <div className="label">基金数</div>
                   <div className="value">{parsedSummary.fundCount}</div>
-                </div>
-                {/* PR3+ BUG-003：快照日期可点击编辑（3 select 滚轮） */}
-                <div className="overview-card">
-                  <div className="label">快照日期</div>
-                  {editingDate ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div style={{ fontSize: 11, color: '#6b7280' }}>
-                        你解析的是 <strong>{snapshotDate}</strong>，如需修改请选正确日期：
-                      </div>
-                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                        <select
-                          value={editYear}
-                          onChange={(e) => setEditYear(parseInt(e.target.value, 10))}
-                          style={{ padding: '2px 4px', fontSize: 12 }}
-                        >
-                          {Array.from({ length: 31 }, (_, i) => 2000 + i).map((y) => (
-                            <option key={y} value={y}>
-                              {y}
-                            </option>
-                          ))}
-                        </select>
-                        <span style={{ fontSize: 11 }}>年</span>
-                        <select
-                          value={editMonth}
-                          onChange={(e) => setEditMonth(parseInt(e.target.value, 10))}
-                          style={{ padding: '2px 4px', fontSize: 12 }}
-                        >
-                          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                            <option key={m} value={m}>
-                              {m}
-                            </option>
-                          ))}
-                        </select>
-                        <span style={{ fontSize: 11 }}>月</span>
-                        <select
-                          value={editDay}
-                          onChange={(e) => setEditDay(parseInt(e.target.value, 10))}
-                          style={{ padding: '2px 4px', fontSize: 12 }}
-                        >
-                          {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
-                          ))}
-                        </select>
-                        <span style={{ fontSize: 11 }}>日</span>
-                        <button
-                          type="button"
-                          onClick={applyEditDate}
-                          style={{ padding: '2px 8px', fontSize: 11, background: 'var(--color-primary)', color: '#fff', border: 'none', borderRadius: 3, marginLeft: 4, cursor: 'pointer' }}
-                        >
-                          确定
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingDate(false)}
-                          style={{ padding: '2px 8px', fontSize: 11, background: 'transparent', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: 3, cursor: 'pointer' }}
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div
-                      onClick={startEditDate}
-                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                      title="点击修改日期"
-                    >
-                      <div className="value" style={{ fontSize: 18 }}>{snapshotDate}</div>
-                      <span style={{ fontSize: 14, color: '#6b7280' }}>📅</span>
-                    </div>
-                  )}
                 </div>
               </div>
 
