@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { friendlyError } from '../utils/formatters.js'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
 import { useUserConfigStore } from '../stores/userConfigStore.js'
 import { apiClient } from '../api/client.js'
@@ -77,6 +78,20 @@ export default function DataPage() {
   // 1b.3.10 确认入库弹窗
   const [showConfirmModal, setShowConfirmModal] = useState(false)
   const [parsedSummary, setParsedSummary] = useState(null)
+
+  // 1b4pr6b 决策 33 v2 · 预览 modal 大类修正 UI（D1-D7）
+  // canonical 类别（8 个 = 7 canonical + 余额类）
+  const FUND_CATEGORIES = ['货币类', '固收类', '商品类', 'A股权益类', '海外权益类', '港股大中华类', '余额类']
+  // D5：已确认映射表（从后端 match API 加载，key=fundName）
+  const [categoryOverrides, setCategoryOverrides] = useState({})
+  // D2：用户改 dropdown 但未点 ✓ 的草稿（key=fundName → categoryName）
+  const [categoryDirty, setCategoryDirty] = useState({})
+  // 行级 saving 状态（key=fundName → bool）
+  const [overridesSaving, setOverridesSaving] = useState({})
+  // D2：dirtyCount > 0 时弹二次确认 modal
+  const [showSubmitDirtyModal, setShowSubmitDirtyModal] = useState(false)
+  // D7：消失-重现事件缓存（key=fundName → { firstMissingSnapshotDate, lastSeenSnapshotDate }）
+  const [pendingReConfirms, setPendingReConfirms] = useState({})
 
   // PR3+ BUG-001：独立 confirmSuccess state（不耦合 step 状态机，让"✓ 入库成功"banner 必现）
   const [confirmSuccess, setConfirmSuccess] = useState(false)
@@ -244,7 +259,7 @@ export default function DataPage() {
   }
 
   // 1b.3.10 打开确认入库弹窗（数据预览）
-  function openConfirmModal() {
+  async function openConfirmModal() {
     if (!parsedAsset) return
     const cats = parsedAsset.categories || []
     const funds = cats.flatMap((c) => (c.funds || []))
@@ -258,11 +273,119 @@ export default function DataPage() {
       fundCount: funds.length,
       categories: cats,
     })
+
+    // 决策 33 D5：调 match API 拿 user_correct 自动套用 + D7 拿消失-重现事件
+    try {
+      const fundNames = funds.map((f) => f.fundName).filter(Boolean)
+      const matchResp = await apiClient.get(ENDPOINTS.CATEGORY_MAP_MATCH, {
+        params: { funds: fundNames.join(',') },
+      })
+      const overrides = {}
+      const reConfirms = {}
+      for (const item of matchResp.matchedFunds || []) {
+        overrides[item.fundName] = {
+          category: item.category,
+          source: item.source,
+          confirmedAt: item.confirmedAt,
+          lastSeenSnapshotDate: item.lastSeenSnapshotDate,
+        }
+        if (item.firstMissingSnapshotDate) {
+          reConfirms[item.fundName] = {
+            firstMissingSnapshotDate: item.firstMissingSnapshotDate,
+            lastSeenSnapshotDate: item.lastSeenSnapshotDate,
+          }
+        }
+      }
+      setCategoryOverrides(overrides)
+      setPendingReConfirms(reConfirms)
+    } catch (e) {
+      console.warn('[D5] match API 失败, 默认使用 AI 原猜分类:', e?.message)
+    }
+
     setShowConfirmModal(true)
   }
 
+  // 决策 33 v2 · 派生计算
+  function getEffectiveCategory(fundName, originalCategory) {
+    // 优先级: overrides (已 user_correct) > dirty (草稿) > original (AI 原猜)
+    if (categoryOverrides[fundName]) return categoryOverrides[fundName].category
+    if (categoryDirty[fundName]) return categoryDirty[fundName]
+    return originalCategory
+  }
+  const pendingCount = useMemo(() => {
+    if (!parsedSummary) return 0
+    let n = 0
+    for (const c of parsedSummary.categories) {
+      for (const f of c.funds || []) {
+        if (!categoryOverrides[f.fundName]) n++
+      }
+    }
+    return n
+  }, [parsedSummary, categoryOverrides])
+  const dirtyCount = Object.keys(categoryDirty).length
+
+  // 决策 33 v2 · API 调用
+  async function confirmOverride(fundName, category) {
+    setOverridesSaving((s) => ({ ...s, [fundName]: true }))
+    try {
+      const data = await apiClient.post(ENDPOINTS.CATEGORY_MAP_UPDATE, { fundName, category })
+      setCategoryOverrides((o) => ({
+        ...o,
+        [fundName]: {
+          category: data.category,
+          source: data.source,
+          confirmedAt: data.confirmedAt,
+          mappingId: data.mappingId,
+        },
+      }))
+      setCategoryDirty((d) => {
+        const n = { ...d }
+        delete n[fundName]
+        return n
+      })
+    } catch (e) {
+      setError(friendlyError(e))
+    } finally {
+      setOverridesSaving((s) => ({ ...s, [fundName]: false }))
+    }
+  }
+  async function resetOverride(fundName) {
+    setOverridesSaving((s) => ({ ...s, [fundName]: true }))
+    try {
+      await apiClient.post(ENDPOINTS.CATEGORY_MAP_RESET, {}, { params: { fundName } })
+      setCategoryOverrides((o) => {
+        const n = { ...o }
+        delete n[fundName]
+        return n
+      })
+    } catch (e) {
+      setError(friendlyError(e))
+    } finally {
+      setOverridesSaving((s) => ({ ...s, [fundName]: false }))
+    }
+  }
+  function handleConfirm() {
+    if (dirtyCount > 0) {
+      setShowSubmitDirtyModal(true)
+      return
+    }
+    doConfirm()
+  }
+  async function submitAllDirty() {
+    // 逐行调 update
+    for (const [fundName, cat] of Object.entries(categoryDirty)) {
+      await confirmOverride(fundName, cat)
+    }
+    doConfirm()
+  }
+  function submitOnlyVerified() {
+    setCategoryDirty({})
+    doConfirm()
+  }
+
+  // 决策 33 D1+D2：doConfirm（被 handleConfirm 调用，可能在二次确认 modal 后调用）
   // 1b.3.8 confirm（PR1 修复 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/004/005 + PR3+hotfix BUG-006）
-  async function confirm() {
+  async function doConfirm() {
     if (!parsedAsset) return
     setStep('confirming')
     // ===== 主 confirm 流程（必须成功，否则失败回滚） =====
@@ -705,7 +828,15 @@ export default function DataPage() {
             </div>
             <div className="modal-footer">
               <button className="secondary-btn" onClick={() => setShowConfirmModal(false)}>取消</button>
-              <button className="primary-btn" onClick={() => { setShowConfirmModal(false); confirm(); }}>
+              {/* 决策 33 D1：严格阻塞（pendingCount > 0 时按钮 disabled）
+                  + D2：dirtyCount > 0 弹二次确认 modal（handleConfirm 拦截） */}
+              <button
+                className="primary-btn"
+                disabled={pendingCount > 0 || step === 'confirming'}
+                title={pendingCount > 0 ? `还有 ${pendingCount} 条 AI 猜测未确认，请逐行核对` : ''}
+                onClick={handleConfirm}
+                data-testid="modal-confirm-btn"
+              >
                 {step === 'confirming' ? '入库中…' : '确认入库'}
               </button>
             </div>
