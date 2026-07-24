@@ -339,28 +339,36 @@ export default function DataPage() {
       <section className="section-card">
         <h2>解析与日期</h2>
         <p className="hint">选择解析模式与截图数据日期，再点 "上传并解析"。</p>
+        {/* 1b.4 PR4a 收尾：form-group 包裹使两个 label 结构一致，
+            避免解析模式的 form-hint 推高 select 而日期输入被压低 */}
         <div className="form-row">
-          <label>
-            <span>解析模式</span>
-            <select value={mode} onChange={(e) => setMode(e.target.value)} data-testid="mode-select">
-              <option value="single">single（推荐，单图逐张）</option>
-              <option value="multi">multi（4 图 batch）</option>
-            </select>
+          <div className="form-group">
+            <label>
+              <span>解析模式</span>
+              <select value={mode} onChange={(e) => setMode(e.target.value)} data-testid="mode-select">
+                <option value="single">single（推荐，单图逐张）</option>
+                <option value="multi">multi（4 图 batch）</option>
+              </select>
+            </label>
             {/* 1b.4 PR4a · DATA-010：解析模式说明 */}
             <small className="form-hint">
               <strong>single</strong>：逐张上传，失败可单独重试；<br />
               <strong>multi</strong>：4 张一次性发给 AI，速度快但失败需全部重试。
             </small>
-          </label>
-          <label>
-            <span>截图数据日期</span>
-            <input
-              type="date"
-              value={snapshotDate}
-              onChange={(e) => setSnapshotDate(e.target.value)}
-              data-testid="date-input"
-            />
-          </label>
+          </div>
+          <div className="form-group">
+            <label>
+              <span>截图数据日期</span>
+              <input
+                type="date"
+                value={snapshotDate}
+                onChange={(e) => setSnapshotDate(e.target.value)}
+                data-testid="date-input"
+              />
+            </label>
+            {/* 1b.4 PR4a 收尾：空占位，与解析模式 form-hint 等高 */}
+            <small className="form-hint" aria-hidden="true">&nbsp;</small>
+          </div>
         </div>
         <div style={{ marginTop: 8 }}>
           {/* 1b.4 PR4a · DATA-005：上传并解析按钮加 tooltip */}
