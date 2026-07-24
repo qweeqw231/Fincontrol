@@ -954,42 +954,6 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 
 ---
 
-## 决策总结表（最新，单一份）
-
-| # | 决策 | 状态 | 关联评审问题 / 触发 |
-|---|------|------|------------|
-| 1 | REST API 契约完成 | ✅ | 第四轮 3.3.5 |
-| 2 | target_ratio 同步策略 = 解读 4 | ✅ | 第四轮 2.2.1 |
-| 3 | profit 字段读取 = 首页明细表 | ✅ | 第四轮 2.1.1 |
-| 4 v2 | 累计收益率卡片（口径 A 全口径含余额类）| ✅ | 第四轮 3.3.1 / 2026-07-22 1b.2 拍板口径 A |
-| 5 | Phase 1 验收标准追加 P0 | ✅ | 第四轮 4.3.1 / 4.3.2 |
-| 6 | Phase 计划修订（新增 Phase 0）| ✅ | 第四轮 4.3.3 / 4.3.4 / 4.3.7 / 4.3.8 |
-| 7 | profit 字段拆分 holding_profit / cumulative_profit | ✅ | 1a.8.7 实测发现 |
-**决策**：
-所有后端代码改动后，**必须**用 `scripts/1b/restart-backend.ps1` 脚本重启后端，**禁止**手动 `Start-Process java -jar` 或 `mvn spring-boot:run`。脚本保证以下 5 步幂等：
-
-1. 杀 java.exe（**只杀 fincontrol 后端，保留 VSCode JDT-LS**）
-2. 清 `fincontrol-backend/target/`
-3. `mvn -f pom.xml package -B -DskipTests`（rebuild）
-4. 启动新后端（重定向 stdout/stderr 到 `log/`）
-5. 30s 内 healthcheck（`GET /actuator/health` = UP）
-
-**影响范围**：
-- 1b.3 / 1b.4 联调：每次改后端代码后必须用脚本，jar 失败风险 → 0
-- Phase 2/3：所有后端改动继承此规范
-- 文档要求：任何新 dev 必须先看 `scripts/README.md` 了解此 SOP
-
-**理由**：
-- 手动操作幂等性差（容易漏杀进程、忘清 target、忘健康检查）
-- 脚本化后**单点失败可重试**（每次跑都从干净状态开始）
-- 决策 23（commit + push）要求所有文档化，SOP 写在脚本 + decisions.md 两处
-
-**回退条件**：无（jar 重建是 Phase 1+ 所有联调的基础设施）
-
-**实现位置**：`scripts/1b/restart-backend.ps1`（纯 ASCII 版，避免 Windows GBK 解析错误）
-
----
-
 ## 决策 25 v3：累计 + 持有 收益 + 双保险 + 展示层 Smart Fallback（2026-07-22）
 
 **状态**：✅ 已锁定（v1：累计 + 双保险 / v2：扩展持有 + 双列 + 历史 / v3：展示层余额宝 Smart Fallback）
@@ -1344,7 +1308,8 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 | 20 | 根目录 `test/` 文件夹规范 | ✅ | 1b.2 | 1b.2 |
 | 21 | `uploads/screenshots/` 缓存清理规范 | ✅ | 1b.2 | 1b.2 |
 | 22 | 决策总结表位置约定（末尾 + 追加新行）| ✅ | 1b.2 | 1b.2 |
+| 23 | 文档更新必 commit + push | ✅ | 1b.2 | 1b.2 |
 | 25 v3 | 持有收益 Smart Fallback（余额宝 holding=NULL 用 cumulative 替代）| ✅ | 1b.2 累计/持有双列 | 1b.2 |
-| 26 | parse 模式开关 single | multi（前端 toggle）| ✅ | 1b.2 验证稳定性 | 1b.2 |
+| 26 | parse 模式开关 single \| multi（前端 toggle）| ✅ | 1b.2 验证稳定性 | 1b.2 |
 | 27 | is_latest 双层语义 + 跨日期 is_current | 🚧 | 1b.2 5-Fund 状态覆盖 Bug | f42b323 |
 | 28 | AI vision 前端 timeout 临时延长 60s→120s + 基金分类映射不自动升级（1b.3 P7）| ✅ | 1b.3 P7 联调 | a83bbd3 |
