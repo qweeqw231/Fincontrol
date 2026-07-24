@@ -1411,6 +1411,291 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 
 ---
 
+## 决策 30：取消硬编码历史限制（2026-07-24）
+
+**状态**：✅ 已锁定（2026-07-24，1b.4 PR3plus 实施）
+
+**背景**：
+- `SnapShotConfirmService.validateRequest()` 中硬编码 `daysDiff > 7` 拒绝超过 7 天的截图
+- 2026-07-24 1b.4 PR3plus 用户实拍 7/13/7/14 截图，距 7/24 = 10-11 天，被 400 拒绝
+- 这些截图是**真实历史数据**，用户有合理需求上传更早的截图
+- 硬编码 7 天无法满足个性化需求（有人想 14 天，有人想 30 天）
+
+**决策**：
+
+> 取消硬编码 7 天历史限制。改为从 `settings` 表读 `max_snapshot_age_days`。
+
+**具体规则**：
+
+1. **后端改动**（SnapShotConfirmService）：
+   - 删除 `if (daysDiff > 7) throw` 硬编码
+   - 注入 `SettingsService settingsService`
+   - 校验时 `int maxAge = settingsService.getMaxSnapshotAgeDays(req.getUserId());`
+   - `if (daysDiff > maxAge) throw ...`
+   - 当 `maxAge === -1` 时表示不限制，永远不超
+
+2. **前端改动**（DataPage）：
+   - "修改历史限制" 按钮 + 4 步 modal（HistoryLimitDialog）
+   - 显示当前 days（从 store 读，不硬编码）
+   - 5 选项：7 / 14 / 30 / 180 / -1（不限制）
+   - 保存调 `PUT /api/settings/{userId}/max-snapshot-age-days`
+   - 上传前预校验用 store.maxSnapshotAgeDays
+
+**实现位置**：
+- `fincontrol-backend/src/main/java/com/fincontrol/service/SnapShotConfirmService.java`（删除硬编码 7）
+- `fincontrol-backend/src/main/java/com/fincontrol/service/SettingsService.java`（getMaxSnapshotAgeDays/setMaxSnapshotAgeDays）
+- `fincontrol-backend/src/main/java/com/fincontrol/controller/SettingsController.java`（GET/PUT）
+- `fincontrol-backend/scripts/1b3/01-settings.sql`（建表 + 默认 7）
+- `fincontrol-backend/src/test/java/com/fincontrol/service/SnapShotConfirmServiceP7Test.java`（回归测试 5 个）
+- `fincontrol-frontend/src/components/data/HistoryLimitDialog.jsx`（4 步 modal）
+- `fincontrol-frontend/src/stores/userConfigStore.js`（加 maxSnapshotAgeDays state + actions）
+- `fincontrol-frontend/src/api/endpoints.js`（SETTINGS_MAX_AGE_GET/UPDATE）
+
+**理由**：
+- 用户需求驱动（上传真实历史数据是核心场景）
+- 灵活可配置（不同用户可以选不同窗口期）
+- 数据层 vs 硬编码：硬编码 7 天是早期 MVP快速选择，现在有 settings 表可以更灵活
+- 不影响 1b.4 之前的代码路径（只是限制放宽，不会破坏其他逻辑）
+
+**回退条件**：
+- Phase 2 如果决定对所有用户默认 30 天（更长窗口期），调整 default 7 → 30 + DB init value
+
+**关联 commit**：`1b98b8c feat(pr3plus): 历史限制可配置 + settings 全局配置表 (decision 30/31)`
+
+*最近更新：2026-07-24 决策 30 落地（取消硬编码历史限制）*
+*触发：1b.4 PR3plus 用户实拍 7/13/7/14 截图被 7 天硬限拒绝*
+
+---
+
+## 决策 31：引入 settings 全局配置表（2026-07-24）
+
+**状态**：✅ 已锁定（2026-07-24，1b.4 PR3plus 实施）
+
+**背景**：
+- 项目目前**没有"全局配置"概念**。所有可调参数都散落在代码硬编码里（例：`SnapShotConfirmService` 中 `daysDiff > 7`）
+- 决策 30 配套：第一个需要配置的参数 `max_snapshot_age_days` 不能塞进 `user_config`（user_config 面向用户偏好，不是系统级配置）
+- 未来可能加：auto_set_current_after_confirm、monthly_dca_reminder_day、enable_ai_vision 等
+
+**决策**：
+
+> 引入 `settings` 表作为全局配置存储。单 userId PK + 几个 K-V 字段（当前 1 个 max_snapshot_age_days，预留扩展）。
+
+## 表结构
+
+```sql
+CREATE TABLE settings (
+  user_id BIGINT PRIMARY KEY COMMENT '用户 ID（单用户 MVP 默认 1，多用户预留）',
+  max_snapshot_age_days INT NOT NULL DEFAULT 7 COMMENT '历史限制天数；-1 = 不限制；其他有效值：7/14/30/180',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) COMMENT '全局配置表（PR3plus 决策 31）';
+```
+
+## 字段约束
+
+- `user_id` 主键（多用户预留）
+- `max_snapshot_age_days` 枚举值：`{-1, 7, 14, 30, 180}`
+  - `-1` = 不限制
+  - `7/14/30/180` = 限定天数（对应前端可选项）
+
+## API 设计
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/api/settings/{userId}/max-snapshot-age-days` | 读取某用户的 max_snapshot_age_days（找不到返 7） |
+| PUT | `/api/settings/{userId}/max-snapshot-age-days` | 更新（upsert）某用户的 max_snapshot_age_days |
+
+PUT 请求体：
+```json
+{ "days": 7 }
+```
+
+PUT 响应体：
+```json
+{ "userId": 1, "maxSnapshotAgeDays": 7, "updatedAt": "2026-07-24T18:30:00" }
+```
+
+## 实施细节
+
+### 后端
+- `Settings.java` (Entity, Lombok @Data)
+- `SettingsMapper.java` + `SettingsMapper.xml`
+- `SettingsService.java` (`getMaxSnapshotAgeDays(userId)`, `setMaxSnapshotAgeDays(userId, days)`)
+- `SettingsController.java` (GET/PUT)
+- `SnapShotConfirmService` 注入 `SettingsService`，validateRequest 改读 settings
+
+### 前端
+- `userConfigStore.js` 加 `maxSnapshotAgeDays` state + `setMaxSnapshotAgeDays(days)` action（**调 API**，不用 localStorage）
+- `api/endpoints.js` 加 `SETTINGS_MAX_AGE(userId)` + `SETTINGS_MAX_AGE_UPDATE(userId)`
+- `HistoryLimitDialog.jsx` (新建) — 4 步 modal
+- `DataPage.jsx` 集成按钮 + 预校验
+
+## 扩展性
+
+未来可能加的配置项（举例）：
+- `auto_set_current_after_confirm` (BOOLEAN, default true) — confirm 后自动设 is_current
+- `monthly_dca_reminder_day` (INT, default 25) — 每月 DCA 提醒日
+- `enable_ai_vision` (BOOLEAN, default true) — 是否启用 AI vision
+
+`settings` 表预留 `key-value` 形式扩展（后续 PR 可加 `setting_key` + `setting_value` JSON 列），MVP 阶段先存单行结构化字段。
+
+**理由**：
+- 第一个真实需求（决策 30 配套）
+- 解耦系统配置 vs 用户偏好（user_config 不可复用）
+- 多用户预留（userId PK 避免单点）
+- 简单结构起步（不强求 key-value，未来需要时迁移）
+
+**回退条件**：
+- Phase 2 如果配置项 > 5 个，迁移到 `settings_kv` (key, value_json) 通用结构
+
+**关联 commit**：`1b98b8c feat(pr3plus): 历史限制可配置 + settings 全局配置表 (decision 30/31)`
+
+*最近更新：2026-07-24 决策 31 落地（引入 settings 全局配置表）*
+*触发：1b.4 PR3plus 决策 30 配套*
+
+---
+
+## 决策 32：AI 跨 category 重复分类的优雅处理（user_correct 优先 + CATEGORY_CONFLICT 警告）（2026-07-24）
+
+**状态**：✅ 已锁定（2026-07-24，1b.4 PR3plus 实施）
+
+**背景**：
+- 2026-07-24 1b.4 PR3plus 用户把默认 7 天限制成功更改为 180 天，上传 14 号样例并解析后报 500
+- 真根因：`DedupEngine.deduplicate()` line 165-171 抛 `BusinessException(INTERNAL_ERROR, ...)`，因为 AI 解析时把 `纳斯达克100ETF联接(QDII)C` 同时分到 `海外权益类` 和 `余额类` 两个 category，dedup 视为"数据矛盾"直接抛错
+- AI 跨 category 重复分类是真实数据问题（多模态模型对某些边界基金判断不稳定）
+- 不能因为 1 次 AI 误判就阻塞整个入库流程（用户体验差）
+
+**决策**：
+
+> AI 解析有不确定性，跨 category 重复不应阻塞入库；映射表的 user_correct 优先级最高。
+
+## 三条规则（按优先级）
+
+| 优先级 | 规则 | 实现位置 |
+|---|---|---|
+| P0 | `fund_category_map.source='user_correct'` 的行**永远不被 AI 覆盖**（保留用户的明确分类） | `SnapShotConfirmService.writeFundCategoryMap`（P7 修复） |
+| P1 | DedupEngine 维度 D 冲突时优先采纳 user_correct 的 category；未命中则保留**首次**出现的 category | `DedupEngine.deduplicate()` 冲突分支 |
+| P2 | 不抛异常，记一条 `CATEGORY_CONFLICT` warning（含 fundName / keptCategory / aiCategory / resolution） | `DedupEngine.addCategoryConflictWarning` |
+
+## DedupInput 新增字段
+
+```java
+public record DedupInput(
+    List<ParsedAsset> parsedAssets,
+    Set<String> existingFundNamesForSnapshot,
+    Map<String, String> existingUserCorrectCategories,  // ← 新增
+    LocalDate snapshotDate,
+    boolean confirmedOverwrite
+) {}
+```
+
+`existingUserCorrectCategories` 来源：`fund_category_map` 中 `source='user_correct'` 的行，序列化为 `Map<fundName, category>`。
+
+## 冲突分支逻辑
+
+```java
+if (!Objects.equals(existing.categoryName, categoryName)) {
+    String userCorrectCategory = input.existingUserCorrectCategories() == null
+        ? null : input.existingUserCorrectCategories().get(key);
+    if (userCorrectCategory != null
+            && !Objects.equals(userCorrectCategory, existing.categoryName)) {
+        // 采纳 user_correct：覆盖 existing.categoryName，amount/holding/cumulative 用 AI 最新值
+        existing.categoryName = userCorrectCategory;
+        existing.amount = fund.getAmount();
+        // ...
+        addCategoryConflictWarning(warnings, key, existing.categoryName,
+            categoryName, "resolved_by_user_correct", userCorrectCategory);
+    } else {
+        // 无 user_correct → 保留首次出现的 category（LinkedHashMap putIfAbsent 语义）
+        addCategoryConflictWarning(warnings, key, existing.categoryName,
+            categoryName, "kept_first", null);
+    }
+}
+```
+
+## writeFundCategoryMap P7 修复
+
+**修复前**（line 284-293，P7 修复不完整）：
+```java
+String finalCategory = cat.getCategoryName();  // ← 永远用 AI 的 category
+String finalSource;
+if (existingSource == null) finalSource = "ai_guess";
+else if ("ai_guess".equals(existingSource)) finalSource = "ai_guess";
+else finalSource = existingSource;
+map.setCategory(finalCategory);  // ← 覆盖了 user_correct 的 category！
+map.setSource(finalSource);
+```
+
+**修复后**（line 290-313）：
+```java
+String existingCategory = existing == null ? null : existing.getCategory();
+String finalCategory, finalSource;
+if (existingSource == null) {
+    // 首次入库
+    finalCategory = aiCategory;
+    finalSource = "ai_guess";
+} else if ("ai_guess".equals(existingSource)) {
+    // AI 可更新自己的 guess
+    finalCategory = aiCategory;
+    finalSource = "ai_guess";
+} else {
+    // user_correct / user_manual：保留用户分类，拒绝 AI 覆盖
+    finalCategory = existingCategory != null ? existingCategory : aiCategory;
+    finalSource = existingSource;
+}
+```
+
+## 前端 UI 透明化
+
+预览 modal 顶部加黄色 banner：
+```jsx
+{parsedSummary.categoryConflictCount > 0 && (
+    <div className="conflict-warning">
+        ⚠ AI 解析时把 {parsedSummary.categoryConflictCount} 只基金分到了多个大类，
+        系统已自动保留 fund_category_map 中的 user_correct 分类（若无则保留首次出现的分类）。
+        请在「CorrectionPage」核对，或后续接入映射表维护功能后手动调整。
+    </div>
+)}
+```
+
+## 影响面
+
+| 维度 | 影响 |
+|---|---|
+| API 行为 | `POST /api/snapshot/confirm` 维度 D 冲突从抛 500 → 返 200（带 CATEGORY_CONFLICT warning） |
+| 数据 | asset_raw / asset_snapshot 不受影响（写库时 fund 已 dedup） |
+| 映射表 | fund_category_map 仍被 upsert，P7 修复后 user_correct 行被正确保护 |
+| 警告 UX | 前端 preview modal 顶部 banner 提示用户有多少只基金被自动 dedup |
+| 回归 | 23号（无冲突）行为不变；14号 之前 100.00 元 stale 数据被 overwrite 抹掉 |
+
+## 单元测试
+
+| 测试 | 场景 | 预期 |
+|---|---|---|
+| R1 | existing==null → 写入 source='ai_guess' | ✅ 通过 |
+| R2 | existing.source='ai_guess' → 保持 ai_guess | ✅ 通过 |
+| **R3** | existing.source='user_correct' → 写 existing.category，source='user_correct' | ✅ 通过（之前会失败） |
+| R4 | existing.source='user_manual' → 保持 user_manual | ✅ 通过 |
+| **R5** | AI 跨 category → 不抛异常 + 保留首次 + CATEGORY_CONFLICT warning | 新增 ✅ |
+| **R6** | AI 跨 category + user_correct 存在 → 用 user_correct + 无 CATEGORY_CONFLICT warning | 新增 ✅ |
+| **R7** | writeFundCategoryMap 收到 user_correct existing → 写 existing 的 category，不是 AI 的 | 新增 ✅ |
+
+**理由**：
+- AI 解析的不确定性 + 用户映射的确定性 → user_correct 最高优先级
+- 跨 category 重复是真实数据问题，不能阻塞入库
+- 保留首次出现的 category（LinkedHashMap putIfAbsent 语义）= 默认行为，无需额外配置
+- CATEGORY_CONFLICT warning 给前端显示供用户核对
+
+**回退条件**：
+- Phase 2 如果引入"用户映射表维护 UI"（路径 `/correction` 或新增 `/category-map` 页面），用户可主动 review + override 自动 dedup 结果
+
+**关联 commit**：`b0dc7a1 fix(pr3plus): resolve category conflicts and null fund count`
+
+*最近更新：2026-07-24 决策 32 落地（AI 跨 category 重复分类的优雅处理）*
+*触发：1b.4 PR3plus 14号 截图 confirm 500 修复*
+
+---
+
 ## 决策总结表（追加后）
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
