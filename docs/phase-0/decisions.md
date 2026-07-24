@@ -954,6 +954,43 @@ static void applyDataTimeOverride(ParsedAsset asset, LocalDate dataTime, String 
 
 ---
 
+## 决策 24：后端 restart 必须用 `scripts/1b/restart-backend.ps1`（2026-07-22）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- 1b.2 step 7 端到端联调发现：手动 `Start-Process java -jar` 启动的后端进程（PID 40308）持锁 `target/fincontrol-backend.jar`
+- 后续 `mvn package` 反复在 `spring-boot-maven-plugin:repackage` 阶段失败：`Unable to rename ... to .jar.original` (file lock)
+- 用户洞察："1b.3、1b.4 都要联调，jar 绕不过去，这是把雷放到后面炸了"
+
+**决策**：
+所有后端代码改动后，**必须**用 `scripts/1b/restart-backend.ps1` 脚本重启后端，**禁止**手动 `Start-Process java -jar` 或 `mvn spring-boot:run`。脚本保证以下 5 步幂等：
+
+1. 杀 java.exe（**只杀 fincontrol 后端，保留 VSCode JDT-LS**）
+2. 清 `fincontrol-backend/target/`
+3. `mvn -f pom.xml package -B -DskipTests`（rebuild）
+4. 启动新后端（重定向 stdout/stderr 到 `log/`）
+5. 30s 内 healthcheck（`GET /actuator/health` = UP）
+
+**影响范围**：
+- 1b.3 / 1b.4 联调：每次改后端代码后必须用脚本，jar 失败风险 → 0
+- Phase 2/3：所有后端改动继承此规范
+- 文档要求：任何新 dev 必须先看 `scripts/README.md` 了解此 SOP
+
+**理由**：
+- 手动操作幂等性差（容易漏杀进程、忘清 target、忘健康检查）
+- 脚本化后**单点失败可重试**（每次跑都从干净状态开始）
+- 决策 23（commit + push）要求所有文档化，SOP 写在脚本 + decisions.md 两处
+
+**回退条件**：无（jar 重建是 Phase 1+ 所有联调的基础设施）
+
+**实现位置**：`scripts/1b/restart-backend.ps1`（纯 ASCII 版，避免 Windows GBK 解析错误）
+
+*最近更新：2026-07-22 追加决策 24（后端 restart SOP） + 1b.2 step 7 端到端联调通过*
+*触发：1b.2 联调 jar 重建暴露 file lock，用户洞察“1b.3/1b.4 都要联调，jar 绕不过去”*
+
+---
+
 ## 决策 25 v3：累计 + 持有 收益 + 双保险 + 展示层 Smart Fallback（2026-07-22）
 
 **状态**：✅ 已锁定（v1：累计 + 双保险 / v2：扩展持有 + 双列 + 历史 / v3：展示层余额宝 Smart Fallback）
@@ -1173,6 +1210,56 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 
 *最近更新：2026-07-22 追加决策 25 v2（累计 + 持有 + 双列 + 历史查询） + 1b.2 累计/持有双列实装完成*
 *触发：1b.2 step 7 端到端联调 + 用户对累计/持有概念澄清需求 + 未来历史查询架构明确*
+
+---
+
+## 决策 26：parse 模式开关 single \| multi（前端 toggle）（2026-07-22）
+
+**状态**：✅ 已锁定
+
+**背景**：
+- 1a.10 阶段已实现双路径并存（4×单图 confirm / 1×parse-batch），但 1a.10 总结中明确路径 B（一次 4 图 batch）存在 PRODUCTION_BLOCKED 风险（minimax 4 图 timeout）
+- 1b.2 联合调试继续验证路径 B 不稳定：minimax 60s timeout 频繁命中，用户被迫手动拆分为 4 张单图重试
+- 用户原话："真实场景中 4 张图就是同一时点（同一账户同一日），但 minimax 4 图 batch 偶发超时不能依赖，只能以单图为主路"
+- 决策 25 v3 已修复累计/持有展示层 fallback，但 parse 路径的可验证性仍需加固
+
+**决策**：
+
+> `parse-batch` 端点新增 `mode=single|multi` 参数，1b.2 1b.3 以 **single 为默认主路**、**multi 为可选备选**，避免 4 图 batch 超时阻塞联调。
+
+1. **后端 - ScreenshotController**：新增 `mode` 参数（默认 `single`），转发到 ScreenshotService。
+2. **后端 - ScreenshotService**：新增 `parseBatchSingle()` 方法：
+   - 串行调用 N 次 `parse(fileId)`，避开单次 4 图请求的超时上限
+   - merge 多结果（DedupEngine 复用现有逻辑）
+   - 任一文件失败 → retry 1 次，retry 仍失败则整体返回失败
+3. **后端 - parseBatch(req)**：当 `mode=multi` 时保留 1a.10 原 multi 行为；当 `mode=single`（默认）走 `parseBatchSingle` 路径。
+4. **前端 - HomePage**：1b.2 联合调试 UI 增加 `mode` 切换开关（默认 single），上传 4 张图时由 toggle 控制走哪条路径。
+5. **验证**：1b.2 验收中以 single 模式跑通 19-fund / 7850.38 元完整 confirm，作为 1b.3/1b.4 的可重复路径。
+
+**实现位置**：
+- `fincontrol-backend/src/main/java/com/fincontrol/controller/ScreenshotController.java`（新增 `mode` 参数与路由分支）
+- `fincontrol-backend/src/main/java/com/fincontrol/service/ScreenshotService.java`（新增 `parseBatchSingle()` 串行入口，保留 `parseBatch()` 1a.10 multi 行为）
+- `fincontrol-frontend/src/pages/HomePage.jsx`（新增 toggle 组件，默认 single）
+
+**影响范围**：
+- 1b.2：mode=single 跑通，1b.2 acceptance report 验证可重复
+- 1b.3/1b.4：前端默认 single，多图场景不再依赖 provider 一次成功
+- 1a.10 PRODUCTION_BLOCKED 在 single 路径下被绕开
+- Phase 2+：multi 可作为优化路径重新启用（需 provider 异步轮询配套）
+
+**理由**：
+- 4 张图是同一时点的同一份数据，串行解析不影响业务语义（每张独立 dedup，merge 后等价）
+- 单图超时上限 60s 足够覆盖 4 张图片（按 sequential 估算总耗时 ≤4×60s）
+- 用户可以选择 multi 验证 provider 稳定性，但默认 single 保证联调不会阻塞
+- 决策 28（前端 timeout 60s→120s）单独生效，不依赖此决策
+
+**回退条件**：无（single 是默认主路，multi 可选保留，不互斥）
+
+**关联 commit**：commit `dcaae96 feat(1b.2): decision 26 parse mode switch + HomePage redesign`
+
+*最近更新：2026-07-22 追加决策 26（parse 模式开关 single 主路 / multi 备选） + 1b.2 联合调试路径可重复验证*
+*触发：1a.10 PRODUCTION_BLOCKED + minimax 4 图 batch timeout 频发，用户明令"以 single 为主路"*
+
 ---
 
 ## 决策 27 详述：is_latest 双层语义 + 跨日期 is_current（2026-07-22）
@@ -1309,6 +1396,7 @@ Map<String, Object> sumReturnFieldsByUserAndDate(...);
 | 21 | `uploads/screenshots/` 缓存清理规范 | ✅ | 1b.2 | 1b.2 |
 | 22 | 决策总结表位置约定（末尾 + 追加新行）| ✅ | 1b.2 | 1b.2 |
 | 23 | 文档更新必 commit + push | ✅ | 1b.2 | 1b.2 |
+| 24 | 后端 restart 必须用 scripts/1b/restart-backend.ps1 | ✅ | 1b.2 联调 jar 重建 file lock | 7794e81 |
 | 25 v3 | 持有收益 Smart Fallback（余额宝 holding=NULL 用 cumulative 替代）| ✅ | 1b.2 累计/持有双列 | 1b.2 |
 | 26 | parse 模式开关 single \| multi（前端 toggle）| ✅ | 1b.2 验证稳定性 | 1b.2 |
 | 27 | is_latest 双层语义 + 跨日期 is_current | 🚧 | 1b.2 5-Fund 状态覆盖 Bug | f42b323 |
