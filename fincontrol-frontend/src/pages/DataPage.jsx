@@ -177,7 +177,8 @@ export default function DataPage() {
         { userId: 1, snapshotDate, confirmedOverwrite: true, parsedAssets: [parsedAsset] },
         { headers: { 'X-User-Id': '1' } }
       )
-      setStep('confirmed')
+      // PR3 DATA-006：不在“confirming”之后设置为“confirmed”（后者永久卡住，
+      // 下一个上传会闪烁。成功后直接重置为“idle”，由空态分支接管）
       await fetchLatest(1)
       await fetchMetaList()
       // PR1：释放所有 blob URL（成功后才清，避免预览阶段误释放）
@@ -185,6 +186,7 @@ export default function DataPage() {
       setFiles([])
       setFilePreviews([])
       setParsedAsset(null)
+      setStep('idle')
     } catch (e) {
       setError(e?.message || 'confirm 失败')
       setStep('error')
@@ -216,7 +218,7 @@ export default function DataPage() {
       {error && <div className="error-banner">⚠ {error}</div>}
 
       <section className="section-card">
-        <h2>1. 上传 4 张图</h2>
+        <h2>上传 4 张图</h2>
         <p className="hint">选 4 张支付宝基金截图 → 自动截取前 4 张。已选 {files.length}/4。</p>
         <div className="upload-bar">
           <input
@@ -249,7 +251,7 @@ export default function DataPage() {
       </section>
 
       <section className="section-card">
-        <h2>2. 解析与日期</h2>
+        <h2>解析与日期</h2>
         <p className="hint">选择解析模式与截图数据日期，再点 "上传并解析"。</p>
         <div className="form-row">
           <label>
@@ -288,7 +290,7 @@ export default function DataPage() {
       </section>
 
       <section className="section-card">
-        <h2>3. 确认入库</h2>
+        <h2>确认入库</h2>
         <p className="hint">确认将 19-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
         <button
           onClick={openConfirmModal}
@@ -304,7 +306,7 @@ export default function DataPage() {
       </section>
 
       <section className="section-card">
-        <h2>4. 快照管理（决策 27）</h2>
+        <h2>快照管理（决策 27）</h2>
         <div className="meta-list">
           {metaLoading && <div className="preview-empty">加载中…</div>}
           {!metaLoading && metaList.length === 0 && (
@@ -369,21 +371,36 @@ export default function DataPage() {
                 </div>
               </div>
 
-              {/* 各类小计 + 占比 */}
+              {/* 各类小计 + 占比（1b.4-pr2：余额类"占六大类 %"显示—，新增"占总资产的比例"列，精确到小数点后两位） */}
               <div className="overview-detail">
                 <h3>各类小计</h3>
                 <table className="data-table">
-                  <thead><tr><th>类别</th><th>金额（元）</th><th>占六大类 %</th><th>基金数</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>类别</th>
+                      <th>金额（元）</th>
+                      <th>占六大类 %</th>
+                      <th>占总资产的比例</th>
+                      <th>基金数</th>
+                    </tr>
+                  </thead>
                   <tbody>
                     {parsedSummary.categories.map((c) => {
-                      const pct = parsedSummary.sixCategoriesTotal > 0
-                        ? (Number(c.categoryTotal || 0) / parsedSummary.sixCategoriesTotal * 100).toFixed(1)
-                        : '0'
+                      const isBalance = c.categoryName === '余额类'
+                      const sixPct = isBalance
+                        ? '—'
+                        : (parsedSummary.sixCategoriesTotal > 0
+                            ? (Number(c.categoryTotal || 0) / parsedSummary.sixCategoriesTotal * 100).toFixed(2) + '%'
+                            : '0.00%')
+                      const totalPct = parsedSummary.totalWithBalance > 0
+                        ? (Number(c.categoryTotal || 0) / parsedSummary.totalWithBalance * 100).toFixed(2) + '%'
+                        : '0.00%'
                       return (
                         <tr key={c.categoryName}>
                           <td>{c.categoryName}</td>
                           <td>¥{Number(c.categoryTotal || 0).toFixed(2)}</td>
-                          <td>{pct}%</td>
+                          <td>{sixPct}</td>
+                          <td>{totalPct}</td>
                           <td>{c.fundCount || 0}</td>
                         </tr>
                       )

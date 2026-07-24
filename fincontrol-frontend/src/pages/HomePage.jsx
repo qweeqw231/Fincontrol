@@ -595,20 +595,12 @@ export default function HomePage() {
         <div className="panel">
           <div className="panel-title">
             数据口径说明
-            <span className="tag">v1.0-DRAFT</span>
           </div>
           <div className="note-box" style={{ marginBottom: 0 }}>
             <div className="note-title">📌 数据口径</div>
             "六大类"仅含货币类、固收类、商品类、A股权益类、海外权益类、港股大中华类。
-            余额类不参与占六大类比例与目标偏差；首页所有金额、收益、基金数均绑定
-            <code style={{ background: '#fff', padding: '0 4px' }}>
-              snapshot_meta.is_current
-            </code>
-            对应日期，避免跨日累加。基金明细"类内占比"分母为大类金额；配置表
-            "占六大类"分母为六大类总值；零值（如 +3.84 + -3.84）须显示
-            <code style={{ background: '#fff', padding: '0 4px' }}>0.00</code>
-            ，未知的 null 才显示
-            <code style={{ background: '#fff', padding: '0 4px' }}>—</code>。
+            余额类不参与占六大类比例与目标偏差；首页所有金额、收益、基金数均绑定当前快照日期，避免跨日累加。
+            基金明细"类内占比"分母为大类金额；配置表"占六大类"分母为六大类总值；零值（如 +3.84 + -3.84）须显示 <strong>0.00</strong>，未知的 null 才显示 <strong>—</strong>。
           </div>
         </div>
       </div>
