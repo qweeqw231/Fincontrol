@@ -438,13 +438,13 @@ export default function DataPage() {
         )}
       </section>
 
-      {/* PR3plus 决策 30/31：历史限制提示 + 修改按钮（从 store 读，不硬编码） */}
+      {/* PR3plus 决策 30/31：历史限制提示 + 修改按钮（从 store 读，不硬编码） ，当前历史截图限制：最近{7/14/30/180}天或者 不限制*/}
       <section className="section-card" style={{ background: '#f9fafb' }}>
         <h2>上传历史限制</h2>
         <p className="hint">
-          当前历史截图限制：最近{' '}
+          当前历史截图限制：{' '}
           <strong data-testid="current-max-age">
-            {maxSnapshotAgeDays === -1 ? '不限制' : `${maxSnapshotAgeDays} 天`}
+            {maxSnapshotAgeDays === -1 ? '不限制' : `最近${maxSnapshotAgeDays} 天`}
           </strong>
           <button
             className="secondary-btn"
