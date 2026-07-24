@@ -209,10 +209,11 @@ export default function DataPage() {
     setEditingDate(false)
   }
 
-  // 1b.3.8 confirm（PR1 修复 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/004）
+  // 1b.3.8 confirm（PR1 修复 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/004/005）
   async function confirm() {
     if (!parsedAsset) return
     setStep('confirming')
+    // ===== 主 confirm 流程（必须成功，否则失败回滚） =====
     try {
       // 1）入库到 snapshot_meta
       await apiClient.post(
@@ -220,30 +221,43 @@ export default function DataPage() {
         { userId: 1, snapshotDate, confirmedOverwrite: true, parsedAssets: [parsedAsset] },
         { headers: { 'X-User-Id': '1' } }
       )
-      // 2）PR3+ BUG-004：自动把本次日期设为 is_current=true（★ CURRENT 跳转）
-      //    后端逻辑：旧 current 自动降级为 is_current=false
-      await apiClient.post(
-        ENDPOINTS.SNAPSHOT_SET_CURRENT,
-        { userId: 1, snapshotDate },
-        { headers: { 'X-User-Id': '1' } }
-      )
-      // 3）PR3 DATA-006：成功后直接 setStep('idle')，由空态分支接管
+      // 2）PR3 DATA-006：成功后直接 setStep('idle')，由空态分支接管
       await fetchLatest(1)
-      await fetchMetaList()  // 再刷一次列表（is_current 状态已更新）
-      // 4）PR1：释放所有 blob URL
+      await fetchMetaList()  // 刷新列表
+      // 3）PR1：释放所有 blob URL
       revokeAll(filePreviews)
       setFiles([])
       setFilePreviews([])
       setParsedAsset(null)
       setStep('idle')
-      // 5）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
+      // 4）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
       setConfirmSuccess(true)
-      // 6）5 秒后自动隐藏 banner（让用户有时间看）
-      setTimeout(() => setConfirmSuccess(false), 5000)
-    } catch (e) {
-      setError(e?.message || 'confirm 失败')
+      setTimeout(() => setConfirmSuccess(false), 5000)  // 5s 后消失
+    } catch (confirmErr) {
+      // PR3+ BUG-005：错误 message 优先取后端业务 message（e.response.data.message），其次 axios 默认
+      const msg = confirmErr?.response?.data?.message
+        || confirmErr?.response?.data?.msg
+        || confirmErr?.message
+        || 'confirm 失败'
+      console.error('[confirm 失败]', confirmErr)
+      setError(`入库失败: ${msg}`)
       setStep('error')
       setConfirmSuccess(false)
+    }
+
+    // ===== PR3+ BUG-004：独立 try-catch 自动设 is_current =====
+    // setCurrent 失败不影响主 confirm 成功状态（用户可手动点'设为当前'补救）
+    try {
+      await apiClient.post(
+        ENDPOINTS.SNAPSHOT_SET_CURRENT,
+        { userId: 1, snapshotDate },
+        { headers: { 'X-User-Id': '1' } }
+      )
+      // 成功后 list 再刷一次确保 is_current 状态正确显示
+      await fetchMetaList()
+    } catch (setCurrentErr) {
+      // 静默失败（不影响 confirm 成功状态），仅 console 记录
+      console.warn('[confirm] setCurrent 失败，可手动设为 current:', setCurrentErr?.response?.data || setCurrentErr?.message)
     }
   }
 
@@ -300,7 +314,7 @@ export default function DataPage() {
           )}
         </div>
         {filePreviews.length === 0 && (
-          <div className="preview-empty">请选择 4 张图（建议 0716 数据）</div>
+          <div className="preview-empty">请选择 4 张图</div>
         )}
       </section>
 
@@ -345,18 +359,18 @@ export default function DataPage() {
 
       <section className="section-card">
         <h2>确认入库</h2>
-        <p className="hint">确认将 19-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
+        <p className="hint">确认将 {parseInfo.fundCount}-fund 数据写入 asset_raw + asset_snapshot + snapshot_meta</p>
         <button
           onClick={openConfirmModal}
           disabled={step !== 'parsed' && step !== 'confirming'}
           className="primary-btn"
           data-testid="confirm-btn"
         >
-          {step === 'confirming' ? '入库中…' : '确认入库（先预览）'}
+          {step === 'confirming' ? '入库中…' : '确认入库（请先预览）'}
         </button>
         {/* PR3+ BUG-001：独立 confirmSuccess state 控制 banner（不耦合 step 状态机） */}
         {confirmSuccess && (
-          <div className="success-banner">✓ 入库成功！首页应已显示 19 只基金</div>
+          <div className="success-banner">✓ 入库成功！首页应已显示 {parseInfo.fundCount} 只基金</div>
         )}
       </section>
 
