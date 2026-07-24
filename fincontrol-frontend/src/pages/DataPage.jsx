@@ -93,6 +93,20 @@ export default function DataPage() {
   // D7：消失-重现事件缓存（key=fundName → { firstMissingSnapshotDate, lastSeenSnapshotDate }）
   const [pendingReConfirms, setPendingReConfirms] = useState({})
 
+  // 1b4pr6b 批量确认 UX：top toggle + checkbox 列 + 6 大类选择 + 弹窗
+  // batchMode：是否进入批量模式（true 时显示 checkbox 列 + 顶部 bar）
+  const [batchMode, setBatchMode] = useState(false)
+  // selectedFunds：当前勾选的 fundName Set
+  const [selectedFunds, setSelectedFunds] = useState(new Set())
+  // batchCategory：批量确认的目标大类，默认'固收类'
+  const [batchCategory, setBatchCategory] = useState('固收类')
+  // showBatchConfirmModal：批量确认二次弹窗
+  const [showBatchConfirmModal, setShowBatchConfirmModal] = useState(false)
+  // batchConfirming：批量提交中（避免重复点击）
+  const [batchConfirming, setBatchConfirming] = useState(false)
+  // batchToast：已确认 checkbox 点击后弹出"您已经确认 XXX 的 YYY 归属！"
+  const [batchToast, setBatchToast] = useState(null) // {fundName, category} | null
+
   // PR3+ BUG-001：独立 confirmSuccess state（不耦合 step 状态机，让"✓ 入库成功"banner 必现）
   const [confirmSuccess, setConfirmSuccess] = useState(false)
 
@@ -324,6 +338,35 @@ export default function DataPage() {
   }, [parsedSummary, categoryOverrides])
   const dirtyCount = Object.keys(categoryDirty).length
 
+  // 1b4pr6b Fix B：各类小计实时联动（derivedCategories）
+  // 输入: parsedAsset (原始 AI 解析) + categoryOverrides (已确认) + categoryDirty (草稿)
+  // 逻辑: 按 effective category (override > dirty > AI 原猜) 重新分桶到 8 个 canonical 类别
+  // 效果: dropdown 改 1 个 fund → 小计表实时刷新 + 批量确认 → 小计一次刷新多行
+  const derivedCategories = useMemo(() => {
+    if (!parsedAsset) return []
+    // 1. 初始化 8 个空桶（7 canonical + 余额类）
+    const buckets = new Map()
+    for (const cat of FUND_CATEGORIES) {
+      buckets.set(cat, { categoryName: cat, categoryTotal: 0, fundCount: 0, funds: [] })
+    }
+    // 2. 遍历原始 funds，按 effective category 分桶
+    for (const c of parsedAsset.categories || []) {
+      for (const f of c.funds || []) {
+        const override = categoryOverrides[f.fundName]
+        const dirty = categoryDirty[f.fundName]
+        const effective = override ? override.category : (dirty || c.categoryName)
+        const bucket = buckets.get(effective)
+        if (bucket) {
+          bucket.categoryTotal += Number(f.amount || 0)
+          bucket.fundCount += 1
+          bucket.funds.push({ ...f, originalCategory: c.categoryName })
+        }
+      }
+    }
+    // 3. 返回非空桶（包含全部 8 类，即使 fundCount=0 也保留，让表格显示“空”行）
+    return FUND_CATEGORIES.map((c) => buckets.get(c)).filter((b) => b.fundCount > 0 || c === '余额类' || buckets.get(c).categoryTotal > 0 || true)
+  }, [parsedAsset, categoryOverrides, categoryDirty])
+
   // 决策 33 v2 · API 调用
   async function confirmOverride(fundName, category) {
     setOverridesSaving((s) => ({ ...s, [fundName]: true }))
@@ -381,6 +424,62 @@ export default function DataPage() {
   function submitOnlyVerified() {
     setCategoryDirty({})
     doConfirm()
+  }
+
+  // 1b4pr6b 批量确认 UX · 助手函数
+  // toggleBatchMode：进入/退出批量模式
+  //   - 退出时清空 selectedFunds + batchCategory 重置 + batchToast 清掉
+  //   - 进入时如果 selectedFunds > 0 ，保持选择；否则空
+  function toggleBatchMode() {
+    if (batchMode) {
+      // 退出批量：重置所有状态
+      setBatchMode(false)
+      setSelectedFunds(new Set())
+      setBatchCategory('固收类')
+      setShowBatchConfirmModal(false)
+      setBatchToast(null)
+    } else {
+      setBatchMode(true)
+    }
+  }
+  // toggleSelectedFund：勾选/取消勾选某只基金
+  function toggleSelectedFund(fundName) {
+    // 1）如果该基金已被批量确认（override.category === batchCategory），则弹 toast 不加进 selected
+    const o = categoryOverrides[fundName]
+    if (o && o.category === batchCategory) {
+      setBatchToast({ fundName, category: o.category })
+      setTimeout(() => setBatchToast(null), 3000)
+      return
+    }
+    // 2）正常 toggle
+    setSelectedFunds((prev) => {
+      const next = new Set(prev)
+      if (next.has(fundName)) {
+        next.delete(fundName)
+      } else {
+        next.add(fundName)
+      }
+      return next
+    })
+  }
+  // doBatchConfirm：批量提交，逐个调 confirmOverride
+  async function doBatchConfirm() {
+    if (selectedFunds.size === 0) return
+    setBatchConfirming(true)
+    try {
+      for (const fundName of selectedFunds) {
+        // 只调 confirm（不调 reset，避免 audit log 噪声）
+        await confirmOverride(fundName, batchCategory)
+      }
+      // 成功后退出批量模式（保留 overrides 以反映“已确认”状态）
+      setBatchMode(false)
+      setSelectedFunds(new Set())
+      setShowBatchConfirmModal(false)
+    } catch (e) {
+      setError(friendlyError(e))
+    } finally {
+      setBatchConfirming(false)
+    }
   }
 
   // 决策 33 D1+D2：doConfirm（被 handleConfirm 调用，可能在二次确认 modal 后调用）
@@ -672,6 +771,53 @@ export default function DataPage() {
         </div>
       )}
 
+      {/* 1b4pr6b 批量确认二次弹窗 */}
+      {showBatchConfirmModal && (
+        <div className="modal-backdrop" onClick={() => !batchConfirming && setShowBatchConfirmModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 540 }}>
+            <div className="modal-header">
+              <h2>📦 批量确认归属</h2>
+              <button className="modal-close" onClick={() => setShowBatchConfirmModal(false)} aria-label="关闭"
+                disabled={batchConfirming}>×</button>
+            </div>
+            <div className="modal-body">
+              <p>即将把以下 <strong data-testid="batch-modal-count">{selectedFunds.size}</strong> 只基金的归属修改为：
+                <select
+                  value={batchCategory}
+                  onChange={(e) => setBatchCategory(e.target.value)}
+                  data-testid="batch-modal-category"
+                  disabled={batchConfirming}
+                  style={{ marginLeft: 8, padding: '4px 8px', fontSize: 14 }}
+                >
+                  {FUND_CATEGORIES.filter((c) => c !== '余额类').map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </p>
+              <ul className="batch-fund-list" data-testid="batch-fund-list">
+                {Array.from(selectedFunds).slice(0, 5).map((fn) => (
+                  <li key={fn}>{fn}</li>
+                ))}
+                {selectedFunds.size > 5 && (
+                  <li className="batch-fund-overflow">…等 {selectedFunds.size} 只</li>
+                )}
+              </ul>
+              <p style={{ color: '#6b7280', fontSize: 13, marginTop: 8 }}>
+                确认后这些基金的类别将被设为 <strong>{batchCategory}</strong>（user_correct）。
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="secondary-btn" onClick={() => setShowBatchConfirmModal(false)}
+                disabled={batchConfirming} data-testid="batch-modal-cancel">取消</button>
+              <button className="primary-btn" onClick={doBatchConfirm}
+                disabled={batchConfirming} data-testid="batch-modal-confirm">
+                {batchConfirming ? '提交中…' : '确认'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1b.3.10 确认入库弹窗（解析数据预览） */}
       {showConfirmModal && parsedSummary && parsedSummary.fundCount != null && (
         <div className="modal-backdrop" onClick={() => setShowConfirmModal(false)}>
@@ -777,10 +923,10 @@ export default function DataPage() {
                 </div>
               </div>
 
-              {/* 各类小计 + 占比（1b.4-pr2：余额类"占六大类 %"显示—，新增"占总资产的比例"列，精确到小数点后两位） */}
+              {/* 各类小计 + 占比（1b4pr6b Fix B：使用 derivedCategories 实时联动 + dropdown/批量修改实时刷新） */}
               <div className="overview-detail">
                 <h3>各类小计</h3>
-                <table className="data-table">
+                <table className="data-table" data-testid="subtotal-table">
                   <thead>
                     <tr>
                       <th>类别</th>
@@ -791,15 +937,20 @@ export default function DataPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {parsedSummary.categories.map((c) => {
+                    {derivedCategories.map((c) => {
                       const isBalance = c.categoryName === '余额类'
+                      const sixTotal = derivedCategories
+                        .filter((x) => x.categoryName !== '余额类')
+                        .reduce((s, x) => s + Number(x.categoryTotal || 0), 0)
+                      const totalAll = derivedCategories
+                        .reduce((s, x) => s + Number(x.categoryTotal || 0), 0)
                       const sixPct = isBalance
                         ? '—'
-                        : (parsedSummary.sixCategoriesTotal > 0
-                            ? (Number(c.categoryTotal || 0) / parsedSummary.sixCategoriesTotal * 100).toFixed(2) + '%'
+                        : (sixTotal > 0
+                            ? (Number(c.categoryTotal || 0) / sixTotal * 100).toFixed(2) + '%'
                             : '0.00%')
-                      const totalPct = parsedSummary.totalWithBalance > 0
-                        ? (Number(c.categoryTotal || 0) / parsedSummary.totalWithBalance * 100).toFixed(2) + '%'
+                      const totalPct = totalAll > 0
+                        ? (Number(c.categoryTotal || 0) / totalAll * 100).toFixed(2) + '%'
                         : '0.00%'
                       return (
                         <tr key={c.categoryName}>
@@ -818,10 +969,58 @@ export default function DataPage() {
               {/* 决策 33 v2 · 预览 modal 表格（带 dropdown + 状态 + 操作 + D7 banner） */}
               <div className="overview-detail"
                 style={{ marginTop: '16px' }}>
-                <h3>基金明细（{parsedSummary.fundCount} 只）</h3>
+                {/* 1b4pr6b 批量确认：顶部 toggle 按钮（不进入批量模式时也可见，作为进入入口） */}
+                <div className="batch-toolbar">
+                  <h3 style={{ margin: 0 }}>基金明细（{parsedSummary.fundCount} 只）</h3>
+                  <button
+                    className={batchMode ? 'secondary-btn' : 'primary-btn'}
+                    onClick={toggleBatchMode}
+                    data-testid="batch-toggle-btn"
+                  >
+                    {batchMode ? '✓ 退出批量' : '📦 批量确认'}
+                  </button>
+                </div>
+
+                {/* 批量模式顶部 bar：仅 batchMode=true 时可见，包含已选数 + 大类选择 + 提交按钮 */}
+                {batchMode && (
+                  <div className="batch-bar" data-testid="batch-bar">
+                    <span className="batch-bar-label">已选 <strong>{selectedFunds.size}</strong> 只</span>
+                    <label className="batch-bar-category">
+                      目标大类：
+                      <select
+                        value={batchCategory}
+                        onChange={(e) => setBatchCategory(e.target.value)}
+                        data-testid="batch-category-select"
+                      >
+                        {FUND_CATEGORIES.filter((c) => c !== '余额类').map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="primary-btn"
+                      disabled={selectedFunds.size === 0 || batchConfirming}
+                      onClick={() => setShowBatchConfirmModal(true)}
+                      data-testid="batch-confirm-btn"
+                    >
+                      {batchConfirming ? '提交中…' : `✓ 批量确认 (${selectedFunds.size})`}
+                    </button>
+                  </div>
+                )}
+
+                {/* 1b4pr6b Fix C：表格 colgroup 条件渲染（5 列 vs 6 列与 th/td 数量一致） */}
                 <table className="data-table">
+                  <colgroup>
+                    {batchMode && <col style={{ width: '40px' }} />}
+                    <col style={{ width: 'auto' }} />
+                    <col style={{ width: '160px' }} />
+                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '100px' }} />
+                    <col style={{ width: '120px' }} />
+                  </colgroup>
                   <thead>
                     <tr>
+                      {batchMode && <th></th>}
                       <th>基金名称</th>
                       <th>类别（dropdown）</th>
                       <th>金额（元）</th>
@@ -833,14 +1032,42 @@ export default function DataPage() {
                     {parsedSummary.categories.flatMap((c) => (c.funds || []).map((f) => {
                       const override = categoryOverrides[f.fundName]
                       const dirty = categoryDirty[f.fundName]
-                      const dropdownVal = override ? override.category : (dirty || c.categoryName)
+                      const dropdownVal = dirty || (override ? override.category : c.categoryName)
                       const isOverridden = !!override
                       const isDirty = !!dirty
                       const saving = !!overridesSaving[f.fundName]
                       const reConfirm = pendingReConfirms[f.fundName]
+                      // Bug 2 fix：effectiveOriginal = override 优先，否则 AI 原猜 c.categoryName
+                      const effectiveOriginal = override ? override.category : c.categoryName
+                      // 批量模式：checkbox 三态（白方/红对勾/灰禁）
+                      const isBatchConfirmed = batchMode && override && override.category === batchCategory
                       return (
                         <tr key={`${c.categoryName}-${f.fundName}`}
                             className={isOverridden ? 'fund-row-verified' : 'fund-row-pending'}>
+                          {batchMode && (
+                            <td className="batch-checkbox-cell">
+                              {isBatchConfirmed ? (
+                                <span
+                                  className="batch-checkbox batch-checkbox--confirmed"
+                                  title={`已确认 ${override.category} 归属`}
+                                  data-testid={`batch-checkbox-confirmed-${f.fundName}`}
+                                >✓</span>
+                              ) : (
+                                <label className="batch-checkbox-label">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedFunds.has(f.fundName)}
+                                    onChange={() => toggleSelectedFund(f.fundName)}
+                                    data-testid={`batch-checkbox-${f.fundName}`}
+                                    className="batch-checkbox-input"
+                                  />
+                                  {selectedFunds.has(f.fundName) && (
+                                    <span className="batch-checkbox-tick" aria-hidden="true">✓</span>
+                                  )}
+                                </label>
+                              )}
+                            </td>
+                          )}
                           <td>{f.fundName}</td>
                           <td>
                             {reConfirm && (
@@ -853,7 +1080,11 @@ export default function DataPage() {
                               disabled={saving}
                               onChange={(e) => {
                                 const v = e.target.value
-                                if (v === c.categoryName) {
+                                // Bug 2 fix：比较 v 与 effectiveOriginal（不是 c.categoryName）
+                                // 原因：如果用户之前已 override=A股权益类，现在 dropdown 显示 A股权益类
+                                //   但 AI 原猜为商品类，c.categoryName 是商品类。
+                                //   旧逻辑会把"未改动"误判成"回到商品类"，删除 dirty 是错的。
+                                if (v === effectiveOriginal) {
                                   setCategoryDirty((d) => { const n = { ...d }; delete n[f.fundName]; return n })
                                 } else {
                                   setCategoryDirty((d) => ({ ...d, [f.fundName]: v }))
@@ -913,6 +1144,13 @@ export default function DataPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 1b4pr6b Fix A：batchToast 顶层（独立 stacking context，z-index 1300 超过所有 modal） */}
+      {batchToast && (
+        <div className="batch-toast-fixed" data-testid="batch-toast" role="alert">
+          您已经确认 <strong>{batchToast.fundName}</strong> 的 <strong>{batchToast.category}</strong> 归属！
         </div>
       )}
     </div>
