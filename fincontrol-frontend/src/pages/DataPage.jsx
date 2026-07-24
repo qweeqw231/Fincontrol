@@ -366,8 +366,16 @@ export default function DataPage() {
                 data-testid="date-input"
               />
             </label>
-            {/* 1b.4 PR4a 收尾：空占位，与解析模式 form-hint 等高 */}
-            <small className="form-hint" aria-hidden="true">&nbsp;</small>
+            {/* 1b.4 PR4a 收尾 v2：占位元素内容与解析模式 form-hint 完全一致，
+                保证两个 form-group 高度严格相同（&nbsp; 单行占位会导致日期模块偏矮） */}
+            <small
+              className="form-hint"
+              aria-hidden="true"
+              style={{ visibility: 'hidden' }}
+            >
+              <strong>single</strong>：逐张上传，失败可单独重试；<br />
+              <strong>multi</strong>：4 张一次性发给 AI，速度快但失败需全部重试。
+            </small>
           </div>
         </div>
         <div style={{ marginTop: 8 }}>
