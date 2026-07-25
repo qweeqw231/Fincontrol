@@ -1,8 +1,6 @@
-# 1b.4 PR8 / 决策 35：创建桌面快捷方式 FinControl.lnk
-#
-# 幂等：检测到 .lnk 已存在则跳过
-# 图标：使用 fincontrol-frontend/public/brand/logo.png
-# 目标：调 scripts/desktop/launch-fincontrol.ps1
+# 1b.4 PR8 / Decision 35: Create desktop shortcut FinControl.lnk
+# Pure-ASCII only (PowerShell 5.1 compatibility, no Chinese chars in source)
+# Idempotent: existing shortcut will be skipped
 
 $ErrorActionPreference = 'Stop'
 
@@ -15,26 +13,26 @@ $logoPath = Join-Path $ProjectRoot 'fincontrol-frontend\public\brand\logo.png'
 $targetScript = Join-Path $ProjectRoot 'scripts\desktop\launch-fincontrol.ps1'
 
 if (-not (Test-Path -LiteralPath $logoPath)) {
-    Write-Host "[create-shortcut] ✗ logo.png 不存在：$logoPath" -ForegroundColor Red
-    Write-Host "[create-shortcut] 请先跑 Step 0 复制品牌资源" -ForegroundColor Yellow
+    Write-Host "[create-shortcut] ERROR: logo.png not found at $logoPath" -ForegroundColor Red
+    Write-Host "[create-shortcut] Please run Step 0 first to copy brand assets" -ForegroundColor Yellow
     exit 1
 }
 if (-not (Test-Path -LiteralPath $targetScript)) {
-    Write-Host "[create-shortcut] ✗ launch-fincontrol.ps1 不存在：$targetScript" -ForegroundColor Red
+    Write-Host "[create-shortcut] ERROR: launch-fincontrol.ps1 not found at $targetScript" -ForegroundColor Red
     exit 1
 }
 
 if (Test-Path -LiteralPath $lnkPath) {
-    Write-Host "[create-shortcut] 桌面 FinControl.lnk 已存在；跳过" -ForegroundColor Cyan
-    Write-Host "[create-shortcut]   路径：$lnkPath" -ForegroundColor Gray
-    Write-Host "[create-shortcut]   如需重新创建，请先手动删除" -ForegroundColor Gray
+    Write-Host "[create-shortcut] Desktop FinControl.lnk already exists; skipping" -ForegroundColor Cyan
+    Write-Host "[create-shortcut]   Path: $lnkPath" -ForegroundColor Gray
+    Write-Host "[create-shortcut]   Delete it manually if you want to re-create" -ForegroundColor Gray
     exit 0
 }
 
-Write-Host "[create-shortcut] 创建桌面快捷方式..." -ForegroundColor Cyan
-Write-Host "[create-shortcut]   桌面路径：$lnkPath" -ForegroundColor Gray
-Write-Host "[create-shortcut]   目标脚本：$targetScript" -ForegroundColor Gray
-Write-Host "[create-shortcut]   图标：$logoPath" -ForegroundColor Gray
+Write-Host "[create-shortcut] Creating desktop shortcut..." -ForegroundColor Cyan
+Write-Host "[create-shortcut]   Desktop path: $lnkPath" -ForegroundColor Gray
+Write-Host "[create-shortcut]   Target script: $targetScript" -ForegroundColor Gray
+Write-Host "[create-shortcut]   Icon: $logoPath" -ForegroundColor Gray
 
 try {
     $WshShell = New-Object -ComObject WScript.Shell
@@ -43,18 +41,18 @@ try {
     $Shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$targetScript`""
     $Shortcut.WorkingDirectory = $ProjectRoot
     $Shortcut.IconLocation = $logoPath
-    $Shortcut.Description = 'FinControl - 个人资产配置控制（点击启动）'
-    $Shortcut.WindowStyle = 7  # 最小化窗口
+    $Shortcut.Description = 'FinControl - Personal Asset Allocation Control (click to launch)'
+    $Shortcut.WindowStyle = 7
     $Shortcut.Save()
 
-    Write-Host "[create-shortcut] ✓ 桌面快捷方式创建成功" -ForegroundColor Green
+    Write-Host "[create-shortcut] OK Desktop shortcut created" -ForegroundColor Green
     Write-Host ""
-    Write-Host "现在你可以：" -ForegroundColor Cyan
-    Write-Host "  1. 双击桌面的 FinControl.lnk 启动系统" -ForegroundColor White
-    Write-Host "  2. 浏览器自动打开 http://localhost:5173/" -ForegroundColor White
-    Write-Host "  3. 完成截图入库后，点首页右上角 ⏻ 按钮关闭服务" -ForegroundColor White
+    Write-Host "You can now:" -ForegroundColor Cyan
+    Write-Host "  1. Double-click FinControl.lnk on your desktop to launch the system" -ForegroundColor White
+    Write-Host "  2. Browser will auto-open http://localhost:5173/" -ForegroundColor White
+    Write-Host "  3. After uploading snapshots, click the top-right shutdown button to stop services" -ForegroundColor White
     Write-Host ""
 } catch {
-    Write-Host "[create-shortcut] ✗ 创建失败：$_" -ForegroundColor Red
+    Write-Host "[create-shortcut] ERROR: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
