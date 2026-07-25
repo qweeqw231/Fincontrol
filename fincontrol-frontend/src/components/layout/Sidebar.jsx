@@ -41,7 +41,8 @@ export default function Sidebar() {
   return (
     <aside className={`sidebar ${collapsed ? 'is-collapsed' : ''}`}>
       <div className="sidebar__brand">
-        <span className="sidebar__brand-icon">💰</span>
+        {/* 1b.4 PR9：emoji 💰 换成真正的 logo */}
+        <img className="sidebar__brand-icon" src="/brand/logo.png" alt="" />
         {!collapsed && <span className="sidebar__brand-text">FinControl</span>}
       </div>
 

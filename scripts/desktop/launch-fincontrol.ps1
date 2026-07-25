@@ -100,6 +100,30 @@ if (-not $viteReady) {
     Write-Host "[launch-fincontrol] WARN: Vite not ready within 20s; you can refresh browser manually" -ForegroundColor Yellow
 }
 
+# Step 5.5: Desktop toast notification (1b.4 PR9 / Decision 35)
+Write-Host "[launch-fincontrol] Showing desktop toast..." -ForegroundColor Cyan
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $notify = New-Object System.Windows.Forms.NotifyIcon
+    $notify.Icon = [System.Drawing.SystemIcons]::Information
+    $notify.BalloonTipIcon = [System.Windows.Forms.ToolTipIcon]::Info
+    $notify.BalloonTipTitle = 'FinControl'
+    $notify.BalloonTipText = '系统已就绪！请打开浏览器访问 http://localhost:5173/'
+    $notify.Visible = $true
+    $notify.ShowBalloonTip(8000)
+    # 12 秒后清理（避免泄漏托盘图标），用后台 job 不阻塞主流程
+    $job = Start-Job -ScriptBlock {
+        param($n)
+        Start-Sleep -Seconds 12
+        $n.Visible = $false
+        $n.Dispose()
+    } -ArgumentList $notify
+    Write-Host "[launch-fincontrol] OK desktop toast shown" -ForegroundColor Green
+} catch {
+    Write-Host "[launch-fincontrol] WARN: failed to show desktop toast: $_" -ForegroundColor Yellow
+}
+
 # Open default browser to home page
 $url = 'http://localhost:5173/'
 try {

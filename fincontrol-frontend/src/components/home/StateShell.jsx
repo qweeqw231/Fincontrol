@@ -16,15 +16,18 @@ export function StateShell({ icon, title, sub, action }) {
     <div className="page-shell">
       <header className="app-header">
         <div className="brand">
-          <span className="logo">💰</span>
+          {/* 1b.4 PR9：emoji 💰 换成真正的 logo */}
+          <img className="logo" src="/brand/logo.png" alt="FinControl" />
           <div className="brand-text">
             <h1>FinControl</h1>
             <div className="sub">个人资产配置全景 · 支付宝快照</div>
           </div>
         </div>
-        <div className="meta">
-          <div className="date">—</div>
-          <div>来源：支付宝</div>
+        <div className="header-actions">
+          <div className="meta">
+            <div className="date">—</div>
+            <div>来源：支付宝</div>
+          </div>
         </div>
       </header>
 

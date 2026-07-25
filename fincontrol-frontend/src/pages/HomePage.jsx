@@ -588,43 +588,62 @@ export default function HomePage() {
     <div className="page-shell">
       <header className="app-header">
         <div className="brand">
-          <span className="logo">💰</span>
+          {/* 1b.4 PR9：emoji 💰 换成真正的 logo */}
+          <img className="logo" src="/brand/logo.png" alt="FinControl" />
           <div className="brand-text">
             <h1>FinControl</h1>
             <div className="sub">个人资产配置全景 · 支付宝快照</div>
           </div>
         </div>
-        <div className="meta">
-          <div className="date">{snap.snapshotDate || '—'}</div>
-          <div>来源：支付宝</div>
+        {/* 1b.4 PR9：meta + 关闭按钮 作为 group 推到右边 */}
+        <div className="header-actions">
+          <div className="meta">
+            <div className="date">{snap.snapshotDate || '—'}</div>
+            <div>来源：支付宝</div>
+          </div>
+          {/* 1b.4 PR8 / 决策 35：关闭服务按钮（右上角） */}
+          <button
+            type="button"
+            className={`shutdown-btn shutdown-btn--${shutdownState}`}
+            data-testid="shutdown-btn"
+            data-state={shutdownState}
+            onClick={handleShutdownClick}
+            disabled={shutdownState === 'shutting-down'}
+            title="点击关闭服务，可以停止本系统的运行以节约资源"
+            aria-label="关闭服务"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.16 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />
+            </svg>
+          </button>
         </div>
-        {/* 1b.4 PR8 / 决策 35：关闭服务按钮（右上角） */}
-        <button
-          type="button"
-          className={`shutdown-btn shutdown-btn--${shutdownState}`}
-          data-testid="shutdown-btn"
-          data-state={shutdownState}
-          onClick={handleShutdownClick}
-          disabled={shutdownState === 'shutting-down'}
-          title="点击关闭服务，可以停止本系统的运行以节约资源"
-          aria-label="关闭服务"
-        >
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-            <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.16 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />
-          </svg>
-        </button>
       </header>
 
-      {/* 1b.4 PR8：关闭服务确认 toast / 关闭中提示 */}
-      {(shutdownState === 'confirming' || shutdownState === 'shutting-down') && (
+      {/* 1b.4 PR9：confirming 状态仅显示顶部 toast（5 秒短时反馈） */}
+      {shutdownState === 'confirming' && (
         <div
-          className={`shutdown-toast shutdown-toast--${shutdownState}`}
+          className="shutdown-toast shutdown-toast--confirming"
           data-testid="shutdown-toast"
           role="status"
         >
-          {shutdownState === 'confirming'
-            ? '再点一次确认关闭（5 秒倒计时）'
-            : '服务关闭中…请重新启动桌面快捷方式'}
+          再点一次确认关闭（5 秒倒计时）
+        </div>
+      )}
+
+      {/* 1b.4 PR9：shutting-down 状态升级为全屏 modal（明确告知系统已不可用） */}
+      {shutdownState === 'shutting-down' && (
+        <div
+          className="shutdown-modal"
+          data-testid="shutdown-modal"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="shutdown-modal-content">
+            <img className="logo" src="/brand/logo.png" alt="" />
+            <h2>服务已停止</h2>
+            <p className="lead">您可以关闭本页面</p>
+            <p className="hint">下次启动请双击桌面 FinControl 图标</p>
+          </div>
         </div>
       )}
 

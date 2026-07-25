@@ -1,13 +1,41 @@
-/* 1b.4 PR8 / 决策 35：HomePage 关闭服务按钮 + toast 样式
+/* 1b.4 PR9 / 决策 35：HomePage 关闭服务按钮 + toast + 全屏 modal 样式
  * 按钮位置：app-header 右上角，36×36 圆形；
  * 颜色状态机：idle 灰 / confirming 红 / shutting-down 灰 disabled
+ * app-header 用 flex 把 brand 推到左边，把 meta + 关闭按钮作为 group 推到右边
  */
 
-/.app-header {
+.app-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+/* 1b.4 PR9：meta 文本 + 关闭按钮作为一个 group，靠右对齐 */
+.app-header .header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* 1b.4 PR9：放大 meta 字号，让 "日期" 和 "来源" 显眼 */
+.app-header .meta {
+  font-size: 14px;
+  opacity: 0.9;
+}
+.app-header .meta .date {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* 1b.4 PR9：brand 内的 logo 改用 <img>，需要 object-fit 防止变形 */
+.app-header .brand .logo {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .app-header .shutdown-btn {
@@ -88,4 +116,58 @@
 @keyframes shutdown-toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* 1b.4 PR9：服务已停止后全屏 modal（取代原来小 toast） */
+.shutdown-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(6px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: shutdown-modal-in 0.3s ease;
+}
+
+.shutdown-modal-content {
+  text-align: center;
+  padding: 40px 48px;
+  max-width: 460px;
+}
+
+.shutdown-modal-content .logo {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 20px;
+  border-radius: 14px;
+  object-fit: contain;
+}
+
+.shutdown-modal-content h2 {
+  font-size: 26px;
+  font-weight: 600;
+  color: #262626;
+  margin: 0 0 12px 0;
+  letter-spacing: 0.5px;
+}
+
+.shutdown-modal-content .lead {
+  font-size: 17px;
+  color: #595959;
+  margin: 0 0 14px 0;
+}
+
+.shutdown-modal-content .hint {
+  font-size: 14px;
+  color: #8C8C8C;
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid #f0f0f0;
+}
+
+@keyframes shutdown-modal-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
