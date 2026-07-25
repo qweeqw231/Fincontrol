@@ -118,6 +118,28 @@
   animation: success-banner-slide-in 0.25s ease-out;
 }
 
+/* Fix 8：banner 2（首页展示日期确认 / 保持 current）在 banner 1 下方。
+   不与 banner 1 互盖，top:60px 让出第一个 banner 高度。*/
+.success-banner--second {
+  position: fixed;
+  top: 60px;
+  left: 0;
+  right: 0;
+  margin-top: 0;
+  padding: 12px 16px;
+  z-index: 1500;
+  border-radius: 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  background: #e6f4ff !important;  /* !important 防止 portal 上下文覆盖 */
+  border: 1px solid #91caff !important;
+  border-top: none;
+  color: #003a8c !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  animation: success-banner-slide-in 0.25s ease-out;
+}
+
 @keyframes success-banner-slide-in {
   from { transform: translateY(-100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }

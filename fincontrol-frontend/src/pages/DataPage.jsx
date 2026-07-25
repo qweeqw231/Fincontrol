@@ -120,6 +120,16 @@ export default function DataPage() {
   // 存一个独立的 lastSuccessFundCount 让 banner 能读对。
   const [lastSuccessFundCount, setLastSuccessFundCount] = useState(0)
 
+  // 1b.4-pr7 (DATA-016) Fix 8：双 banner 架构 + prev current 抢救。
+  // - lastSuccessDate：本次入库的 snapshotDate（banner 1 文案 + banner 2 条件1 用）
+  // - lastPrevCurrent：弹 prompt 之前首页的 current 日期（banner 2 条件2 需保留旧 current 文案）
+  // - currentConfirmMsg：banner 2 state = { type: 'set'|'kept', date, prevCurrent } | null
+  //   - 'set'  = 蓝色按了 → “首页展示日期【date】确认成功”
+  //   - 'kept' = 白色按了 → “首页展示日期仍为【prevCurrent】，当前截图日期【date】已经入库”
+  const [lastSuccessDate, setLastSuccessDate] = useState('')
+  const [lastPrevCurrent, setLastPrevCurrent] = useState(null)
+  const [currentConfirmMsg, setCurrentConfirmMsg] = useState(null)
+
   // 1b.4-pr7 (DATA-016) Fix 3：入库成功后弹"设为当前吗?" prompt（蓝色默认改 current，白色取消保留）
   // - date：要设为 current 的快照日期
   // - fundCount：本次入库的基金数（用于标题显示 "已入库 N 只基金"）
@@ -547,6 +557,8 @@ export default function DataPage() {
       // 5）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
       setConfirmSuccess(true)
       setLastSuccessFundCount(fundCount)  // Fix 7：用局部变量（parseInfo 已被 setParseInfo(null) 清掉）
+      setLastSuccessDate(snapshotDateForPrompt)  // Fix 8：banner 1 需展示 date
+      setLastPrevCurrent(snapshot?.snapshotDate || null)  // Fix 8：banner 2 条件2 需保存 prompt 弹出前的 current
       setTimeout(() => setConfirmSuccess(false), 5000)  // 5s 后消失
       // 6）1b.4-pr7 DATA-016 Fix 3：弹"设为当前吗?" prompt 让用户主动选择是否改 current
       // 注意：原 PR3+ BUG-004 (Fix 2 删除) 会在 confirm 后自动调 setCurrent，现改为用户主动。
@@ -596,22 +608,47 @@ export default function DataPage() {
     const { date } = setCurrentPrompt
     setSetCurrentPrompt(null)  // 先关 modal（避免 setCurrent 过程中 modal 阻塞 UI）
     await setCurrent(date)
+    // Fix 8：prompt 关闭后 → banner 2 条件1（已确认 current）
+    setCurrentConfirmMsg({ type: 'set', date, prevCurrent: lastPrevCurrent })
+    setTimeout(() => setCurrentConfirmMsg(null), 5000)
   }
   function handleSetCurrentPromptCancel() {
+    if (!setCurrentPrompt) return
+    const { date } = setCurrentPrompt
+    // Fix 8：prompt 关闭后 → banner 2 条件2（保持 current）
+    setCurrentConfirmMsg({ type: 'kept', date, prevCurrent: lastPrevCurrent })
+    setTimeout(() => setCurrentConfirmMsg(null), 5000)
     setSetCurrentPrompt(null)  // 不动 current
   }
 
   return (
     <div className="data-page">
-      {/* Fix 6：success banner 移出 section 到顶层（用 React Portal 到 document.body），
-          并读 lastSuccessFundCount 避免 setParseInfo(null) 后的 0 显示问题 */}
+      {/* Fix 6/7/8：success banner 移出 section 到顶层（用 React Portal 到 document.body）。
+          Fix 8 改造为两段动画：
+          - banner 1（confirmSuccess，Fix 7 修对 fundCount + Fix 8 加 date 文案）：doConfirm 完成后立即显示 5s
+          - banner 2（currentConfirmMsg）：prompt 关闭后根据按钮颜色 5s
+            - 'set'  = 蓝色按了 → 条件1
+            - 'kept' = 白色按了 → 条件2 */}
       {confirmSuccess && createPortal(
         <div
           className="success-banner success-banner--top"
           role="status"
           aria-live="polite"
         >
-          ✓ 入库成功！首页应已显示 {lastSuccessFundCount} 只基金
+          ✓ 来自 {lastSuccessDate} 的 {lastSuccessFundCount} 只基金入库成功！
+        </div>,
+        document.body
+      )}
+      {currentConfirmMsg && createPortal(
+        <div
+          className="success-banner success-banner--second"
+          role="status"
+          aria-live="polite"
+        >
+          {currentConfirmMsg.type === 'set'
+            ? <>✓ 首页展示日期 {currentConfirmMsg.date} 确认成功！返回首页即可查看当日基金明细</>
+            : <>✓ 首页展示日期仍为 {currentConfirmMsg.prevCurrent}，当前截图日期 {currentConfirmMsg.date} 已经入库</>
+          }
         </div>,
         document.body
       )}
