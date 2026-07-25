@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { friendlyError } from '../utils/formatters.js'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
 import { useUserConfigStore } from '../stores/userConfigStore.js'
@@ -114,6 +115,10 @@ export default function DataPage() {
 
   // PR3+ BUG-001：独立 confirmSuccess state（不耦合 step 状态机，让"✓ 入库成功"banner 必现）
   const [confirmSuccess, setConfirmSuccess] = useState(false)
+  // 1b.4-pr7 (DATA-016) Fix 6：抢救 fundCount——doConfirm 成功路径会立刻 setParseInfo(null)
+  // 清理 modal state（Fix 1），而 banner 要显示 5s。如果只读 parseInfo，5s 期间 parseInfo 是 null → fundCount 显示 0。
+  // 存一个独立的 lastSuccessFundCount 让 banner 能读对。
+  const [lastSuccessFundCount, setLastSuccessFundCount] = useState(0)
 
   // 1b.4-pr7 (DATA-016) Fix 3：入库成功后弹"设为当前吗?" prompt（蓝色默认改 current，白色取消保留）
   // - date：要设为 current 的快照日期
@@ -590,6 +595,18 @@ export default function DataPage() {
 
   return (
     <div className="data-page">
+      {/* Fix 6：success banner 移出 section 到顶层（用 React Portal 到 document.body），
+          并读 lastSuccessFundCount 避免 setParseInfo(null) 后的 0 显示问题 */}
+      {confirmSuccess && createPortal(
+        <div
+          className="success-banner success-banner--top"
+          role="status"
+          aria-live="polite"
+        >
+          ✓ 入库成功！首页应已显示 {lastSuccessFundCount} 只基金
+        </div>,
+        document.body
+      )}
       <header className="data-header">
         <h1>数据管理</h1>
         <p className="sub">上传 4 张支付宝基金截图 → parse → confirm → 决策 27 snapshot_meta 同步</p>
@@ -727,10 +744,6 @@ export default function DataPage() {
         >
           {step === 'confirming' ? '入库中…' : '确认入库（请先预览）'}
         </button>
-        {/* PR3+ BUG-001：独立 confirmSuccess state 控制 banner（不耦合 step 状态机） */}
-        {confirmSuccess && (
-          <div className="success-banner">✓ 入库成功！首页应已显示 {parseInfo?.fundCount ?? 0} 只基金</div>
-        )}
       </section>
 
       <section className="section-card">

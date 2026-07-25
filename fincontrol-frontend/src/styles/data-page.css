@@ -88,6 +88,31 @@
   font-size: 13px;
 }
 
+/* 1b.4-pr7 (DATA-016) Fix 6：success-banner 顶层（React Portal 到 document.body）。
+   位置固定在视口顶部，z-index 高于 batchToast (1300) + confirm modal (1100)。
+   修复 Bug-B：banner 不在 section 内遮挡。
+   修复 Bug-A：配合 DataPage.jsx 的 lastSuccessFundCount 状态显示正确数字。*/
+.success-banner--top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin-top: 0;
+  padding: 12px 14px;
+  z-index: 1500;
+  border-radius: 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  animation: success-banner-slide-in 0.25s ease-out;
+}
+
+@keyframes success-banner-slide-in {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
 /* === 上传区（BUG-P4-001 核心修复） === */
 
 .data-page .upload-bar {
