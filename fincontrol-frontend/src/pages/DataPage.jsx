@@ -525,7 +525,14 @@ export default function DataPage() {
       setFiles([])
       setFilePreviews([])
       setParsedAsset(null)
-      setParseInfo(null)  // 清理 parseInfo（banner 已用 optional chaining 安全访问 fundCount）
+      // 1b.4-pr7 (DATA-016) Fix 7：关键——在 setParseInfo(null) 之前抢救 fundCount 到局部变量。
+      // 原因：Fix 6 试过 setLastSuccessFundCount(parseInfo?.fundCount ?? 0)，但 React 18 batched
+      // 只保护 render 不被打断，setState 函数体读其他 state 是当前值——上一行 setParseInfo(null)
+      // 同步执行完，parseInfo 已是 null，fallback ?? 0 → 仍然 0。
+      // 修法：先存局部变量（此时 parseInfo 还有值），再 setParseInfo(null)。
+      const fundCount = parseInfo?.fundCount ?? 0
+      setParseInfo(null)
+      const snapshotDateForPrompt = snapshotDate  // 同样抢救 snapshotDate（避免 Fix 1 路径下被 reset）
       // 4）1b.4-pr7 DATA-016 Fix 1：彻底清理 preview modal 相关 state（modal 才能真正关掉）
       setShowConfirmModal(false)              // 关键：真正关 preview modal
       setParsedSummary(null)
@@ -539,11 +546,12 @@ export default function DataPage() {
       setStep('idle')
       // 5）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
       setConfirmSuccess(true)
+      setLastSuccessFundCount(fundCount)  // Fix 7：用局部变量（parseInfo 已被 setParseInfo(null) 清掉）
       setTimeout(() => setConfirmSuccess(false), 5000)  // 5s 后消失
       // 6）1b.4-pr7 DATA-016 Fix 3：弹"设为当前吗?" prompt 让用户主动选择是否改 current
       // 注意：原 PR3+ BUG-004 (Fix 2 删除) 会在 confirm 后自动调 setCurrent，现改为用户主动。
       // 原因：用户上传错日期时也会被强制改 current，违反"未确认就不切 current"的设计。
-      setSetCurrentPrompt({ date: snapshotDate, fundCount: parseInfo?.fundCount ?? 0 })
+      setSetCurrentPrompt({ date: snapshotDateForPrompt, fundCount })
     } catch (confirmErr) {
       // PR3+ BUG-005：错误 message 优先取后端业务 message（e.response.data.message），其次 axios 默认
       const msg = confirmErr?.response?.data?.message

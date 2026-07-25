@@ -78,6 +78,12 @@
   font-size: 13px;
 }
 
+/* 1b.4-pr7 (DATA-016) Fix 7：success-banner 基础样式**脱离 .data-page 限定**。
+   原因：Fix 6 用 createPortal(...document.body) 把 banner 渲染到 body 下，
+   不在 .data-page 父类里 → 原 .data-page .success-banner 选择器不匹配 → 裸文字。
+   修法：写两选择器（无 .data-page + .data-page 名字空间），让 portal 元素和原 data-page 内的 banner 都能匹配。
+   .success-banner--top 是 Fix 6/7 的 Portal 顶层变体，在下面重写定位/绿色底衬。 */
+.success-banner,
 .data-page .success-banner {
   margin-top: 12px;
   padding: 10px 14px;
@@ -88,7 +94,7 @@
   font-size: 13px;
 }
 
-/* 1b.4-pr7 (DATA-016) Fix 6：success-banner 顶层（React Portal 到 document.body）。
+/* 1b.4-pr7 (DATA-016) Fix 6/7：success-banner 顶层（React Portal 到 document.body）。
    位置固定在视口顶部，z-index 高于 batchToast (1300) + confirm modal (1100)。
    修复 Bug-B：banner 不在 section 内遮挡。
    修复 Bug-A：配合 DataPage.jsx 的 lastSuccessFundCount 状态显示正确数字。*/
@@ -98,12 +104,16 @@
   left: 0;
   right: 0;
   margin-top: 0;
-  padding: 12px 14px;
+  padding: 14px 16px;
   z-index: 1500;
-  border-radius: 0;
+  border-radius: 0 0 6px 6px;
   text-align: center;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 500;
+  background: #f6ffed !important;  /* !important 防止 portal 上下文覆盖 */
+  border: 1px solid #b7eb8f !important;
+  border-top: none;
+  color: #389e0d !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   animation: success-banner-slide-in 0.25s ease-out;
 }
