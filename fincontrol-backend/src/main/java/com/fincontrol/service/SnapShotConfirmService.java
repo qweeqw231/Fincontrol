@@ -258,7 +258,15 @@ public class SnapShotConfirmService {
     }
 
     private int writeAssetSnapshot(SnapshotConfirmRequest req, DedupResult dedup) {
-        // 决策 33 D4：与 writeAssetRaw 对称，写新批次前先翻旧 asset_snapshot 行 is_latest=false
+        // 1b.4-pr7 (DATA-016) Fix 5：先 DELETE 同 (user_id, snapshot_date, category) 全部行。
+        // 原因：asset_snapshot 表 unique key uk_user_date_category 是 3 列约束 (user_id, snapshot_date, category)，
+        // 不含 is_latest——仅 updateIsLatestBySnapshotDate 翻旧 is_latest=false 后行还在，新 INSERT 仍撞 500。
+        // 事务内 DELETE 保证幂等 overwrite（@Transactional 失败时回滚，DB 不会被污染）。
+        for (CategoryBlock cat : dedup.merged().getCategories()) {
+            assetSnapshotMapper.deleteByUserAndDateAndCategory(
+                    req.getUserId(), req.getSnapshotDate(), cat.getCategoryName());
+        }
+        // 决策 33 D4：与 writeAssetRaw 对称（防御性 + 兼容旧调用方）。
         assetSnapshotMapper.updateIsLatestBySnapshotDate(req.getUserId(), req.getSnapshotDate());
         int count = 0;
         // 1a.9：从 dedup 结果获取 totalAssetSource（“top” 或 “visible_sum”）；所有 category 行同值
@@ -298,6 +306,15 @@ public class SnapShotConfirmService {
      */
     private int writeFundCategoryMap(SnapshotConfirmRequest req, DedupResult dedup) {
         int count = 0;
+        // 1b.4-pr7 (DATA-016) Fix 5：先 DELETE 同 (user_id, fund_name) 全部行（复用已有 1a.8.8 deleteByUserAndFundName）。
+        // 原因：fund_category_map 表 unique key uk_user_fund 是 (user_id, fund_name) 2 列约束，
+        // 不含 last_seen_at/first_missing 等字段。仅靠 upsertByFundName 的 ON DUPLICATE KEY UPDATE
+        // 在事务回滚 / 初次写成功后被另一路径改写等场景下可能踩边界。最稳：先 DELETE 清扫，再 UPSERT。
+        for (CategoryBlock cat : dedup.merged().getCategories()) {
+            for (FundLine fund : cat.getFunds()) {
+                fundCategoryMapMapper.deleteByUserAndFundName(req.getUserId(), fund.getFundName());
+            }
+        }
         for (CategoryBlock cat : dedup.merged().getCategories()) {
             for (FundLine fund : cat.getFunds()) {
                 FundCategoryMap existing = fundCategoryMapMapper.selectByUserAndFundName(

@@ -35,6 +35,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -251,6 +252,38 @@ class SnapShotConfirmServiceP7Test {
         // 验证镜像校验 3 个查询都被调过
         verify(assetRawMapper, times(2)).sumAmountByUserAndDateAndCategory(anyLong(), any(LocalDate.class), any());
         verify(assetSnapshotMapper, times(2)).countLatestByUserAndDateAndCategory(anyLong(), any(LocalDate.class), any());
+    }
+
+    // ========================================================================
+    // 1b.4-pr7 (DATA-016) Fix 5：asset_snapshot + fund_category_map 幂等 DELETE
+    // ========================================================================
+
+    /**
+     * B12：writeAssetSnapshot 头调 {@code deleteByUserAndDateAndCategory} 清理 unique key。
+     *     否则 asset_snapshot.uk_user_date_category (3 列不含 is_latest) 会在二次 INSERT 时撞 Duplicate。
+     */
+    @Test
+    @DisplayName("Fix 5-B12 · writeAssetSnapshot 头调 deleteByUserAndDateAndCategory 清扫 unique key")
+    void writeAssetSnapshot_deletesByUserAndDateAndCategory() {
+        service.confirm(reqWithSingleFund("长城短债债券A", "固收类"));
+
+        // writeAssetSnapshot 头调 1 次 deleteByUserAndDateAndCategory（单 category）
+        verify(assetSnapshotMapper, times(1))
+                .deleteByUserAndDateAndCategory(anyLong(), any(LocalDate.class), eq("固收类"));
+    }
+
+    /**
+     * B13：writeFundCategoryMap 头调 {@code deleteByUserAndFundName}（复用 1a.8.8 接口）。
+     *     fund_category_map.uk_user_fund (user_id, fund_name) 也会在二次 confirm 时撞 unique key。
+     */
+    @Test
+    @DisplayName("Fix 5-B13 · writeFundCategoryMap 头调 deleteByUserAndFundName 清扫 unique key")
+    void writeFundCategoryMap_deletesByUserAndFundName() {
+        service.confirm(reqWithSingleFund("长城短债债券A", "固收类"));
+
+        // writeFundCategoryMap 头调 1 次 deleteByUserAndFundName（单 fund）
+        verify(fundCategoryMapMapper, times(1))
+                .deleteByUserAndFundName(anyLong(), eq("长城短债债券A"));
     }
 
     // ========================================================================

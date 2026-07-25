@@ -2,6 +2,7 @@ package com.fincontrol.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.fincontrol.entity.AssetSnapshot;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -38,6 +39,24 @@ public interface AssetSnapshotMapper extends BaseMapper<AssetSnapshot> {
     int updateIsLatestBySnapshotDate(
             @Param("userId") Long userId,
             @Param("snapshotDate") LocalDate snapshotDate);
+
+    /**
+     * 1b.4-pr7 (DATA-016) Fix 5：幂等 overwrite 的 DELETE 清扫。
+     * <p>背景：asset_snapshot 表的 unique key {@code uk_user_date_category} 是 (user_id, snapshot_date, category)
+     * 三列约束，**不含** is_latest。{@code updateIsLatestBySnapshotDate} 翻旧行 is_latest=false 后行还在，
+     * 新 INSERT {@code (user_id, snapshot_date, category, is_latest=true)} 仍撞 unique key 报 500。
+     * 修法：writeAssetSnapshot 头先 DELETE 该 (user_id, snapshot_date, category) 全部行（事务内原子），
+     * 然后 INSERT。新行无冲突，镜像与 unique key 一致。
+     * <p>语义与 asset_raw.upsertByFundName (Fix 4) + fund_category_map.deleteByUserAndFundName (复用) 对称。
+     */
+    @Delete("DELETE FROM asset_snapshot " +
+            "WHERE user_id = #{userId} " +
+            "AND snapshot_date = #{snapshotDate} " +
+            "AND category = #{category}")
+    int deleteByUserAndDateAndCategory(
+            @Param("userId") Long userId,
+            @Param("snapshotDate") LocalDate snapshotDate,
+            @Param("category") String category);
 
     /**
      * 1a.8 撤销：找 user_id+date < current date 的最近 snapshot 用于恢复。

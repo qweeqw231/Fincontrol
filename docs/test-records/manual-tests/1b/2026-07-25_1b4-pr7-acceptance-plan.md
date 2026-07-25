@@ -1,13 +1,13 @@
-# 1b4pr7 验收计划（DATA-016：modal 清理 + setCurrent prompt UX）
+# 1b4pr7 验收计划（DATA-016：modal 清理 + setCurrent prompt UX + 后端幂等 Fix 4+5）
 
-> **会话时点**：2026-07-25 11:00
-> **范围**：DataPage.jsx 前端单文件改动（Fix 1 + Fix 2 + Fix 3）
+> **会话时点**：2026-07-25 11:00（v1）/ 11:50（v2：Fix 5 增量）
+> **范围**：DataPage.jsx 前端单文件改动（Fix 1 + Fix 2 + Fix 3）+ 后端 SnapShotConfirmService（Fix 4 + Fix 5）
 > **决策依据**：1b.4-pr7 work-plan（DATA-016）
 > **执行后输出**：`docs/test-records/manual-tests/1b/2026-07-25_1b4-pr7-acceptance-report.md`
 
 ---
 
-## 一、验收总览（V1-V7）
+## 一、验收总览（V1-V8）
 
 | 类别 | 编号范围 | 用例数 | 状态 |
 |---|---|---|---|
@@ -15,7 +15,8 @@
 | **编辑日期场景** | V3-V4 | 2 | ⏳ |
 | **兜底路径保留** | V5 | 1 | ⏳ |
 | **回归：连锁 bug 不复现** | V6-V7 | 2 | ⏳ |
-| **合计** | **V1-V7** | **7** | ⏳ |
+| **Fix 5 加测：后端三表幂等** | V8 | 1 | ⏳ |
+| **合计** | **V1-V8** | **8** | ⏳ |
 
 ---
 
@@ -76,14 +77,15 @@
 
 | ID | 场景 | 验收标准 | 通过 |
 |---|---|---|---|
-| **V6** | 修复前 Bug-D：第二次入库同 snapshot_date 不报 500 | V1-V2 完成后，再上传同 4 张图（snapshot_date = 已入库日期）→ parse 成功 → preview → 入库 → **成功**（不报 500）→ prompt 再次弹出（仍可走蓝色或白色） | ☐ |
-| **V7** | 修复前 Bug-A：modal 关闭路径不动 current | preview modal 打开后，点 × 或 backdrop 关闭 modal → setCurrent **不调用** → 主页 ★ CURRENT 保持不变 | ☐ |
+| **V6** | 第二次 confirm 同 snapshot_date 不报 500（Fix 4 + Fix 5 后端幂等 overwrite） | V1/V2/V3/V4 任一完成后，再上传同 4 张图（snapshot_date = 已入库日期）→ parse 成功 → preview → 入库 → **成功**（不报 500）→ prompt 再次弹出（仍可走蓝色或白色） | ☐ |
+| **V7** | preview modal × 关闭路径不动 current | preview modal 打开后，点 × 或 backdrop 关闭 modal → setCurrent **不调用** → 主页 ★ CURRENT 保持不变 | ☐ |
 
 ### V6 关键检查点
 
 - [ ] 第二次入库不再 500（即使 DB 已存在该 snapshot_date 数据，前端仍可成功 confirm）
 - [ ] prompt 弹窗正确显示"已入库 N 只基金"（fundCount 来自 parseInfo，不依赖服务端响应）
 - [ ] 主页列表多出一条同 snapshot_date 的卡片（决策 27 is_latest 会切换）
+- [ ] 后端 stdout.log 应出现 `1b.3.2 confirm done: raw=N snapshot=N map=N meta=N`（无 SQLIntegrityConstraintViolationException）
 
 ### V7 关键检查点
 
@@ -93,37 +95,54 @@
 
 ---
 
-## 六、回归测试（前端已有用例）
+## 六、V8 · Fix 5 加测（1 用例）
 
-| ID | 测试 | 通过 |
-|---|---|---|
-| R1 | `npm run test` DataPage.test.jsx 22 用例全绿 | ☐ |
-| R2 | `npm run test` HomePage.test.jsx 3 用例全绿 | ☐ |
-| R3 | `npm run test` 全部前端测试套件无回归 | ☐ |
-| R4 | 后端 `mvn test` SnapshotQueryServiceTest + SnapShotConfirmServiceP7Test 全绿（仅前端改，不应影响，但保险） | ☐ |
+| ID | 场景 | 验收标准 | 通过 |
+|---|---|---|---|
+| **V8** | 预览不闪退 + 二次入库同 snapshot_date 不报 500 + 弹"设为当前"prompt + 翻旧行被覆写 | 完整跑一遍：upload 4 张图（任意日期）→ preview → 入库 → preview 不闪退（Fix 1）→ 弹 prompt（Fix 3）→ 选蓝色/白色 → 再 upload 4 张图（同日期）→ parse → preview → 入库 → **不报 500**（Fix 5）→ 弹 prompt。DB 验证：asset_snapshot / asset_raw / fund_category_map 三表均只有新批次行（Fix 5 的 DELETE 清扫生效） | ☐ |
+
+### V8 关键检查点
+
+- [ ] preview 不闪退（Fix 1）
+- [ ] prompt 弹出（Fix 3）
+- [ ] 第二次入库无 500（Fix 5）
+- [ ] curl `SELECT * FROM asset_raw WHERE user_id=1 AND snapshot_date='<date>'` 仅显示新批次行（is_latest=true）
+- [ ] curl `SELECT * FROM asset_snapshot WHERE user_id=1 AND snapshot_date='<date>'` 仅显示新批次行
+- [ ] curl `SELECT * FROM fund_category_map WHERE user_id=1` 中已确认 fund 的 source='ai_guess' 不被自动升级（决策 32）
 
 ---
 
-## 七、验收执行流程
+## 七、回归测试（自动化）
 
-### 7.1 准备阶段
+| ID | 测试 | 状态 |
+|---|---|---|
+| R1 | 后端 `mvn -f ...\fincontrol-backend\pom.xml -o test -Dtest=SnapShotConfirmServiceP7Test` 9 用例全绿（P7-R1~R4 + B9-B11 + B12-B13） | ✅（Cline 11:49） |
+| R2 | 前端 `npm test`（如沙箱允许） | ☐ |
 
-1. 重启后端（`scripts/1b/restart-backend.ps1`，决策 24 SOP）—— 仅前端改，保险跑一次
-2. 启动前端（`.tmp/start-frontend.ps1`）
-3. 验证后端健康：`curl http://localhost:8080/actuator/health` → HTTP 200
-4. 浏览器打开 `http://localhost:5174/data`
+---
 
-### 7.2 执行阶段
+## 八、验收执行流程
+
+### 8.1 准备阶段
+
+1. 重启后端（`scripts/1b/restart-backend.ps1`，决策 24 SOP）—— ✅ Fix 5 部署 PID=5384
+2. 启动前端（`.tmp/start-frontend.ps1`，已 fresh start 11:28）
+3. 浏览器 **Ctrl+Shift+R hard reload**（重要：清浏览器缓存拿 Fix 3 新 JSX）
+4. 验证后端健康：`curl http://localhost:8080/actuator/health` → HTTP 200
+5. 浏览器打开 `http://localhost:5173/data`
+
+### 8.2 执行阶段
 
 1. **V1 路径**：upload 4 图 → parse → 入库 → 蓝色"改为当前"
 2. **V2 路径**：upload 4 图 → parse → 入库 → 白色"取消"
 3. **V3 路径**：upload 4 图（date=7/24）→ 编辑日期 7/23 → 入库 → 蓝色
 4. **V4 路径**：upload 4 图（date=7/24）→ 编辑日期 7/23 → 入库 → 白色
 5. **V5 路径**：在快照管理列表点"设为当前"
-6. **V6 路径**：V1 后再 upload 4 图（同 snapshot_date）→ parse → 入库
+6. **V6 路径**：V1/V2/V3/V4 任一完成后，再 upload 4 图（同 snapshot_date）→ parse → 入库（验证 Fix 4+5）
 7. **V7 路径**：preview 打开后点 × 或 backdrop
+8. **V8 路径**：完整端到端跑一遍（Fix 1+2+3+4+5 综合）
 
-### 7.3 报告阶段
+### 8.3 报告阶段
 
 1. 填写本验收计划中所有 ☐ → ✅ 或 ❌
 2. 输出 `docs/test-records/manual-tests/1b/2026-07-25_1b4-pr7-acceptance-report.md`
@@ -132,29 +151,30 @@
 
 ---
 
-## 八、验收签字
+## 九、验收签字
 
 | 角色 | 姓名 | 日期 | 签字 |
 |---|---|---|---|
-| 开发 | Cline | 2026-07-25 | ☐ |
+| 开发 | Cline | 2026-07-25 | ✅（代码 + 构建 + 后端 + 文档 + 测试） |
 | 测试 | 用户 | 2026-07-25 | ☐ |
 | 用户 | 用户 | 2026-07-25 | ☐ |
 
 ---
 
-## 九、与决策 33 v3 的一致性确认
+## 十、与决策 33 v3 + Fix 5 的一致性确认
 
-- ✅ DATA-016 (Fix 1)：preview modal 真正关闭 + 全 state 清理 → V1-V7
-- ✅ DATA-016 (Fix 2)：confirm 不再自动 setCurrent → V1/V2/V3/V4/V6
-- ✅ DATA-016 (Fix 3)：新 prompt modal 让用户主动选择 → V1/V2/V3/V4
+- ✅ DATA-016 (Fix 1)：preview modal 真正关闭 + 全 state 清理 → V1-V8
+- ✅ DATA-016 (Fix 2)：confirm 不再自动 setCurrent → V1/V2/V3/V4/V6/V8
+- ✅ DATA-016 (Fix 3)：新 prompt modal 让用户主动选择 → V1/V2/V3/V4/V8
 - ✅ 主列表兜底按钮保留 → V5
+- ✅ Fix 4 (asset_raw 幂等 upsert) → V6
+- ✅ Fix 5 (asset_snapshot + fund_category_map DELETE 清扫) → V6/V8
 
 ---
 
-## 十、待用户最终验收
+## 十一、待用户最终验收
 
-- [ ] 全部 V1-V7 验证通过后，由用户在 final_report 或 GitHub issue 中确认
+- [ ] 全部 V1-V8 验证通过后，由用户在 GitHub issue 或本文件确认
 - [ ] 决策 33 标记为「v3 · 已实施」
 - [ ] 本文件标记为「✅ 已完成」
 - [ ] 联调记录最终版落盘
-- [ ] 后续推 Fix 4（后端幂等）单独 commit
