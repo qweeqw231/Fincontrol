@@ -1,13 +1,14 @@
-﻿import { defineConfig } from 'vite'
+import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
-    // 2026-07-24 PR2.envfix：5174 是 1b.2/1b.3 临时测试端口，1b.4+ 统一回 5173（Vite 默认）
+    // 1b.4 PR9 envfix：绑 0.0.0.0 让 IPv4 客户端也能访问
+    // (之前 host: 'localhost' 在 Windows 上只解析为 IPv6 ::1，导致 127.0.0.1:5173 不可达)
     port: 5173,
-    host: 'localhost',
+    host: '0.0.0.0',
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
