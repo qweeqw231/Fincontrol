@@ -21,7 +21,7 @@ import HistoryLimitDialog from '../components/data/HistoryLimitDialog.jsx'
  *   <li>选 4 张图 → /screenshot/upload 得 4 fileId</li>
  *   <li>选 single/multi + snapshot_date → /screenshot/parse-batch?mode={single|multi} 得 19-fund parsedAsset</li>
  *   <li>触发 /snapshot/confirm 写入 DB → 1b.3.2 自动写 snapshot_meta</li>
- *   <li>1b.4+ 修复：自动 setCurrent 把新日期设为 ★ CURRENT（PR3+ BUG-004 修复）</li>
+ *   <li>1b.4-pr7 (DATA-016)：入库成功后弹"设为当前吗?" prompt（蓝色默认改 current，白色取消保留）</li>
  *   <li>列表自动刷新（fetchLatest + fetchMetaList）</li>
  * </ol>
  * <p>2026-07-24 PR3+ 修改：
@@ -32,7 +32,12 @@ import HistoryLimitDialog from '../components/data/HistoryLimitDialog.jsx'
  *   <li>PR3+ BUG-001：confirmSuccess 独立 state 显示"✓ 入库成功"banner</li>
  *   <li>PR3+ BUG-002：is_current 卡片右侧加 ✓ 当前 badge（视觉等高）</li>
  *   <li>PR3+ BUG-003：预览弹窗快照日期可点击编辑（3 select 滚轮）— PR4a DATA-012 后改为 modal-header 副标题</li>
- *   <li>PR3+ BUG-004：confirm 后自动调 setCurrent（无需手动点"设为当前"）</li>
+ * </ul>
+ * <p>2026-07-25 PR7 (DATA-016) 修改：
+ * <ul>
+ *   <li>Fix 1：doConfirm 真正清理 preview modal 全 state（preview 才能自动关闭）</li>
+ *   <li>Fix 2：删除原 PR3+ BUG-004 "confirm 后自动 setCurrent"（用户上传错日期会污染 current）</li>
+ *   <li>Fix 3：入库成功后弹"设为当前吗?" prompt，蓝色默认改 current，白色取消保留</li>
  * </ul>
  * <p>2026-07-24 PR4a 修改：
  * <ul>
@@ -109,6 +114,12 @@ export default function DataPage() {
 
   // PR3+ BUG-001：独立 confirmSuccess state（不耦合 step 状态机，让"✓ 入库成功"banner 必现）
   const [confirmSuccess, setConfirmSuccess] = useState(false)
+
+  // 1b.4-pr7 (DATA-016) Fix 3：入库成功后弹"设为当前吗?" prompt（蓝色默认改 current，白色取消保留）
+  // - date：要设为 current 的快照日期
+  // - fundCount：本次入库的基金数（用于标题显示 "已入库 N 只基金"）
+  // - null：不弹
+  const [setCurrentPrompt, setSetCurrentPrompt] = useState(null) // {date, fundCount} | null
 
   // PR6 (1b.4 后 PR)：预览弹窗快照日期可点击修改（2-step UX：点击 → 确认弹窗 → 日期选择器）
   // 1) confirmingDateEdit=true 弹确认问询（不破坏页面主结构）
@@ -489,13 +500,13 @@ export default function DataPage() {
   }
 
   // 决策 33 D1+D2：doConfirm（被 handleConfirm 调用，可能在二次确认 modal 后调用）
-  // 1b.3.8 confirm（PR1 修复 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/004/005 + PR3+hotfix BUG-006）
+  // 1b.3.8 confirm（PR1 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/005 + PR3+hotfix BUG-006 + 1b.4-pr7 DATA-016 Fix 1/2/3）
   async function doConfirm() {
     if (!parsedAsset) return
     setStep('confirming')
     // ===== 主 confirm 流程（必须成功，否则失败回滚） =====
     try {
-      // 1）入库到 snapshot_meta
+      // 1）入库到 snapshot_meta（confirmedOverwrite=true 让顶层 overwrite 子表）
       await apiClient.post(
         ENDPOINTS.SNAPSHOT_CONFIRM,
         { userId: 1, snapshotDate, confirmedOverwrite: true, parsedAssets: [parsedAsset] },
@@ -510,10 +521,24 @@ export default function DataPage() {
       setFilePreviews([])
       setParsedAsset(null)
       setParseInfo(null)  // 清理 parseInfo（banner 已用 optional chaining 安全访问 fundCount）
+      // 4）1b.4-pr7 DATA-016 Fix 1：彻底清理 preview modal 相关 state（modal 才能真正关掉）
+      setShowConfirmModal(false)              // 关键：真正关 preview modal
+      setParsedSummary(null)
+      setCategoryDirty({})
+      setCategoryOverrides({})
+      setPendingReConfirms({})
+      setShowSubmitDirtyModal(false)          // 保险：关二次确认 modal
+      setShowBatchConfirmModal(false)         // 保险：关批量确认 modal
+      setBatchMode(false)                     // 退批量模式
+      setSelectedFunds(new Set())             // 清勾选
       setStep('idle')
-      // 4）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
+      // 5）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
       setConfirmSuccess(true)
       setTimeout(() => setConfirmSuccess(false), 5000)  // 5s 后消失
+      // 6）1b.4-pr7 DATA-016 Fix 3：弹"设为当前吗?" prompt 让用户主动选择是否改 current
+      // 注意：原 PR3+ BUG-004 (Fix 2 删除) 会在 confirm 后自动调 setCurrent，现改为用户主动。
+      // 原因：用户上传错日期时也会被强制改 current，违反"未确认就不切 current"的设计。
+      setSetCurrentPrompt({ date: snapshotDate, fundCount: parseInfo?.fundCount ?? 0 })
     } catch (confirmErr) {
       // PR3+ BUG-005：错误 message 优先取后端业务 message（e.response.data.message），其次 axios 默认
       const msg = confirmErr?.response?.data?.message
@@ -528,25 +553,14 @@ export default function DataPage() {
       setShowConfirmModal(false)
       setParsedSummary(null)
       setParseInfo(null)
+      // 1b.4-pr7 Fix 3 保险：失败路径不弹 prompt
+      setSetCurrentPrompt(null)
     }
-
-    // ===== PR3+ BUG-004：独立 try-catch 自动设 is_current =====
-    // setCurrent 失败不影响主 confirm 成功状态（用户可手动点'设为当前'补救）
-    try {
-      await apiClient.post(
-        ENDPOINTS.SNAPSHOT_SET_CURRENT,
-        { userId: 1, snapshotDate },
-        { headers: { 'X-User-Id': '1' } }
-      )
-      // 成功后 list 再刷一次确保 is_current 状态正确显示
-      await fetchMetaList()
-    } catch (setCurrentErr) {
-      // 静默失败（不影响 confirm 成功状态），仅 console 记录
-      console.warn('[confirm] setCurrent 失败，可手动设为 current:', setCurrentErr?.response?.data || setCurrentErr?.message)
-    }
+    // 1b.4-pr7 DATA-016 Fix 2：原"PR3+ BUG-004 自动 setCurrent"独立 try-catch 已删除。
+    // 数据入库与"设为当前"解耦，由 Fix 3 prompt 让用户主动选。
   }
 
-  // 1b.3.8 设为当前快照
+  // 1b.3.8 设为当前快照（主列表"设为当前"按钮 + Fix 3 prompt 蓝色按钮都复用）
   async function setCurrent(snapshotDate) {
     try {
       await apiClient.post(
@@ -559,6 +573,19 @@ export default function DataPage() {
     } catch (e) {
       setError(e?.message || 'set-current 失败')
     }
+  }
+
+  // 1b.4-pr7 DATA-016 Fix 3：prompt modal 两个回调
+  // - 蓝色"改为当前日期"：先关 modal，再调 setCurrent（复用上面函数，含 fetchLatest + fetchMetaList）
+  // - 白色"取消"：只关 modal，不动 current
+  async function handleSetCurrentPromptConfirm() {
+    if (!setCurrentPrompt) return
+    const { date } = setCurrentPrompt
+    setSetCurrentPrompt(null)  // 先关 modal（避免 setCurrent 过程中 modal 阻塞 UI）
+    await setCurrent(date)
+  }
+  function handleSetCurrentPromptCancel() {
+    setSetCurrentPrompt(null)  // 不动 current
   }
 
   return (
@@ -1148,6 +1175,33 @@ export default function DataPage() {
               >
                 {step === 'confirming' ? '入库中…' : '确认入库'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1b.4-pr7 (DATA-016) Fix 3：入库成功后弹"设为当前吗?" prompt（蓝色默认改 current，白色取消保留） */}
+      {setCurrentPrompt && (
+        <div className="modal-confirm-backdrop" onClick={handleSetCurrentPromptCancel}>
+          <div className="modal-confirm-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-confirm-title">
+              ✅ 已入库 {setCurrentPrompt.fundCount} 只基金
+            </div>
+            <div className="modal-confirm-sub">
+              是否将 <strong>{setCurrentPrompt.date}</strong> 设为当前显示日期？
+            </div>
+            <div className="modal-confirm-actions">
+              <button
+                className="secondary-btn"
+                onClick={handleSetCurrentPromptCancel}
+                data-testid="set-current-prompt-cancel"
+              >取消</button>
+              <button
+                className="primary-btn"
+                onClick={handleSetCurrentPromptConfirm}
+                autoFocus
+                data-testid="set-current-prompt-confirm"
+              >改为当前日期</button>
             </div>
           </div>
         </div>
