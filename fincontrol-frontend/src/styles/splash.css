@@ -1,0 +1,49 @@
+/* 1b.4 PR8 · 启动页（白底）样式
+ * 用户明确要求：启动页背景为白色；
+ * 居中显示 logo_animation.gif + "FinControl 加载中…" 文字；
+ * React 接管后 fade-out 200ms 卸载。
+ */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  pointer-events: none;
+}
+
+.splash__logo {
+  width: 240px;
+  height: auto;
+  max-width: 60vw;
+  display: block;
+}
+
+.splash__title {
+  color: #0a59f7;
+  font-size: 16px;
+  font-weight: 500;
+  margin-top: 24px;
+  letter-spacing: 0.5px;
+}
+
+.splash__sub {
+  color: #8c8c8c;
+  font-size: 13px;
+  margin-top: 8px;
+  letter-spacing: 0.3px;
+}
+
+.splash--hide {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+@media (max-width: 600px) {
+  .splash__logo { width: 180px; }
+  .splash__title { font-size: 14px; }
+}

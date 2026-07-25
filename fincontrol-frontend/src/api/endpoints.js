@@ -63,6 +63,9 @@ export const ENDPOINTS = {
   // PR3plus 决策 30/31：全局配置（settings 表）
   SETTINGS_MAX_AGE_GET: (userId) => `/settings/${userId}/max-snapshot-age-days`,
   SETTINGS_MAX_AGE_PUT: (userId) => `/settings/${userId}/max-snapshot-age-days`,
+
+  // 1b.4 PR8：系统管理（关闭服务，决策 35）
+  SYSTEM_SHUTDOWN: '/system/shutdown',
 }
 
 // === Named export（兼容 store 文件的 named import）===
@@ -107,5 +110,7 @@ export const PARSE_LOGS = ENDPOINTS.PARSE_LOGS
 
 export const SETTINGS_MAX_AGE_GET = ENDPOINTS.SETTINGS_MAX_AGE_GET
 export const SETTINGS_MAX_AGE_PUT = ENDPOINTS.SETTINGS_MAX_AGE_PUT
+
+export const SYSTEM_SHUTDOWN = ENDPOINTS.SYSTEM_SHUTDOWN
 
 export default ENDPOINTS

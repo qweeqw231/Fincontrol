@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { ENDPOINTS, SYSTEM_SHUTDOWN } from './endpoints.js'
 
 /**
  * Axios 实例 + 拦截器
@@ -52,5 +53,12 @@ apiClient.interceptors.response.use(
     })
   },
 )
+
+/**
+ * 1b.4 PR8：调后端「关闭服务」端点
+ * 后端会在同步返回后异步触发 SpringApplication.exit()，
+ * 浏览器需在 catch 路径上识别 0 / connection refused，不算业务错误。
+ */
+export const shutdownServer = () => apiClient.post(ENDPOINTS.SYSTEM_SHUTDOWN || SYSTEM_SHUTDOWN)
 
 export default apiClient

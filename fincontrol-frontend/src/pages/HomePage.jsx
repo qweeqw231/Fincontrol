@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAssetSnapshotStore } from '../stores/assetSnapshotStore.js'
 import { useUserConfigStore } from '../stores/userConfigStore.js'
+import { shutdownServer } from '../api/client.js'
 import { useNavigate } from 'react-router-dom'
 import { CumulativeReturnCard } from '../components/CumulativeReturnCard.jsx'
 import { StateShell } from '../components/home/StateShell.jsx'
@@ -467,6 +468,48 @@ export default function HomePage() {
   const [pieOpen, setPieOpen] = useState(false)
   const [fundOpen, setFundOpen] = useState(false)
 
+  // 1b.4 PR8 / 决策 35：HomePage 关闭服务按钮状态机
+  // idle → 点 1 下后 confirming（5 秒倒计时 + 按钮变红）
+  // confirming → 5 秒内点 2 下触发 shutdown → 按钮 disabled + 'shutting-down' toast
+  // shutting-down → 后端 800ms 后退出；前端持续显示该状态直到刷新/重建
+  const [shutdownState, setShutdownState] = useState('idle')  // 'idle' | 'confirming' | 'shutting-down'
+  const shutdownTimerRef = useRef(null)
+
+  // 5 秒内不点 2 下 → 自动回到 idle
+  function handleShutdownClick() {
+    if (shutdownState === 'shutting-down') return
+    if (shutdownState === 'idle') {
+      setShutdownState('confirming')
+      // 5 秒倒计时
+      if (shutdownTimerRef.current) clearTimeout(shutdownTimerRef.current)
+      shutdownTimerRef.current = setTimeout(() => {
+        setShutdownState('idle')
+        shutdownTimerRef.current = null
+      }, 5000)
+      return
+    }
+    if (shutdownState === 'confirming') {
+      // 二次点击 → 调后端
+      if (shutdownTimerRef.current) clearTimeout(shutdownTimerRef.current)
+      shutdownTimerRef.current = null
+      setShutdownState('shutting-down')
+      shutdownServer().catch((err) => {
+        // 同步响应成功但后续网络断开是预期的（SpringApplication.exit 正在生效）
+        if (err && err.code !== 0 && !String(err.message || '').includes('Network')) {
+          console.warn('[shutdown] 后端异常：', err)
+          setShutdownState('idle')  // 失败时回退到 idle 允许重试
+        }
+      })
+    }
+  }
+
+  // 卸载时清理 timer
+  useEffect(() => {
+    return () => {
+      if (shutdownTimerRef.current) clearTimeout(shutdownTimerRef.current)
+    }
+  }, [])
+
   // 1b4pr6b-recovery (2026-07-25)：同时触发于 ①首页 mount ②DataPage bumpRefresh()。
   // 依赖列表改为 [refreshCounter]：store 默认 0 触发起始拉取，
   // DataPage confirm 成功调 bumpRefresh → refreshCounter 递增 → 本 effect 重跑。
@@ -555,7 +598,35 @@ export default function HomePage() {
           <div className="date">{snap.snapshotDate || '—'}</div>
           <div>来源：支付宝</div>
         </div>
+        {/* 1b.4 PR8 / 决策 35：关闭服务按钮（右上角） */}
+        <button
+          type="button"
+          className={`shutdown-btn shutdown-btn--${shutdownState}`}
+          data-testid="shutdown-btn"
+          data-state={shutdownState}
+          onClick={handleShutdownClick}
+          disabled={shutdownState === 'shutting-down'}
+          title="点击关闭服务，可以停止本系统的运行以节约资源"
+          aria-label="关闭服务"
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+            <path d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.16 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />
+          </svg>
+        </button>
       </header>
+
+      {/* 1b.4 PR8：关闭服务确认 toast / 关闭中提示 */}
+      {(shutdownState === 'confirming' || shutdownState === 'shutting-down') && (
+        <div
+          className={`shutdown-toast shutdown-toast--${shutdownState}`}
+          data-testid="shutdown-toast"
+          role="status"
+        >
+          {shutdownState === 'confirming'
+            ? '再点一次确认关闭（5 秒倒计时）'
+            : '服务关闭中…请重新启动桌面快捷方式'}
+        </div>
+      )}
 
       <div className="hero-card">
         <div className="hero-label">总资产（含余额类）</div>

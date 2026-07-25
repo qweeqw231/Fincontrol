@@ -1850,6 +1850,70 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 
 ---
 
+## 决策 35：日常使用层与品牌资源（1b.4 PR8 扩展环节）（2026-07-25）
+
+**状态**：✅ 已锁定（用户确认；已实施在 1b.4 PR8）
+
+### 一、背景
+
+- Phase 1 已在 2026-07-25 收官（决策 34）；原始计划中“桌面使用”与“资源品牌”从未明确。
+- Phase 2、3、4、5 的设计工作中，Spring Boot + Vite 24/7 常驻会占用 ~1.4GB 内存，干扰秋招 / 其他 demo 项目。
+- 用户提供 logo.png 与 logo_animation_v5.gif 要求品牌化；用户要求“点网页按钮关闭服务”节约资源。
+
+### 二、决策
+
+> 补充「日常使用层 + 品牌资源」作为 Phase 1 收官后的扩展层（不算作 Phase 1 未完成项）。后续 Phase 2 / 3 / 4 / 5 的具体页面仍然在原路线上。
+
+具体规则：
+
+1. **品牌资源组织**：所有 logo / 动效统一存于 `fincontrol-frontend/public/brand/`（Vite 静态资源根），不放在项目根或后端资源目录。
+   - `logo.png` ：favicon、桌面快捷方式图标；
+   - `logo_animation.gif` ：启动页加载动画。
+2. **启动页（白底）**：`src/main.jsx` 渲染 React 前，以纯 HTML 注入 `#splash-loader` div（背景 #ffffff， 居中 gif + 文字 “FinControl 加载中…”）。React 接管后 600ms fade-out（200ms transition），总计生存 850ms。启动页为本地 state，不影响 Vite 资源加载。
+3. **favicon 替换**：用 `/brand/logo.png` 取代 PR4a GLOBAL-021 的 💰 emoji；补充 `apple-touch-icon`。
+4. **关闭服务端点**（后端）：`POST /api/system/shutdown`
+   - 同步返回 payload `{shuttingDown:true, graceMillis:N, mode:"async-shutdown"}`；
+   - 异步线程在 `graceMillis` （默认 800ms）后调 `SpringApplication.exit(ctx, () -> 0)`，触发 Spring Boot 完整停机。
+   - 开关 `fincontrol.system.shutdown.enabled=false` 可远程禁用（默认 true）。
+   - 本地 MVP 不加鉴权（决策 5 阶段 0 已明确）。
+5. **关闭服务按钮**（前端 HomePage 右上角）
+   - 状态机：`idle → 点 1 下 → confirming（5 秒倒计时 + 按钮变红）→ 点 2 下 → shutting-down`；
+   - 5 秒内不点 2 下 → 自动回到 idle；
+   - 错误回退：网络错误状态返回 idle 允许重试。
+   - 依赖：仅 `useState + useRef` + `setTimeout`，不引入新组件。
+6. **桌面快捷方式**：PowerShell + WScript.Shell 创建 `~/Desktop/FinControl.lnk`。
+   - Target：launch-fincontrol.ps1；
+   - Icon：logo.png；
+   - 幂等：已存在跳过。
+7. **运行脚本**（PowerShell，纯 ASCII 避开 Windows GBK 坑）
+   - `scripts/desktop/launch-fincontrol.ps1`：检查 MySQL → 调 restart-backend.ps1（决策 24）→ 等 health UP → 启动 Vite → 打开浏览器；
+   - `scripts/desktop/stop-fincontrol.ps1`：停 Vite → 调 stop-backend.ps1 → 询问是否停 MySQL；
+   - `scripts/1b/stop-backend.ps1`：优先调 API 优雅停机，30 秒未退则 kill；
+   - `scripts/desktop/create-desktop-shortcut.ps1`：幂等创建 .lnk。
+
+### 三、与 Phase 1 路线的关系
+
+- **不改变决策 34 路线**：1b.4 PR8 是 Phase 1 收官后的 “补丁层”，不占用 Phase 2/3/4/5 的子阶段预算。
+- **不影响 Phase 1a 验收基线**：241/241 历史基线不变。
+- **README 中明确分两块表述**：“Phase 1 完成业务闭环” + “额外补充：日常使用层与品牌资源（1b.4 PR8）”，避免与原路线混淆。
+
+### 四、影响与约束
+
+- **不与现服务冲突**：仅新增 `SystemController` 一个端点 + `SYSTEM_SHUTDOWN` 路由；不修改其他 30+ 现有端点。
+- **安全护栏**：`enabled` 开关 + 5 秒二次确认 + 800ms grace。远程关闭仅在本地主机 + 同子网可达，不在公网暴露（决策 5 阶段 0）。
+- **测试隔离**：启动页、关闭按钮走 Vitest 纯函数逻辑测试；后端端点走 SystemControllerTest 单元测试。
+- **仅 Windows 平台**：macOS / Linux 启动器留 Phase 4 远期。
+
+### 五、关联
+
+- 决策 34（Phase 1 收官）
+- 决策 24（后端 restart 脚本 SOP）
+- 1b.4-pr7 验收报告（Phase 1 最后 PR）
+
+*最近更新：2026-07-25 落档决策 35 落盘日常使用层 + 品牌资源（1b.4 PR8）*
+
+---
+
 ## 决策总结表（追加后）
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
@@ -1893,3 +1957,4 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 | 32 | AI 跨 category 重复分类的优雅处理（user_correct 优先 + CATEGORY_CONFLICT 警告）| ✅ | 1b.4 PR3plus 14号 截图 confirm 500 修复 | b0dc7a1 |
 | 33 | 1b.4-pr6b 模块 B 大类确认 UX 完整实施（D1-D7 + V6 主页固收类 + HomePage stale-cache 修复）| ✅ | 1b.4 PR6b 阶段 + V6 收尾 | 9207b2b |
 | 34 | Phase 1 核心闭环收官；未完成数据管理归入 Phase 2；AI 顾问前端 UI 顺延 Phase 5；前端整体收尾归入 Phase 4 | ✅ | 用户 2026-07-25 路线重排 | docs(决策34) |
+| 35 | 日常使用层与品牌资源（1b.4 PR8 扩展：启动页 + 关闭服务按钮 + 桌面快捷方式）| ✅ | Phase 1 收官后补充层 | docs(1b.4-pr8) |

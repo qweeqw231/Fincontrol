@@ -1,4 +1,4 @@
-﻿# ============================================
+# ============================================
 # FinControl 后端主配置（Phase 1a.5+，1a.8 重构）
 # ============================================
 # 适用场景：所有 profile 共用此文件
@@ -110,6 +110,12 @@ fincontrol:
     screenshot:
       path: ${UPLOAD_SCREENSHOT_PATH:./uploads/screenshots/}
       max-size-mb: 20
+
+  # 1b.4 PR8 / 决策 35：系统级管理（关闭服务）配置
+  system:
+    shutdown:
+      enabled: ${FINCONTROL_SYSTEM_SHUTDOWN_ENABLED:true}   # 远程禁用开关
+      grace-millis: ${FINCONTROL_SYSTEM_SHUTDOWN_GRACE_MILLIS:800}  # 异步 exit 前的 grace 窗口
 
   # 1a.8 v3：真实 OCR 审计日志。相对路径由 ScreenshotService 解析到仓库根；
   # 部署时可用绝对 FINCONTROL_OCR_LOG_PATH 覆盖。
