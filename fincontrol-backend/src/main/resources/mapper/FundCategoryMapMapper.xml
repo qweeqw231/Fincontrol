@@ -40,6 +40,20 @@
           </foreach>
     </select>
 
+    <!-- 1b.4 PR9 Bug 1：normalized match（fund_name 去除全部空白后匹配）。
+         SQL 端：去掉所有空白字符（空格、tab、LF、CR、全角空格）。
+         Service 端：normalizeFundName() — 同样去除全部空白。
+         两端算法一致才能双向命中。
+         金融场景下 "易方达 蓝筹" / "易方达蓝筹" / "易方达　蓝筹" 视为同一只基金（仅排版差异）。 -->
+    <select id="selectByUserAndNormalizedNames" resultType="com.fincontrol.entity.FundCategoryMap">
+        SELECT * FROM fund_category_map
+        WHERE user_id = #{userId}
+          AND REPLACE(REPLACE(REPLACE(REPLACE(fund_name, ' ', ''), CHAR(9), ''), CHAR(10), ''), CHAR(12288), '') IN
+          <foreach collection="normalizedNames" item="n" open="(" separator="," close=")">
+              REPLACE(REPLACE(REPLACE(REPLACE(#{n}, ' ', ''), CHAR(9), ''), CHAR(10), ''), CHAR(12288), '')
+          </foreach>
+    </select>
+
     <!-- 1a3 confirm 维度 D 镜像校验：查同 user 下 fund_name 集合 -->
     <select id="selectFundNamesByUser" resultType="string">
         SELECT DISTINCT fund_name FROM fund_category_map

@@ -99,21 +99,39 @@ public class CategoryMapService {
                     .build();
         }
 
-        // Step 4: 批量查（一次往返完成 N 个 fund 查表）
-        List<FundCategoryMap> rows = fundCategoryMapMapper.selectByUserAndFundNames(userId, uniqueFunds);
+        // 1b.4 PR9 Bug 1：fund_name 字符串 normalize
+        // AI 解析返回的 fundName 可能含：全角空格 (\u3000)、多余连续空白、大小写差异。
+        // 用户手动 user_correct 保存时也可能含这些差异（不同 source 抹平后）。
+        // 服务端 SQL 也用 TRIM + REPLACE 全角空格折叠，保证双向匹配。
+        // 返回给前端的 fundName 用 AI 原始名（保留 dropdown 显示），category 用 user_correct。
+        List<String> normalizedQuery = new ArrayList<>(uniqueFunds.size());
+        for (String name : uniqueFunds) {
+            String n = normalizeFundName(name);
+            if (n != null && !n.isEmpty()) {
+                normalizedQuery.add(n);
+            }
+        }
+
+        // Step 4: 批量查（一次往返完成 N 个 fund 查表，SQL 端做 TRIM + 全角空格折叠）
+        List<FundCategoryMap> rows = fundCategoryMapMapper.selectByUserAndNormalizedNames(userId, normalizedQuery);
         if (rows == null) {
             rows = Collections.emptyList();
         }
+        // 以 normalize 后的 fund_name 为 key 建索引（这样原始 + 折叠后的同名能命中）
         Map<String, FundCategoryMap> byName = new HashMap<>(rows.size());
         for (FundCategoryMap row : rows) {
-            byName.put(row.getFundName(), row);
+            String normalizedKey = normalizeFundName(row.getFundName());
+            if (normalizedKey != null) {
+                byName.put(normalizedKey, row);
+            }
         }
 
         // Step 5: 按输入顺序分桶（matched + unmatched）
         List<CategoryMapMatchItem> matched = new ArrayList<>();
         List<String> unmatched = new ArrayList<>();
         for (String name : uniqueFunds) {
-            FundCategoryMap row = byName.get(name);
+            String normalized = normalizeFundName(name);
+            FundCategoryMap row = normalized == null ? null : byName.get(normalized);
             if (row == null) {
                 unmatched.add(name);
             } else {
@@ -129,12 +147,34 @@ public class CategoryMapService {
             }
         }
 
-        log.info("1a.5 match: userId={} input={} matched={} unmatched={}",
+        log.info("1b.4 PR9 match: userId={} input={} matched={} unmatched={}",
                 userId, uniqueFunds.size(), matched.size(), unmatched.size());
         return CategoryMapMatchResponse.builder()
                 .matchedFunds(matched)
                 .unmatchedFunds(unmatched)
                 .build();
+    }
+
+    /**
+     * 1b.4 PR9 Bug 1：fund_name 字符串 normalize。
+     * <p>去除所有空白字符（空格、tab、LF、CR、全角空格）。
+     * <p>SQL 端应用同一折叠算法（详见 mapper.xml 中 selectByUserAndNormalizedNames）。
+     * <p>金融场景下 "易方达 蓝筹" / "易方达蓝筹" / "易方达　蓝筹" 视为同一只基金（仅排版差异）。
+     *
+     * @param name 原始 fund_name（可能含 \u3000、tab、连续空白）
+     * @return normalize 后字符串；null / 空输入返 null
+     */
+    static String normalizeFundName(String name) {
+        if (name == null) return null;
+        String s = name.trim();
+        if (s.isEmpty()) return null;
+        // 全角空格 (\u3000) → 半角空格；tab/CR/LF → 半角空格
+        s = s.replace('\u3000', ' ').replace('\t', ' ').replace('\n', ' ').replace('\r', ' ');
+        // 折叠连续空格为单个
+        s = s.replaceAll("\\s+", " ");
+        // 关键：最终去除所有空白（SQL 端 REPLACE all whitespace to ''）
+        s = s.replace(" ", "");
+        return s;
     }
 
     /** 解析 CSV：trim → 去空 → 去重（保留首次出现顺序）。 */

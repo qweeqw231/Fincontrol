@@ -40,6 +40,15 @@ public interface FundCategoryMapMapper extends BaseMapper<FundCategoryMap> {
             @Param("fundNames") Collection<String> fundNames);
 
     /**
+     * 1b.4 PR9 Bug 1：normalized fund_name 批量查询。
+     * <p>传入已 normalize 的 fund_name 列表（Java 端 foldSpace），SQL 端同步 TRIM + REPLACE 全角空格。
+     * 双向一致才能双向命中。
+     */
+    List<FundCategoryMap> selectByUserAndNormalizedNames(
+            @Param("userId") Long userId,
+            @Param("normalizedNames") Collection<String> normalizedNames);
+
+    /**
      * 1a.3 confirm 维度 D 镜像校验：查同 user 下 fund_name 集合。
      */
     List<String> selectFundNamesByUser(@Param("userId") Long userId);

@@ -765,3 +765,85 @@
   color: var(--color-text-secondary, #6b7280);
   font-style: italic;
 }
+
+/* =========================================================================
+ * 1b.4 PR9：弹窗 z-index 分级 + 内联单只确认 modal + success banner 宽度限制
+ * 层级（从下到上）：
+ *   z-index 1000  .modal-backdrop.show-confirm-modal       (预览)
+ *   z-index 1100  .modal-backdrop.show-dirty-modal         (脏 modal)
+ *   z-index 1200  .modal-backdrop.show-batch-modal         (批量确认)
+ *   z-index 1300  .modal-backdrop.category-confirm-backdrop (内联单只确认)
+ *                  .modal-confirm-backdrop                  (set current / date edit)
+ *   z-index 1500  .success-banner
+ *   z-index 1300  .batch-toast-fixed
+ * ========================================================================= */
+.data-page .modal-backdrop {
+  /* 默认 z-index（保持 .modal-backdrop 单 class 也能工作） */
+  z-index: 1000;
+}
+.data-page .modal-backdrop.show-confirm-modal {
+  z-index: 1000;  /* 预览 modal — 基线 */
+}
+.data-page .modal-backdrop.show-dirty-modal {
+  z-index: 1100;  /* 脏 modal — 弹在预览之上 */
+}
+.data-page .modal-backdrop.show-batch-modal {
+  z-index: 1200;  /* 批量确认 modal — 弹在脏 modal 之上 */
+}
+.data-page .modal-backdrop.category-confirm-backdrop {
+  z-index: 1300;  /* 内联单只确认 modal — 弹在所有 modal 之上（最上层用户操作） */
+}
+/* 1b.4 PR9 Bug 7：success banner 宽度限制为视口 30%，居中，超长省略 */
+.success-banner--top,
+.success-banner--second {
+  width: fit-content;
+  max-width: 30vw;
+  min-width: 280px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.success-banner--second {
+  /* 第二个 banner 仍需让出第一个的高度 */
+  top: 60px;
+}
+/* 1b.4 PR9 Bug 2：内联单只确认 modal 样式（复用 .modal-confirm-card 基础 + 自己定位） */
+.data-page .category-confirm-modal {
+  min-width: 360px;
+  max-width: 480px;
+}
+.data-page .category-confirm-modal .confirm-header {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1a1a1a);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.data-page .category-confirm-modal .confirm-body {
+  font-size: 13px;
+  color: var(--color-text-secondary, #595959);
+  line-height: 1.7;
+  margin-bottom: 14px;
+}
+.data-page .category-confirm-modal .confirm-body strong {
+  color: var(--color-primary, #0A59F7);
+  font-weight: 600;
+}
+.data-page .category-confirm-modal .confirm-hint {
+  font-size: 12px;
+  color: var(--color-text-secondary, #8c8c8c);
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+.data-page .category-confirm-modal .confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+

@@ -72,7 +72,7 @@ class CategoryMapServiceTest {
                 // 1a.8.8：原"债券类" 已合并入 canonical "固收类"
                 row(102L, USER_ID, "长城短债债券A", "固收类", "user_correct", t)
         );
-        when(fundCategoryMapMapper.selectByUserAndFundNames(eq(USER_ID), any(Collection.class)))
+        when(fundCategoryMapMapper.selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class)))
                 .thenReturn(rows);
 
         CategoryMapMatchResponse resp = service.match(USER_ID, "中加货币E,长城短债债券A");
@@ -97,7 +97,7 @@ class CategoryMapServiceTest {
     void match_partialMiss() {
         LocalDateTime t = LocalDateTime.of(2026, 7, 17, 10, 0);
         // 只 mock 了 "中加货币E"，"未知基金" 不在结果中
-        when(fundCategoryMapMapper.selectByUserAndFundNames(eq(USER_ID), any(Collection.class)))
+        when(fundCategoryMapMapper.selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class)))
                 .thenReturn(List.of(row(101L, USER_ID, "中加货币E", "货币类", "ai_guess", t)));
 
         CategoryMapMatchResponse resp = service.match(USER_ID, "未知基金,中加货币E");
@@ -126,12 +126,12 @@ class CategoryMapServiceTest {
         // 50 个基金 → 通过（不抛异常）
         String csv50 = IntStream.rangeClosed(1, 50).mapToObj(i -> "FUND_" + i)
                 .collect(Collectors.joining(","));
-        when(fundCategoryMapMapper.selectByUserAndFundNames(eq(USER_ID), any(Collection.class)))
+        when(fundCategoryMapMapper.selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class)))
                 .thenReturn(Collections.emptyList());
         CategoryMapMatchResponse resp50 = service.match(USER_ID, csv50);
         assertThat(resp50.getMatchedFunds()).isEmpty();
         assertThat(resp50.getUnmatchedFunds()).hasSize(50);
-        verify(fundCategoryMapMapper).selectByUserAndFundNames(eq(USER_ID), any(Collection.class));
+        verify(fundCategoryMapMapper).selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class));
     }
 
     // ========================================================================
@@ -242,7 +242,7 @@ class CategoryMapServiceTest {
         assertThat(resp3.getUnmatchedFunds()).isEmpty();
 
         // 不应调 mapper
-        verify(fundCategoryMapMapper, never()).selectByUserAndFundNames(anyLong(), any(Collection.class));
+        verify(fundCategoryMapMapper, never()).selectByUserAndNormalizedNames(anyLong(), any(Collection.class));
     }
 
     // ========================================================================
@@ -252,15 +252,16 @@ class CategoryMapServiceTest {
     @Test
     @DisplayName("边界 2: match 去重 + trim — 'A,A,B, ,' → 查 A、B")
     void match_dedupeAndTrim() {
-        when(fundCategoryMapMapper.selectByUserAndFundNames(eq(USER_ID), any(Collection.class)))
+        when(fundCategoryMapMapper.selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class)))
                 .thenReturn(Collections.emptyList());
 
         service.match(USER_ID, " A , A , B , , ");
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<String>> captor = ArgumentCaptor.forClass(Collection.class);
-        verify(fundCategoryMapMapper).selectByUserAndFundNames(eq(USER_ID), captor.capture());
+        verify(fundCategoryMapMapper).selectByUserAndNormalizedNames(eq(USER_ID), captor.capture());
         Collection<String> queried = captor.getValue();
+        // 1b.4 PR9：query 入参是去空白的 key（"A"、"B" 单字符无空格）
         assertThat(queried).containsExactlyInAnyOrder("A", "B");
         assertThat(queried).hasSize(2);
     }
@@ -416,5 +417,97 @@ class CategoryMapServiceTest {
         when(fundCategoryMapMapper.selectStaleByUser(eq(USER_ID), any(LocalDateTime.class)))
                 .thenReturn(null);
         assertThat(service.listStale(USER_ID, 90)).isEmpty();
+    }
+
+    // ========================================================================
+    // 1b.4 PR9 Bug 1：fund_name normalize 单元 + match 集成测试
+    // ========================================================================
+
+    @Test
+    @DisplayName("PR9-Bug1-TC-1.1: 全角空格 match — 用户原本保存 '安信新价值'，AI 解析返 '安信　新价值'（全角空格）能命中")
+    void match_fullWidthSpaceNormalizes() {
+        LocalDateTime t = LocalDateTime.of(2026, 7, 20, 10, 0);
+        // 服务端存的是原始名
+        FundCategoryMap row = row(200L, USER_ID, "安信新价值", "固收类", "user_correct", t);
+        // 服务端 mapper mock 返这一行（模拟 SQL TRIM + REPLACE 后的匹配）
+        when(fundCategoryMapMapper.selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class)))
+                .thenReturn(List.of(row));
+
+        // AI 解析返回含全角空格的名字
+        CategoryMapMatchResponse resp = service.match(USER_ID, "安信　新价值");
+
+        assertThat(resp.getMatchedFunds()).hasSize(1);
+        assertThat(resp.getMatchedFunds().get(0).getFundName()).isEqualTo("安信新价值");
+        assertThat(resp.getMatchedFunds().get(0).getCategory()).isEqualTo("固收类");
+        assertThat(resp.getMatchedFunds().get(0).getSource()).isEqualTo("user_correct");
+        assertThat(resp.getUnmatchedFunds()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("PR9-Bug1-TC-1.2: 多空格 match — AI 解析返 '安信  新价值'（中间双空格）能命中")
+    void match_multiSpaceNormalizes() {
+        LocalDateTime t = LocalDateTime.of(2026, 7, 20, 10, 0);
+        FundCategoryMap row = row(201L, USER_ID, "安信新价值", "固收类", "user_correct", t);
+        when(fundCategoryMapMapper.selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class)))
+                .thenReturn(List.of(row));
+
+        // 输入多个空格 → 应折叠为单个半角空格
+        CategoryMapMatchResponse resp = service.match(USER_ID, "安信  新价值");
+
+        assertThat(resp.getMatchedFunds()).hasSize(1);
+        assertThat(resp.getMatchedFunds().get(0).getFundName()).isEqualTo("安信新价值");
+    }
+
+    @Test
+    @DisplayName("PR9-Bug1-TC-1.3: 完全不匹配 → unmatchedFunds")
+    void match_completelyUnmatched() {
+        LocalDateTime t = LocalDateTime.of(2026, 7, 20, 10, 0);
+        // 只返回 安信新价值 一个
+        FundCategoryMap row = row(202L, USER_ID, "安信新价值", "固收类", "user_correct", t);
+        when(fundCategoryMapMapper.selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class)))
+                .thenReturn(List.of(row));
+
+        // 输入包含完全无关的名字
+        CategoryMapMatchResponse resp = service.match(USER_ID, "安信新价值,完全无关基金");
+
+        assertThat(resp.getMatchedFunds()).hasSize(1);
+        assertThat(resp.getMatchedFunds().get(0).getFundName()).isEqualTo("安信新价值");
+        assertThat(resp.getUnmatchedFunds()).containsExactly("完全无关基金");
+    }
+
+    @Test
+    @DisplayName("PR9-Bug1-TC-1.4: normalizeFundName 静态方法 — 去除所有空白（SQL 端对齐）")
+    void normalizeFundName_unit() {
+        assertThat(CategoryMapService.normalizeFundName(null)).isNull();
+        assertThat(CategoryMapService.normalizeFundName("")).isNull();
+        assertThat(CategoryMapService.normalizeFundName("   ")).isNull();
+        // 无空白 — 不变
+        assertThat(CategoryMapService.normalizeFundName("安信新价值")).isEqualTo("安信新价值");
+        // 全角空格 → 最终去除
+        assertThat(CategoryMapService.normalizeFundName("安信　新价值")).isEqualTo("安信新价值");
+        // 多空格折叠 + 最终去除
+        assertThat(CategoryMapService.normalizeFundName("安信  新价值")).isEqualTo("安信新价值");
+        // 头尾空白 trim + 去除
+        assertThat(CategoryMapService.normalizeFundName("  安信新价值  ")).isEqualTo("安信新价值");
+        // 混合
+        assertThat(CategoryMapService.normalizeFundName("  安信　 新价值\t ")).isEqualTo("安信新价值");
+        // 中间保留单字无空格
+        assertThat(CategoryMapService.normalizeFundName("a")).isEqualTo("a");
+        // 多个连续空白类型
+        assertThat(CategoryMapService.normalizeFundName("a\tb\nc\rd")).isEqualTo("abcd");
+    }
+
+    @Test
+    @DisplayName("PR9-Bug1: match 调用新 mapper selectByUserAndNormalizedNames（不是 selectByUserAndFundNames）")
+    void match_callsNormalizedMapper() {
+        when(fundCategoryMapMapper.selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class)))
+                .thenReturn(Collections.emptyList());
+
+        service.match(USER_ID, "基金A,基金B");
+
+        // 验证调了新的 normalized mapper
+        verify(fundCategoryMapMapper).selectByUserAndNormalizedNames(eq(USER_ID), any(Collection.class));
+        // 不应调旧的精确匹配 mapper
+        verify(fundCategoryMapMapper, never()).selectByUserAndFundNames(anyLong(), any(Collection.class));
     }
 }

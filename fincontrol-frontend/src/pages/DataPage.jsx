@@ -99,6 +99,10 @@ export default function DataPage() {
   // D7：消失-重现事件缓存（key=fundName → { firstMissingSnapshotDate, lastSeenSnapshotDate }）
   const [pendingReConfirms, setPendingReConfirms] = useState({})
 
+  // 1b.4 PR9 Bug 2：内联单只确认 modal
+  // format: { fundName, originalCategory, newCategory } | null
+  const [categoryConfirmIntent, setCategoryConfirmIntent] = useState(null)
+
   // 1b4pr6b 批量确认 UX：top toggle + checkbox 列 + 6 大类选择 + 弹窗
   // batchMode：是否进入批量模式（true 时显示 checkbox 列 + 顶部 bar）
   const [batchMode, setBatchMode] = useState(false)
@@ -412,6 +416,19 @@ export default function DataPage() {
         delete n[fundName]
         return n
       })
+      // 1b.4 PR9 Bug 4：单只 ✓ 确认也要触发首页 store 重拉。
+      // 否则首页 latestSnapshot 缓存旧数据（asset_snapshot 没改，但 fund_category_map 改了）。
+      try {
+        await fetchLatest(1)
+      } catch (e) {
+        console.warn('[PR9-Bug4] fetchLatest after confirmOverride failed:', e)
+      }
+      // 触发 HomePage 监听 refreshCounter 重拉（best-effort）
+      try {
+        useAssetSnapshotStore.getState().bumpRefresh()
+      } catch (e) {
+        console.warn('[PR9-Bug4] bumpRefresh failed:', e)
+      }
     } catch (e) {
       setError(friendlyError(e))
     } finally {
@@ -646,8 +663,10 @@ export default function DataPage() {
           aria-live="polite"
         >
           {currentConfirmMsg.type === 'set'
-            ? <>✓ 首页展示日期 {currentConfirmMsg.date} 确认成功！返回首页即可查看当日基金明细</>
-            : <>✓ 首页展示日期仍为 {currentConfirmMsg.prevCurrent}，当前截图日期 {currentConfirmMsg.date} 已经入库</>
+            // 1b.4 PR9 Bug 7：缩短 banner 文案，避免挡侧边栏首页项
+            // 原来: "✓ 首页展示日期 X 确认成功！返回首页即可查看当日基金明细"
+            ? <>✓ 已设为 {currentConfirmMsg.date}</>
+            : <>✓ {currentConfirmMsg.date} 已入库</>
           }
         </div>,
         document.body
@@ -843,7 +862,7 @@ export default function DataPage() {
 
       {/* 决策 33 D2：二次确认 modal（用户改 dropdown 但未点 ✓ 时拦截） */}
       {showSubmitDirtyModal && (
-        <div className="modal-backdrop" onClick={() => setShowSubmitDirtyModal(false)}>
+        <div className="modal-backdrop show-dirty-modal" onClick={() => setShowSubmitDirtyModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
             <div className="modal-header">
               <h2>⚠️ 还有 {dirtyCount} 行 dropdown 已改动但未 ✓</h2>
@@ -864,7 +883,7 @@ export default function DataPage() {
 
       {/* 1b4pr6b 批量确认二次弹窗 */}
       {showBatchConfirmModal && (
-        <div className="modal-backdrop" onClick={() => !batchConfirming && setShowBatchConfirmModal(false)}>
+        <div className="modal-backdrop show-batch-modal" onClick={() => !batchConfirming && setShowBatchConfirmModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 540 }}>
             <div className="modal-header">
               <h2>📦 批量确认归属</h2>
@@ -911,7 +930,7 @@ export default function DataPage() {
 
       {/* 1b.3.10 确认入库弹窗（解析数据预览） */}
       {showConfirmModal && parsedSummary && parsedSummary.fundCount != null && (
-        <div className="modal-backdrop" onClick={() => setShowConfirmModal(false)}>
+        <div className="modal-backdrop show-confirm-modal" onClick={() => setShowConfirmModal(false)}>
           <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
             {/* 1b.4 PR4a · DATA-012：快照日期移到 modal-header 副标题（PR6 增强：点击修改） */}
             <div className="modal-header">
@@ -1202,8 +1221,13 @@ export default function DataPage() {
                                 onClick={() => resetOverride(f.fundName)}
                                 data-testid={`reset-btn-${f.fundName}`}>↺ 重置</button>
                             ) : (
+                              // 1b.4 PR9 Bug 2：点 ✓ 弹内联确认 modal（防止误点）
                               <button className="primary-btn" disabled={!isDirty || saving}
-                                onClick={() => confirmOverride(f.fundName, dirty)}
+                                onClick={() => setCategoryConfirmIntent({
+                                  fundName: f.fundName,
+                                  originalCategory: effectiveOriginal,
+                                  newCategory: dirty,
+                                })}
                                 data-testid={`confirm-btn-${f.fundName}`}>
                                 {saving ? '提交中…' : '✓ 确认'}
                               </button>
@@ -1233,6 +1257,45 @@ export default function DataPage() {
               >
                 {step === 'confirming' ? '入库中…' : '确认入库'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1b.4 PR9 Bug 2：内联单只确认 modal（最上层用户操作） */}
+      {categoryConfirmIntent && (
+        <div
+          className="modal-backdrop category-confirm-backdrop"
+          onClick={() => setCategoryConfirmIntent(null)}
+        >
+          <div
+            className="modal-confirm-card category-confirm-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="confirm-header">
+              <span>✏️</span> 确认修改归属
+            </div>
+            <div className="confirm-body">
+              您确认修改【<strong>{categoryConfirmIntent.fundName}</strong>】为【<strong>{categoryConfirmIntent.newCategory}</strong>】吗？
+            </div>
+            <div className="confirm-hint">
+              原归属：{categoryConfirmIntent.originalCategory}（AI 解析）
+            </div>
+            <div className="confirm-actions">
+              <button
+                className="secondary-btn"
+                onClick={() => setCategoryConfirmIntent(null)}
+                data-testid="category-confirm-cancel"
+              >取消</button>
+              <button
+                className="primary-btn"
+                onClick={async () => {
+                  const intent = categoryConfirmIntent
+                  setCategoryConfirmIntent(null)
+                  await confirmOverride(intent.fundName, intent.newCategory)
+                }}
+                data-testid="category-confirm-confirm"
+              >确认修改</button>
             </div>
           </div>
         </div>
