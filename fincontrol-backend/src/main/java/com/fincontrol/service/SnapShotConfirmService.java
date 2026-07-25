@@ -244,7 +244,13 @@ public class SnapShotConfirmService {
                 row.setTotalAssetSource(totalAssetSource);  // 1a.9：denormalized 写入
                 row.setIsLatest(true);
                 row.setConfirmedAt(LocalDateTime.now());
-                assetRawMapper.insert(row);
+                // 1b.4-pr7 (DATA-016) Fix 4：改用 upsertByFundName 实现幂等 overwrite
+                // 背景：原 BaseMapper.insert 在二次 confirm 同 snapshot_date 时撞 PK 报 500。
+                // 修后：首次入库 → INSERT；二次确认同 (user_id, snapshot_date, fund_name)
+                //   → ON DUPLICATE KEY UPDATE 覆盖 amount / profit / cumulative / is_latest=true。
+                // 配合 writeAssetRaw 头部的 updateIsLatestBySnapshotDate（翻旧行 is_latest=false），
+                // 语义与 writeAssetSnapshot 完全对称。
+                assetRawMapper.upsertByFundName(row);
                 count++;
             }
         }

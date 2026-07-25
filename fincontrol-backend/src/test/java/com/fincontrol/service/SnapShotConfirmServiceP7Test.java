@@ -166,6 +166,94 @@ class SnapShotConfirmServiceP7Test {
     }
 
     // ========================================================================
+    // 1b.4-pr7 (DATA-016) Fix 4：二次 confirm 同 snapshot_date 不报 500（幂等 overwrite）
+    // ========================================================================
+
+    /**
+     * B9：同 snapshot_date 二次 confirm → 不调 BaseMapper.insert（避免 PK 冲突），
+     *     改调 upsertByFundName（ON DUPLICATE KEY UPDATE）。
+     */
+    @Test
+    @DisplayName("Fix 4-B9 · 二次 confirm 同 snapshot_date 调用 upsertByFundName 而非 insert（避免 500）")
+    void confirmSecondTime_usesUpsertNotInsert() {
+        // 首次 + 二次 confirm 都是同 fund + 同 date
+        service.confirm(reqWithSingleFund("长城短债债券A", "固收类"));
+        service.confirm(reqWithSingleFund("长城短债债券A", "固收类"));
+
+        // 二次 confirm 不应再调 BaseMapper.insert（那是导致 500 的根因）
+        verify(assetRawMapper, never()).insert(any(AssetRaw.class));
+        // 应改调 upsertByFundName（首次 + 二次 = 2 次）
+        verify(assetRawMapper, times(2)).upsertByFundName(any(AssetRaw.class));
+    }
+
+    /**
+     * B10：二次 confirm 后，asset_raw.amount 应是新批次值（ON DUPLICATE KEY UPDATE 覆盖 amount）。
+     *     二次 confirm 时 categoryTotal 变化，镜像校验读 sumAmount 应返新值。
+     */
+    @Test
+    @DisplayName("Fix 4-B10 · 二次 confirm amount=新批次值（ON DUPLICATE KEY UPDATE 覆盖）")
+    void confirmSecondTime_overridesAmount() {
+        // 覆盖 setUp 的 stub：首次 confirm 返回 100.00，二次 confirm 返回 200.00
+        // （镜像校验按调用顺序取 .thenReturn 链）
+        when(assetRawMapper.sumAmountByUserAndDateAndCategory(anyLong(), any(LocalDate.class), any()))
+                .thenReturn(new BigDecimal("100.00"))
+                .thenReturn(new BigDecimal("200.00"));
+
+        // 首次 confirm：amount=100.00
+        service.confirm(reqWithSingleFund("长城短债债券A", "固收类"));
+
+        // 二次 confirm：amount 改为 200.00（模拟重新解析的金额）
+        ParsedAsset asset = new ParsedAsset();
+        asset.setConversationId("conv-test-2");
+        asset.setSnapshotDate(TEST_DATE.toString());
+        FundLine fl = new FundLine();
+        fl.setFundName("长城短债债券A");
+        fl.setAmount(new BigDecimal("200.00"));
+        fl.setHoldingProfit(new BigDecimal("2.00"));
+        fl.setCumulativeProfit(new BigDecimal("2.00"));
+        CategoryBlock cb = new CategoryBlock();
+        cb.setCategoryName("固收类");
+        cb.setFunds(new ArrayList<>(List.of(fl)));
+        cb.setCategoryTotal(new BigDecimal("200.00"));
+        asset.setCategories(new ArrayList<>(List.of(cb)));
+        asset.setMatchedFunds(new ArrayList<>(List.of("长城短债债券A")));
+        asset.setUnmatchedFunds(new ArrayList<>());
+
+        SnapshotConfirmRequest req2 = new SnapshotConfirmRequest();
+        req2.setUserId(USER_ID);
+        req2.setSnapshotDate(TEST_DATE);
+        req2.setConfirmedOverwrite(true);
+        req2.setParsedAssets(List.of(asset));
+        service.confirm(req2);
+
+        // 验证第二次 upsertByFundName 调用的 amount = 200.00
+        ArgumentCaptor<AssetRaw> captor = ArgumentCaptor.forClass(AssetRaw.class);
+        verify(assetRawMapper, times(2)).upsertByFundName(captor.capture());
+        List<AssetRaw> allUpserts = captor.getAllValues();
+        assertThat(allUpserts.get(0).getAmount()).isEqualByComparingTo(new BigDecimal("100.00"));
+        assertThat(allUpserts.get(1).getAmount()).isEqualByComparingTo(new BigDecimal("200.00"));
+    }
+
+    /**
+     * B11：二次 confirm 后镜像校验仍然通过（asset_raw 写入后与 asset_snapshot 镜像一致）。
+     * 本质上 verifyMirror 不会报错 → @Transactional 不会回滚 → confirm 返回成功。
+     */
+    @Test
+    @DisplayName("Fix 4-B11 · 二次 confirm 后镜像校验仍通过（不抛 INTERNAL_ERROR）")
+    void confirmSecondTime_verifyMirrorPasses() {
+        // 首次 + 二次 confirm 都是同 fund + 同 date
+        SnapshotConfirmResult result1 = service.confirm(reqWithSingleFund("长城短债债券A", "固收类"));
+        SnapshotConfirmResult result2 = service.confirm(reqWithSingleFund("长城短债债券A", "固收类"));
+
+        // 两次都成功（未抛异常、未被 @Transactional 回滚）
+        assertThat(result1).isNotNull();
+        assertThat(result2).isNotNull();
+        // 验证镜像校验 3 个查询都被调过
+        verify(assetRawMapper, times(2)).sumAmountByUserAndDateAndCategory(anyLong(), any(LocalDate.class), any());
+        verify(assetSnapshotMapper, times(2)).countLatestByUserAndDateAndCategory(anyLong(), any(LocalDate.class), any());
+    }
+
+    // ========================================================================
     // 工具
     // ========================================================================
 

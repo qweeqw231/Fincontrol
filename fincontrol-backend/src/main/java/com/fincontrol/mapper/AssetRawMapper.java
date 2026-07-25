@@ -2,6 +2,7 @@ package com.fincontrol.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.fincontrol.entity.AssetRaw;
+import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -38,6 +39,38 @@ public interface AssetRawMapper extends BaseMapper<AssetRaw> {
     Set<String> selectFundNamesByUserAndDate(
             @Param("userId") Long userId,
             @Param("snapshotDate") java.time.LocalDate snapshotDate);
+
+    /**
+     * 1b.4-pr7 (DATA-016) Fix 4：幂等 upsert（user_id, snapshot_date, fund_name 唯一键）。
+     * <p>首次入库 → INSERT；二次确认同 (user_id, snapshot_date, fund_name) → UPDATE 覆盖 amount / profit /
+     * holding_profit / cumulative_profit / total_asset_source / is_latest=true / confirmed_at。
+     * <p>语义与 {@code AssetSnapshotMapper.upsertByCategory} / {@code FundCategoryMapMapper.upsertByFundName} 对称：
+     * 之前 {@code writeAssetRaw} 纯用 {@link com.baomidou.mybatisplus.core.mapper.BaseMapper#insert} 会在二次
+     * confirm 同 snapshot_date 时撞 PK 报 500，本方法改用 ON DUPLICATE KEY UPDATE 实现幂等 overwrite。
+     * <p>MySQL 8.0+ / H2 1.4.197+ 均支持 ON DUPLICATE KEY UPDATE 语法。
+     * <p>注意：is_latest 必须在写入前由 service 层调 {@link #updateIsLatestBySnapshotDate} 先翻旧行 false，
+     * 本 UPSERT 仅负责当前行写入（与 writeAssetSnapshot 行为一致）。
+     */
+    @Insert("INSERT INTO asset_raw " +
+            "(user_id, snapshot_date, fund_name, fund_code, category, amount, " +
+            " profit, holding_profit, cumulative_profit, source, total_asset_source, " +
+            " is_latest, created_at, confirmed_at) " +
+            "VALUES " +
+            "(#{userId}, #{snapshotDate}, #{fundName}, #{fundCode}, #{category}, #{amount}, " +
+            " #{profit}, #{holdingProfit}, #{cumulativeProfit}, #{source}, " +
+            " COALESCE(#{totalAssetSource}, 'top'), " +
+            " true, CURRENT_TIMESTAMP, #{confirmedAt}) " +
+            "ON DUPLICATE KEY UPDATE " +
+            " fund_code = VALUES(fund_code), " +
+            " category = VALUES(category), " +
+            " amount = VALUES(amount), " +
+            " profit = VALUES(profit), " +
+            " holding_profit = VALUES(holding_profit), " +
+            " cumulative_profit = VALUES(cumulative_profit), " +
+            " total_asset_source = VALUES(total_asset_source), " +
+            " is_latest = true, " +
+            " confirmed_at = VALUES(confirmed_at)")
+    int upsertByFundName(AssetRaw row);
 
     /**
      * 1a.3 confirm 阶段：插入 1 条 asset_raw 记录（BaseMapper.insert 已覆盖，但保留扩展点）。
