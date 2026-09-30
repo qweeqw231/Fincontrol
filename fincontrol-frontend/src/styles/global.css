@@ -189,9 +189,9 @@ table { border-collapse: collapse; width: 100%; position: relative; z-index: 1; 
 .six-pie-row .pie-table { flex: 0.8; }
 .six-pie-row .pie-table th, .six-pie-row .pie-table td { padding: 6px 8px; }
 
-.crc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
-.crc-col { padding: 8px 4px; display: flex; flex-direction: column; gap: 8px; }
-.crc-col-cum { border-right: 1px solid var(--color-border); padding-right: 12px; }
+/* 2026-09-30 去重：原此处另有一份 .crc-grid/.crc-col/.crc-col-cum 定义，
+   与 styles/cumulative-return.css 冲突（无条件 border-right 导致折叠为单列时
+   仍画竖线、固定 1fr 1fr 导致窄视口数值被压到 0 宽）。权威定义见 cumulative-return.css。 */
 .crc-col-hold { padding-left: 12px; }
 .crc-label { font-size: var(--text-sm); color: var(--color-text-secondary); font-weight: 500; }
 .crc-row { display: flex; align-items: center; gap: 6px; }

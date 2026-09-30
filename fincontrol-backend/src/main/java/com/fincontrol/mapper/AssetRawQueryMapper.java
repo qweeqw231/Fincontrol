@@ -54,6 +54,21 @@ public interface AssetRawQueryMapper extends BaseMapper<AssetRaw> {
                                              @Param("snapshotDate") LocalDate snapshotDate);
 
     /**
+     * 统计给定日期下收益字段的覆盖情况（用于判定该快照是否含逐基金收益数据）。
+     * <p>外部 Excel 导入路径（asset_table_total 等）只有市值/占比列，会把
+     * holding_profit / cumulative_profit 写为 NULL；此时前端卡片不能显示 +0.00（会误导为"零收益"），
+     * 而应降级为净值历史的组合级累加值或显示"不可用"。
+     */
+    @Select("SELECT COUNT(*) AS total_cnt, " +
+            "COALESCE(SUM(cumulative_profit IS NOT NULL), 0) AS cum_cnt, " +
+            "COALESCE(SUM(holding_profit IS NOT NULL), 0) AS hold_cnt " +
+            "FROM asset_raw " +
+            "WHERE user_id = #{userId} AND is_latest = 1 " +
+            "AND snapshot_date = #{snapshotDate}")
+    Map<String, Object> countProfitFieldsAtDate(@Param("userId") Long userId,
+                                                @Param("snapshotDate") LocalDate snapshotDate);
+
+    /**
      * 限定到给定日期的六大类金额合计（用于 R4 实际比例重算）。
      */
     @Select("SELECT category, COALESCE(SUM(amount), 0) AS total_amount, COUNT(*) AS fund_count " +

@@ -37,7 +37,10 @@ import java.math.BigDecimal;
  * @param balanceFundStatus      余额宝 fallback 状态：'normal' / 'included' / 'excluded_unknown'
  * @param snapshotDate           实际计算用的 snapshot_date（最大且 is_latest=1 那天）
  * @param fundCount              is_latest=1 的基金行数（口径 A 全部含余额类）
- * @param message                可选备注（如占位时的 "Phase 3 上线"）
+ * @param profitSource           收益字段来源（2026-09-30 新增）：{@code asset_raw}=逐基金快照（正常）；
+ *                               {@code nav_history}=快照无逐基金收益字段，累计额降级取自同账户净值历史（累加口径）；
+ *                               {@code none}=两个来源均无数据
+ * @param message                可选备注（如降级来源说明）
  */
 @Data
 @Builder
@@ -54,5 +57,6 @@ public class CumulativeReturnResponse {
     private String balanceFundStatus;
     private String snapshotDate;
     private Integer fundCount;
+    private String profitSource;
     private String message;
 }

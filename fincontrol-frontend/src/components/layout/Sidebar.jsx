@@ -10,8 +10,8 @@ const MENU_ITEMS = [
   { path: '/data',        label: '数据管理', icon: '📊', enabled: true,  phase: '1b.3' },
   { path: '/correction',  label: '月度校正', icon: '📅', enabled: false, phase: 'Phase 2' },
   { path: '/config',      label: '资产配置', icon: '⚙️', enabled: false, phase: 'Phase 2' },
-  { path: '/nav',         label: '净值曲线', icon: '📈', enabled: false, phase: 'Phase 3' },
-  { path: '/ratio',       label: '比例演化', icon: '🥧', enabled: false, phase: 'Phase 3' },
+  { path: '/nav',         label: '净值曲线', icon: '📈', enabled: true,  phase: '1b.5' },
+  { path: '/ratio',       label: '比例演化', icon: '🥧', enabled: true,  phase: '1b.5' },
   { path: '/ai',          label: 'AI 顾问',  icon: '🤖', enabled: true,  phase: '1b.4' },
   { path: '/quarterly',   label: '季度操作', icon: '🎯', enabled: false, phase: 'Phase 5a' },
 ]

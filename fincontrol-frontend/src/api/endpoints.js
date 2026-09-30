@@ -57,6 +57,11 @@ export const ENDPOINTS = {
   ASSET_OPERATIONS_RECENT: '/asset/operations/recent',
   ASSET_CUMULATIVE_RETURN: '/asset/cumulative-return',
 
+  // Phase 3 可视化（12.x）
+  NAV_HISTORY: '/nav/history',
+  NAV_OPERATIONS: '/nav/operations',
+  RATIO_HISTORY: '/ratio/history',
+
   // 解析日志（11.x）
   PARSE_LOGS: '/parse-logs',
 
@@ -105,6 +110,10 @@ export const CONVERSATION_BY_ID = ENDPOINTS.CONVERSATION_BY_ID
 export const ASSET_BALANCE = ENDPOINTS.ASSET_BALANCE
 export const ASSET_OPERATIONS_RECENT = ENDPOINTS.ASSET_OPERATIONS_RECENT
 export const ASSET_CUMULATIVE_RETURN = ENDPOINTS.ASSET_CUMULATIVE_RETURN
+
+export const NAV_HISTORY = ENDPOINTS.NAV_HISTORY
+export const NAV_OPERATIONS = ENDPOINTS.NAV_OPERATIONS
+export const RATIO_HISTORY = ENDPOINTS.RATIO_HISTORY
 
 export const PARSE_LOGS = ENDPOINTS.PARSE_LOGS
 

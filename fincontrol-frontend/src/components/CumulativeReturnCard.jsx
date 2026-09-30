@@ -42,17 +42,20 @@ export const CumulativeReturnCard = () => {
   }
 
   // 累计侧
-  const cumRate = Number(cum.returnRate ?? 0)
-  const cumAmt = Number(cum.totalCumulativeProfit ?? 0)
+  // 2026-09-30：null 表示「该快照来源无此字段」（如外部表格导入），必须显示 — 而非 +0.00
+  const cumRate = cum.returnRate == null ? null : Number(cum.returnRate)
+  const cumAmt = cum.totalCumulativeProfit == null ? null : Number(cum.totalCumulativeProfit)
   // 持有侧
-  const holdRate = Number(cum.holdingReturnRate ?? 0)
-  const holdAmt = Number(cum.totalHoldingProfit ?? 0)
+  const holdRate = cum.holdingReturnRate == null ? null : Number(cum.holdingReturnRate)
+  const holdAmt = cum.totalHoldingProfit == null ? null : Number(cum.totalHoldingProfit)
   const algo = cum.algorithm || 'phase1_simple'
   const snap = cum.snapshotDate || '—'
+  const fallback = cum.profitSource === 'nav_history'
 
-  const rateColor = (r) => r >= 0 ? 'var(--color-success)' : 'var(--color-error)'
-  const formatRate = (r) => `${r >= 0 ? '+' : ''}${(r * 100).toFixed(2)}%`
-  const formatAmt  = (a) => `${a >= 0 ? '+' : ''}${a.toFixed(2)} 元`
+  const rateColor = (r) => (r == null ? 'var(--color-text-disabled)' : r >= 0 ? 'var(--color-success)' : 'var(--color-error)')
+  const formatRate = (r) => (r == null ? '—' : `${r >= 0 ? '+' : ''}${(r * 100).toFixed(2)}%`)
+  const formatAmt  = (a) => (a == null ? '—' : `${a >= 0 ? '+' : ''}${a.toFixed(2)} 元`)
+  const NA_TITLE = '该快照来源无逐基金收益字段（外部表格导入），无法计算'
 
   return (
     <div className="stat-card cumulative-return-card">
@@ -90,7 +93,7 @@ export const CumulativeReturnCard = () => {
         <div className="crc-col crc-col-hold">
           <div className="crc-label">持有</div>
           <div className="crc-row">
-            <div className="crc-rate" style={{ color: rateColor(holdRate) }} title="点击查看持有收益率定义">
+            <div className="crc-rate" style={{ color: rateColor(holdRate) }} title={holdRate == null ? NA_TITLE : '点击查看持有收益率定义'}>
               {formatRate(holdRate)}
             </div>
             <button
@@ -101,7 +104,7 @@ export const CumulativeReturnCard = () => {
             >ℹ️</button>
           </div>
           <div className="crc-row crc-row-amt">
-            <div className="crc-amt" style={{ color: rateColor(holdAmt) }} title="点击查看持有收益定义">
+            <div className="crc-amt" style={{ color: rateColor(holdAmt) }} title={holdAmt == null ? NA_TITLE : '点击查看持有收益定义'}>
               {formatAmt(holdAmt)}
             </div>
             <button
@@ -118,6 +121,13 @@ export const CumulativeReturnCard = () => {
         算法：{algo}｜快照：{snap}｜{cum.fundCount ?? 0} 只基金
       </div>
 
+      {/* 2026-09-30：快照来源无逐基金收益字段时，明示累计值来自同账户净值历史（累加口径） */}
+      {fallback && (
+        <div className="crc-source-note" title={cum.message || ''}>
+          ⓘ 累计收益取自同账户净值历史（累加口径）；持有收益该来源无字段，显示「—」
+        </div>
+      )}
+
       <InfoModal openKey={openInfo} onClose={() => setOpenInfo(null)} />
     </div>
   )
@@ -133,6 +143,7 @@ const InfoModal = ({ openKey, onClose }) => {
   const raw = Number(cum?.rawHoldingProfit ?? 0)
   const adj = Number(cum?.balanceFundAdjustment ?? 0)
   const adjusted = Number(cum?.totalHoldingProfit ?? 0)
+  const isFallback = cum?.profitSource === 'nav_history'
 
   const titles = {
     cum: '累计收益率',
@@ -177,6 +188,18 @@ const InfoModal = ({ openKey, onClose }) => {
       },
     }
     const c = base[key]
+    if (status === 'not_available') {
+      // 2026-09-30：快照来源（外部表格导入）无逐基金收益字段 → 持有侧显示 —，此处说明原因
+      return {
+        ...c,
+        extra: {
+          kind: 'warning',
+          label: '数据说明',
+          text: '当前快照来源（外部表格导入）不含逐基金「持有收益」字段，因此显示「—」而非 0。'
+            + '如需该指标，请用「数据管理」上传支付宝持仓截图（截图含持有收益与累计收益列）。',
+        },
+      }
+    }
     if (status === 'included' && adj !== 0) {
       // included 状态：附加 fallback 说明
       return {
@@ -207,6 +230,20 @@ const InfoModal = ({ openKey, onClose }) => {
     ? cumContents[openKey]
     : holdContents(openKey)
 
+  // 累计侧降级来源说明（快照无逐基金收益字段 → 取自同账户净值历史的累加口径）
+  const cFinal = (openKey === 'cum' || openKey === 'cumAmt') && isFallback
+    ? {
+        ...c,
+        algo: 'nav_history_fallback（降级：快照来源无逐基金收益字段，取自同账户净值历史的累加口径）',
+        extra: {
+          kind: 'adjustment',
+          label: '数据说明',
+          text: (cum?.message || '') +
+            '　注：「累加」（真实现金盈亏）与「净值」（单位份额表现）是两套不等价口径，本卡片使用累加。',
+        },
+      }
+    : c
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -217,20 +254,20 @@ const InfoModal = ({ openKey, onClose }) => {
         <div className="modal-body">
           <div className="modal-row">
             <span className="modal-label">公式：</span>
-            <code className="modal-code">{c.formula}</code>
+            <code className="modal-code">{cFinal.formula}</code>
           </div>
           <div className="modal-row">
             <span className="modal-label">定义：</span>
-            <span className="modal-text">{c.def}</span>
+            <span className="modal-text">{cFinal.def}</span>
           </div>
           <div className="modal-row">
             <span className="modal-label">算法：</span>
-            <span className="modal-text">{c.algo}</span>
+            <span className="modal-text">{cFinal.algo}</span>
           </div>
-          {c.extra && (
-            <div className={`modal-row modal-extra modal-extra-${c.extra.kind}`}>
-              <span className="modal-label">{c.extra.label}：</span>
-              <span className="modal-text">{c.extra.text}</span>
+          {cFinal.extra && (
+            <div className={`modal-row modal-extra modal-extra-${cFinal.extra.kind}`}>
+              <span className="modal-label">{cFinal.extra.label}：</span>
+              <span className="modal-text">{cFinal.extra.text}</span>
             </div>
           )}
         </div>

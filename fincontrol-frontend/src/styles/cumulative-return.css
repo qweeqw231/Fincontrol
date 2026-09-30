@@ -34,6 +34,8 @@
   margin-top: var(--space-2);
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
+  /* 2026-09-30：算法标识变长（如 nav_history_fallback）时允许换行，避免横向溢出 */
+  overflow-wrap: anywhere;
 }
 
 .stat-card.error .stat-card-value {
@@ -58,14 +60,22 @@
   }
 }
 
-/* CumulativeReturnCard 双列布局（核心：累计 vs 持有） */
+/* CumulativeReturnCard 双列布局（核心：累计 vs 持有）
+   2026-09-30 修复：原为固定 1fr 1fr，在中等视口（如 769px，stat-row 仍为 3 列）
+   下每列可用宽度被压到 0，数值（如 -18.01 元）被完全裁掉。
+   改为 auto-fit + 最小列宽：空间不足时自动折叠为单列，数值始终可见。 */
 .cumulative-return-card {
   min-width: 0;
+  /* 供容器查询判断"当前卡片自身宽度是否够放两列" */
+  container-type: inline-size;
 }
 
 .crc-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* min(120px, 100%)：容器比 120px 还窄时列宽退化为 100%，避免子列溢出网格内容盒；
+     容器够宽时仍为 120px 最小列宽（保证「-18.01 元」+ ℹ️ 按钮放得下）。
+     双列折叠点因此仍为 2×120+12 = 252px，与下方容器查询阈值一致。 */
+  grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr));
   gap: var(--space-3);
   margin-top: var(--space-2);
 }
@@ -78,10 +88,25 @@
   min-width: 0;
 }
 
-.crc-col-cum {
-  border-right: 1px solid var(--color-border);
-  padding-right: var(--space-3);
+/* 分隔线方向跟随网格实际列数。
+   阈值 252px = 双列最小宽（2 × 120px）+ 列间距（12px），
+   与上面 auto-fit 的折叠点严格对齐，避免出现"已是双列却画横线"的错配。 */
+@container (min-width: 252px) {
+  .crc-col-cum {
+    border-right: 1px solid var(--color-border);
+    padding-right: var(--space-3);
+  }
 }
+
+@container (max-width: 251px) {
+  .crc-col-cum {
+    border-bottom: 1px dashed var(--color-border);
+    padding-bottom: var(--space-3);
+  }
+}
+
+/* 极窄卡片字号规则见文件末尾「极窄卡片」块
+   —— 必须位于 .crc-rate / .crc-amt 基础定义之后，否则同优先级下会被覆盖。 */
 
 .crc-label {
   font-size: var(--text-sm);
@@ -122,6 +147,18 @@
   white-space: nowrap;
 }
 
+/* 极窄卡片（窄视口下 stat-row 仍为 3 列时，卡片内容宽约 96px）：
+   数值行要同时容纳「数字 + ℹ️ 按钮」，.crc-rate 的 20px 字号会让 "-0.19%" 差约 1px
+   触发省略号；降到 16px 即可完整显示。
+   .crc-amt 保持 14px 不动 —— 它在 62px 内已刚好放得下，调大反而溢出。
+   注意：必须位于 .crc-rate 基础定义之后，否则同优先级下被覆盖。 */
+@container (max-width: 120px) {
+  .crc-rate {
+    font-size: 16px;
+    line-height: 1.35;
+  }
+}
+
 .crc-info-btn {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
@@ -143,6 +180,17 @@
 .crc-info-btn:hover {
   color: var(--color-primary);
   border-color: var(--color-primary);
+}
+
+/* 2026-09-30：快照来源无逐基金收益字段时的降级来源提示 */
+.crc-source-note {
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: var(--color-bg-blue);
+  border-radius: var(--radius);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 /* PR2 (GLOBAL-002)：删除原 .modal-backdrop/.modal/.modal-header/.modal-body/
