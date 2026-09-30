@@ -3,7 +3,7 @@
 - **日期**：2026-09-30
 - **状态**：已实施并验证
 - **关联**：决策 24（restart-backend SOP）、决策 35（即开即用层 / 关闭按钮）
-- **前置决策记录**：`docs/phase-1/decisions/decision-33-pr6b-category-ux.md`（编号顺延至 34、35 为 1b.4 PR8/PR9 的运行层，本决策为其实质修订）
+- **前置决策记录**：`docs/phase-1/decisions/decision-33-pr6b-category-ux.md`。编号 34、35 已分别用于「Phase 1 里程碑收官与后续阶段重排」（决策 34）与「日常使用层与品牌资源」（决策 35），故本决策编号为 36，实质修订的是决策 35 的运行形态。
 
 ## 1. 背景
 

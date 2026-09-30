@@ -1,6 +1,6 @@
 # FinControl Phase 0 决策文档
 
-> Phase 0 产出。本文档最初锁定 6 项 Phase 1 启动前的关键决策，后续按项目演进追加决策 7–34。**每项决策均给出背景、决策、理由、影响范围**，作为 Phase 1+ 编码的硬约束。
+> Phase 0 产出。本文档最初锁定 6 项 Phase 1 启动前的关键决策，后续按项目演进追加至决策 36（其中 9 / 10 / 11 于 2026-09-30 追认补登）。**每项决策均给出背景、决策、理由、影响范围**，作为 Phase 1+ 编码的硬约束。
 >
 > 与四轮评审的衔接：本文档对应第四轮评审 P0（6 项）+ 第一轮/第三轮 P0 中需要在 Phase 0 决策的事项。
 
@@ -12,7 +12,7 @@
 |------|---|
 | 文档版本 | v1.1 |
 | 编写日期 | 2026-07-09 |
-| 最近更新 | 2026-07-25（追加决策 34） |
+| 最近更新 | 2026-09-30（登记决策 35 / 36；追认补登决策 9 / 10 / 11） |
 | 编写者 | 架构审查助手 + 项目作者确认 |
 | 文档类型 | 决策锁定（不可轻易回退）|
 | 配套文档 | [api-contract.md](./api-contract.md) + [acceptance-criteria.md](../phase-1/acceptance-criteria.md) |
@@ -381,7 +381,11 @@ WHERE is_latest = 1   -- 全口径：分子分母都包含余额类（2026-07-22
 
 ---
 
-### 1a.9 增补（2026-07-18）：总资产双轨 + DISCREPANCY 1% 报警
+## 决策 9：总资产 top/sum 双轨 + 1% DISCREPANCY 报警（1a.9 增补，2026-07-18）
+
+**状态**：✅ 已锁定（2026-07-18）
+
+**追认说明（2026-09-30）**：本决策自 2026-07-18 起即以「1a.9 增补」形式存在于本文档，但一直未获正式编号；`docs/phase-0/api-contract.md`、`docs/phase-1/USER-MANUAL.md` 与 `ScreenshotService` 均已按「决策 9」引用。本次文档整理追认编号为**决策 9**，正文内容保持不变。
 
 **背景**：
 - 1a.8.8 v2.5 真实 E2E 暴露 P2 totalAsset 口径不一致：fixture 期望顶部"总资产"全账户 7884.68，v2.5 prompt 让模型输出 P2 页 visible sum 2987.32
@@ -476,6 +480,72 @@ WHERE is_latest = 1   -- 全口径：分子分母都包含余额类（2026-07-22
 **详细验收计划**：`docs/test-records/manual-tests/2026-07-19_phase1a10-acceptance-plan.md`
 
 > 旧 plan 中"只放宽 zero_funds 即可""四页顶部都应为 7884.68""MySQL 迁移均已落地"等表述不再作为验收事实。
+
+---
+
+## 决策 10：路径 A（4×单图）+ 路径 B（1×parse-batch）并存（1a.10，2026-07-19）
+
+**状态**：✅ 已锁定（2026-07-19 验收通过）
+
+**追认说明（2026-09-30）**：本决策内容随 1a.10 实施随 [USER-MANUAL](../phase-1/USER-MANUAL.md) §12.1 以「决策 10」登记，但本文档此前未补正文。本次文档整理追认编号为决策 10，正文按 1a.10 实施与验收记录补写。
+
+**背景**：
+- 4 张支付宝截图属于同一时点（同一账户同一日），既可用「4 次单图解析 + 后端汇总」完成，也可用「1 次多图请求 + 后端兜底去重」完成
+- 1a.10 真实验收中两条路径各自暴露不同问题：路径 A 单图请求稳定但需 4 次上游调用；路径 B 一次调用省时，但 4 图请求易触发上游超时
+
+**决策**：
+
+> **两条解析路径同时保留、并存（不互相替代）**：A 为稳定主路，B 为效率备选。
+>
+> - **路径 A**：4 次 `POST /api/screenshot/parse`（单图）→ 后端汇总（DedupEngine）→ `POST /api/snapshot/confirm` 入库
+> - **路径 B**：1 次 `POST /api/screenshot/parse-batch`（一次传 4 个 fileId）→ 一次上游多模态请求 → 后端兜底去重 + top/sum 校验
+
+**验收证据（2026-07-19，minimax 路径）**：
+- 路径 A：真实 confirm 跑通 → 19 funds / ¥7,884.68 / 镜像校验一致
+- 路径 B：真实 4 图一次传跑通（minimax fallback）→ merged unique=19 / ¥7,884.68
+- 路径 B 若真实 4 图仍超时 → 诚实标 `PRODUCTION_BLOCKED`，不冒充 PASS（该状态即路径 B 的固有风险）
+
+**后续演进（决策 26，2026-07-22）**：
+- 1b.2 联调确认路径 B（`mode=multi`）minimax 4 图间歇超时后，`parse-batch` 新增 `mode=single|multi` 参数，**single 为默认主路**（后端串行 N 次单图 parse + DedupEngine merge，即路径 A 语义的批量封装），multi 保留为可选备选
+- 即：本决策的「双路径并存」在决策 26 后收敛为「single 默认 + multi 可选」
+
+**影响范围**：
+- `ScreenshotController` / `ScreenshotService` 同时维护 `parse` 与 `parse-batch` 两条链路
+- 前端 `/data` 上传 4 图时可按模式切换（决策 26）
+- 「路径 B 4 图 batch 稳定性优化（异步任务等）」作为 1a.11+ backlog 由本决策挂账
+
+**关联**：决策 11（AiRouter 路由，路径 B 走 4 图路由）、决策 12（豆包暂废）、决策 26（mode 开关）
+
+---
+
+## 决策 11：AiRouter imageCount 阈值路由 + fallback 监控字段（1a.8，2026-07-18）
+
+**状态**：✅ 已锁定（1a.8 实施；1a.10 增补监控字段）
+
+**追认说明（2026-09-30）**：本决策随 1a.8 AiRouter 落地，并在 1a.10 以「决策 11」被 USER-MANUAL §6.1 / §11.2 引用（含「fallback_triggered = 决策 11 监控字段」），但本文档此前未补正文。本次追认编号为决策 11。
+
+**背景**：
+- 1a.8 引入双 vision provider（minimax M3 + 豆包 ARK）与文本 provider fallback 链，需要确定「谁做 primary」的路由规则
+- 经验观察：单图请求 minimax 稳定；4 图请求体积大、耗时高，需要路由策略分散风险
+
+**决策**：
+
+> **AiRouter 以 imageCount 为阈值路由**（`fincontrol.ai.router.image-count-threshold=2`）：
+> - `imageCount ≤ 2` → minimax primary + 豆包 fallback（`MINIMAX_PRIMARY`）
+> - `imageCount > 2` → 豆包 primary + minimax fallback（`DOUBAO_PRIMARY`）
+> - chat 路由：minimax primary + DeepSeek fallback（1a.9 实施）
+> - 每次调用返回 `usedProvider` + `fallbackTriggered`，作为 `chat_history` 监控字段留痕
+
+**配套机制**：
+- 韧性：resilience4j Retry（vision 失败重试 2 次）+ CircuitBreaker（10 请求窗口 / 失败率 > 50% 熔断）→ 熔断后走 fallback provider
+- 缓存：Caffeine（1024 entries / 24h TTL，`v2:vision:` 前缀）
+
+**1a.10 实证与结论**：
+- 豆包 vision 4 个 model 实测全部失败（404 / 429 / timeout，见决策 12）；路径 B（4 图，走 `DOUBAO_PRIMARY`）实际全部由 minimax fallback 跑通
+- 决策 12 后 Phase 1a 按 minimax-only 验收；本决策的阈值路由代码保留，豆包重启用时即生效
+- 由本决策挂账的 backlog「路径 B 4 图 batch 稳定性优化」（1a.11+），后续由决策 26（mode=single 默认）实质化解
+
+**关联**：决策 12（豆包暂废）、决策 26（single 默认主路）、[USER-MANUAL §6.1](../phase-1/USER-MANUAL.md)
 
 ---
 
@@ -1914,6 +1984,40 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 
 ---
 
+## 决策 36：单进程运行形态（后端托管前端产物，8080 单端口）（2026-09-30）
+
+**状态**：✅ 已实施并验证（2026-09-30）
+
+**背景**：
+- 决策 35 的「即开即用、用完就关」日常使用层落地后，设备迁移暴露出该链路实际已断：桌面快捷方式丢失、`.tmp/` 为空、关闭按钮只关后端（Vite 与 MySQL 仍常驻，「关」不彻底）
+- 同时排查出三个实质缺陷：`stop-fincontrol.ps1` 用 `Read-Host` 在无控制台场景下阻塞；Vite 进程按窗口标题兜底杀不干净（`vite.pid` 记录的是 npm 的 PID）；`restart-backend.ps1` 每次全量重建导致冷启动 healthcheck 误报失败
+
+**决策**：
+
+> **由 Spring Boot 直接托管前端构建产物 `fincontrol-frontend/dist`，浏览器只访问 8080 单端口。**
+>
+> - 「开」= 双击桌面 `FinControl.lnk` → MySQL 检查 + 一个 java 进程
+> - 「关」= 首页右上角关闭按钮（`POST /api/system/shutdown`）→ 全关
+> - 前端开发模式（`npm run dev` + Vite proxy 5173 → 8080）**保留不变**，两种模式互不影响
+
+**子决策**：
+1. MySQL 服务不碰（仅 `Get-Service` 检查状态，避免快捷方式启动弹 UAC），保持 Windows 开机自启
+2. `dist` 仅在不存在时才 build（新增 `-ForceRebuild` 显式重建，实测 `npm run build` 约 4.5 秒）
+3. 新增后端 `WebMvcConfig`：`/**` 资源处理器 + SPA 兜底 `index.html`（`api/`、`actuator/`、`swagger-ui` 等路径不参与兜底，避免把接口写错伪装成页面）；`application.yml` 新增 `fincontrol.frontend.static-locations` 并被 `spring.web.resources.static-locations` 引用
+4. 修复 `GlobalExceptionHandler`：`NoResourceFoundException` → 404（errorCode 2001），不再被 `Exception.class` 吞成 500
+
+**验证（2026-09-30）**：
+- 单端口路径行为 8/8：`/`、`/nav`、`/ratio`、`/ai`、`/data` 直刷均 200 text/html（SPA 兜底生效）；`/api/not-exist` → 404；真实接口 code=0
+- 关闭：7.7 秒完成、无交互阻塞、按 5173 端口反查杀掉隐藏运行的 Vite；启动：复用 jar 8.4 秒起 + healthcheck 通过，幂等路径 1.3 秒
+
+**详细子档**：[decision-36-single-process-runtime.md](../phase-1/decisions/decision-36-single-process-runtime.md)（含脚本逐项变更表与实测记录）
+
+**影响范围**：日常操作入口（桌面快捷方式 / 关闭按钮）、前端发布流程（改前端后 `npm run build`）、`scripts/desktop/*` 全部脚本、README / SETUP 的访问地址表述
+
+**关联**：决策 24（restart SOP，本决策为其新增快速路径）、决策 35（日常使用层，本决策为其运行形态修订）
+
+---
+
 ## 决策总结表（追加后）
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
@@ -1923,6 +2027,7 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 > 各阶段子决策文档（`docs/phase-N/decisions/decision-XX-*.md`）保留**详细背景 + 实施细节**作为子档，但**所有决策 ID 必须在此总表追加一行**才能视为正式锁定。
 > 子档若未在总表登记，视为未生效决策，代码不可引用。
 > 1b.4 三项决策 30 / 31 / 32 于 2026-07-24 首次总表登记（PR5 收官）。
+> 2026-09-30：追认补登决策 9 / 10 / 11 三行（正文此前已存在或本次补写）；决策 36 于本次登记。
 
 | # | 决策 | 状态 | 关联评审 | 触发 commit |
 |---|------|------|----------|-------------|
@@ -1934,6 +2039,9 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 | 6 | Phase 计划修订（新增 Phase 0）| ✅ | 第四轮 4.3.3 / 4.3.4 / 4.3.7 / 4.3.8 | Phase 0 |
 | 7 | profit 字段拆分 holding_profit / cumulative_profit（1a.8.7）| ✅ | 1a.8 语义混合 | 1a.8.7 |
 | 8 | 基金类别归一化 + 双向 cache + 清仓可恢复（1a.8.8）| ✅ | 1a.8 category 映射 | 1a.8.8 |
+| 9 | 总资产 top/sum 双轨 + 1% DISCREPANCY 报警（1a.9，2026-09-30 追认）| ✅ | 1a.8.8 → 1a.9 真实 E2E | ae1fbe0 |
+| 10 | 路径 A（4×单图）+ 路径 B（1×parse-batch）并存（1a.10，2026-09-30 追认）| ✅ | 1a.10 双路径真实 E2E | e5c78ea |
+| 11 | AiRouter imageCount 阈值路由 + fallback 监控字段（1a.8，2026-09-30 追认）| ✅ | 1a.8 双 provider 路由 | 1a.8 |
 | 12 | 豆包 vision 路径暂时废弃（Phase 1a minimax-only）| ✅ | 1a.10 阶段 | 1a.10 |
 | 13 | snapshotDate 来源优先级 + dataTime 字段 | ✅ | 1a.10 EXIF 覆盖 | 1a.10 |
 | 14 | fund 分类 AI 辅助 + 用户自定义（follow-up）| 🚧 | 1b+ follow-up | 1b+ |
@@ -1958,3 +2066,4 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 | 33 | 1b.4-pr6b 模块 B 大类确认 UX 完整实施（D1-D7 + V6 主页固收类 + HomePage stale-cache 修复）| ✅ | 1b.4 PR6b 阶段 + V6 收尾 | 9207b2b |
 | 34 | Phase 1 核心闭环收官；未完成数据管理归入 Phase 2；AI 顾问前端 UI 顺延 Phase 5；前端整体收尾归入 Phase 4 | ✅ | 用户 2026-07-25 路线重排 | docs(决策34) |
 | 35 | 日常使用层与品牌资源（1b.4 PR8 扩展：启动页 + 关闭服务按钮 + 桌面快捷方式）| ✅ | Phase 1 收官后补充层 | docs(1b.4-pr8) |
+| 36 | 单进程运行形态（Spring Boot 托管前端 dist，8080 单端口；启动/关闭脚本 + 桌面快捷方式重写）| ✅ | 设备迁移后启动链断裂 + 双进程「关不净」 | dd89197 |
