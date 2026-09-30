@@ -2,7 +2,7 @@
 
 > 个人资产配置控制系统 —— 以支付宝基金截图作为数据源，借助多模态模型完成基金去重、分类与三表事务入库，并通过 React 资产看板呈现当前快照、累计/持有收益与配置偏差。
 
-FinControl 是一个以控制论为理论基础、以真实个人账户为实验平台、以多模态 AI 与稳健工程为底座的个人资产配置控制系统。Phase 1（数据流水线闭环）已于 2026-07-25 通过真实用户端到端验收正式收官；后续 Phase 2–5 的范围与排序由 Phase 0 决策 34 统一规定。
+FinControl 是一个以控制论为理论基础、以真实个人账户为实验平台、以多模态 AI 与稳健工程为底座的个人资产配置控制系统。Phase 1（数据流水线闭环）已于 2026-07-25 通过真实用户端到端验收正式收官；Phase 2–5 的范围与排序由 Phase 0 决策 34 统一规定。2026-09-30 起，Phase 3 的净值曲线 / 比例演化与 Phase 5 的 AI 顾问界面已**提前交付**（见 [Phase 变更记录](docs/phase-1/phase-change-log.md)），日常运行采用单进程形态（决策 36，8080 单端口）。
 
 ---
 
@@ -12,18 +12,20 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 
 ---
 
-## 当前状态（2026-07-25）
+## 当前状态（2026-09-30）
 
 | Phase | 状态 | 里程碑证据 |
 |---|---|---|
 | **Phase 0** 基础设施 + 评审决策 | ✅ 完成（2026-07-09）| 7 张表 schema、5 类评审 199 个问题、Phase 0 决策 1–6 锁定 |
 | **Phase 1** 数据流水线闭环 | ✅ 完成（2026-07-25）| 1b.4-pr7 V1–V8 全通过；19 funds / ¥7,850.38 真实 4 图 confirm；后端 SnapShotConfirmServiceP7Test 9/9；前端 Vitest 12 文件 57/57；Vite build 1.08s |
-| **Phase 2** 未完成的数据管理 + 资产配置 + 月度操作台 | ⏳ 待启动 | 复用 Phase 1a 已建 API（`/api/snapshot/history`、`/api/snapshot/{date}`、`/api/parse-logs`、`DELETE /api/snapshot/confirm/{id}`、`/api/screenshot/reparse`）|
-| **Phase 3** 数据模型 + 净值/比例/日收益可视化 | ⏳ 待启动 | 先建 4 张表（nav_history、daily_returns、event_log、manual_nav_entry），再实现三类看板 |
+| **Phase 2** 未完成的数据管理 + 资产配置 + 月度操作台 | ⏳ 待启动 | 复用 Phase 1a 已建 API（`/api/snapshot/history`、`/api/snapshot/{date}`、`/api/parse-logs`、`DELETE /api/snapshot/confirm/{id}`、`/api/screenshot/reparse`）；2026-09 对数据管理页做过局部修复，主体未启动 |
+| **Phase 3** 数据模型 + 净值/比例/日收益可视化 | 🟡 提前交付（部分，2026-09-30）| 净值曲线 + 比例演化已交付（`nav_history` / `nav_milestone` 2 表 + `NAVPage` / `RatioPage`，commit `987b1c1`）；日收益明细、Dietz/XIRR 升级未做 |
 | **Phase 4** 已知问题、数据校验、UI 优化、前端收尾 | ⏳ 待启动 | 全量 Maven 测试 fixture 债务、跨页面状态、空/错/加载态、可访问性 |
-| **Phase 5** AI 对话 UI、LQR、多用户、移动端 | ⏳ 远期 | AI 顾问后端 API + 意图分类已完成；前端 UI 顺延至本阶段 |
+| **Phase 5** AI 对话 UI、LQR、多用户、移动端 | 🟡 提前交付（部分，2026-09-30）| AI 顾问前端 UI（对话 + RAG 知识库 93 条）已提前交付（commit `9d89397`）；LQR / 多用户 / 移动端未开始 |
 
-详细路线锁定于 [Phase 0 决策 34](docs/phase-0/decisions.md#决策-34phase-1-里程碑收官与后续阶段重排2026-07-25)。
+详细路线锁定于 [Phase 0 决策 34](docs/phase-0/decisions.md#决策-34phase-1-里程碑收官与后续阶段重排2026-07-25)；运行形态见 [决策 36](docs/phase-0/decisions.md)（单进程 8080 单端口，2026-09-30 起日常使用）。
+
+> **Phase 划分 vs 实际交付**：Phase 编号 = 能力里程碑（设计归属）；实际交付时间线（含「提前交付」标注）以 [Phase 变更记录](docs/phase-1/phase-change-log.md) 为准。
 
 ---
 
@@ -52,6 +54,8 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 ```
 
 ### 端到端验收要点（1b.4-pr7 V1–V8 用户亲自跑通）
+
+> 以下为 2026-07-25 验收时的**开发模式**步骤；2026-09-30 起日常使用为单进程模式（双击 `FinControl.lnk` → http://localhost:8080/ ，决策 36），见文末「本地开发快速启动」。
 
 1. `npm --prefix fincontrol-frontend run dev` 启动前端（5173，决策 29 统一）
 2. `scripts/1b/restart-backend.ps1` 启动后端（决策 24 强制）
@@ -121,10 +125,10 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 | 已有日期覆盖提示 | 后端 `confirmedOverwrite` 已有，前端未在确认前提示 | Phase 2 |
 | 逐文件状态 + 单文件重试 | 全局 uploading / parsing 已有，逐文件状态缺失 | Phase 2 |
 | 收益列 / DedupReport 完整展示 | preview 只显示总额和分类小计，缺少收益列和去重报告 | Phase 2 |
-| AI 顾问前端对话 UI | 后端 `chat` + `conversations` API 完整，`/ai` 是占位页 | Phase 5 |
+| AI 顾问扩展（LQR / 多用户 / 移动端）| 对话 UI（含 RAG）已于 2026-09-30 提前交付 | Phase 5 |
 | 月度操作台 | 决策 4 v2 + 决策 25 已铺垫，UI 与求解待 Phase 2 | Phase 2 |
 | 资产配置页面 | `/config` 占位页 | Phase 2 |
-| 净值 / 比例 / 日收益 | 4 张表待建 | Phase 3 |
+| 日收益明细 | `daily_returns` 表未建（净值 / 比例已于 2026-09-30 提前交付）| Phase 3 |
 | LQR / 多用户 / 移动端 | — | Phase 5 |
 
 ---
@@ -137,7 +141,8 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  Browser  React 18 + Vite 5 + React Router 6 + Zustand 5                 │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │ Pages    HomePage │ DataPage │ AIPage(占位) │ 占位 5 路由         │    │
+│  │ Pages    HomePage │ DataPage │ NAVPage │ RatioPage │ AIPage       │    │
+│  │          占位 3 路由（/config /correction /quarterly）              │    │
 │  │ Stores   assetSnapshot / userConfig / operation / chat            │    │
 │  │ Comps    Recharts Pie / CumulativeReturnCard / CategoryDetail    │    │
 │  │ Tests    Vitest 12 files · 57/57 pass · jsdom env                 │    │
@@ -147,11 +152,11 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 │  Backend  Spring Boot 3.3.5 + Java 17 + MyBatis-Plus 3.5.9              │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │ Controller  Screenshot / Snapshot / Asset / Chat / Conversation  │    │
-│  │              CategoryMap / Settings / ParseLog                    │    │
+│  │              CategoryMap / Settings / ParseLog / Nav               │    │
 │  │ Service     ScreenshotService / SnapShotConfirmService            │    │
 │  │              AssetQueryService / SnapshotQueryService             │    │
 │  │              CategoryMapService / SettingsService                 │    │
-│  │              ChatService / ConversationService                    │    │
+│  │              ChatService / ConversationService / NavQueryService  │    │
 │  │ Mapper      MyBatis-Plus BaseMapper + 自定义 SQL/XML              │    │
 │  │ AI          AiRouter (imageCount 路由) + VisionModelClient       │    │
 │  │              + TextAiClient (minimax M3)                         │    │
@@ -199,12 +204,13 @@ Fincontrol/                                       ← 工作区根（单仓多�
 │   ├── architecture/                              ← 架构主文档 + 4 轮评审记录
 │   │   └── review/                                ← data-pipeline / algorithm / frontend / cross-module 4 份
 │   ├── phase-0/                                   ← Phase 0 决策锁定 + db-schema + api-contract
-│   │   └── decisions.md                           ← 决策 1–34（决策 34 = Phase 1 收官 + 路线重排）
+│   │   └── decisions.md                           ← 决策 1–36（权威汇总表位于文末；决策 34 = Phase 1 收官 + 路线重排，决策 36 = 单进程运行形态）
 │   └── phase-1/                                   ← Phase 1 验收 / 子阶段计划 / 子决策
 │       ├── checklists/phase-1a.md + phase-1b.md  ← 24 + 23 + 4 P0 实时清单
 │       ├── subphase-plan.md                       ← Phase 1a.1–1a.10 实施蓝图
 │       ├── chat-prompt-issues.md                  ← chat prompt 已知缺陷追踪
-│       ├── decisions/                             ← 子决策详细档（决策 27 / 30 / 31 / 32 / 33）
+│       ├── phase-change-log.md                    ← Phase 划分 vs 实际交付（提前交付偏差记录）
+│       ├── decisions/                             ← 子决策详细档（决策 27 / 30 / 31 / 32 / 33 / 36）
 │       └── work-plans/1a + 1b/                    ← 各 PR 工作计划
 │
 │   └── test-records/                              ← 测试记录与产物
@@ -234,20 +240,22 @@ Fincontrol/                                       ← 工作区根（单仓多�
 │       ├── pages/                                 ← 路由页面
 │       │   ├── HomePage.jsx（✅ 完整）
 │       │   ├── DataPage.jsx（✅ 核心完成，Phase 2 补 UI）
-│       │   ├── AIPage.jsx（⏳ 占位）
+│       │   ├── AIPage.jsx（✅ 对话界面 + RAG）
 │       │   ├── ConfigPage.jsx（⏳ 占位，Phase 2）
 │       │   ├── CorrectionPage.jsx（⏳ 占位，Phase 2）
-│       │   ├── NAVPage.jsx（⏳ 占位，Phase 3）
-│       │   ├── RatioPage.jsx（⏳ 占位，Phase 3）
+│       │   ├── NAVPage.jsx（✅ 净值曲线，Phase 3 提前交付）
+│       │   ├── RatioPage.jsx（✅ 比例演化，Phase 3 提前交付）
 │       │   └── QuarterlyPage.jsx（⏳ 占位，Phase 5）
 │       ├── stores/                                ← Zustand stores（asset / user / operation / chat）
 │       ├── styles/                                ← 全局 + 页面级 CSS（variables / global / sidebar / data-page / cumulative-return）
 │       ├── utils/                                 ← formatters / blob / categoryColors
 │       └── tests/                                 ← Vitest 12 文件 / 57 用例（jsdom env）
 │
-├── scripts/                                       ← 跨端运维 / smoke / git 辅助
+├── scripts/                                       ← 跨端运维 / 导入 / smoke / git 辅助
 │   ├── README.md
 │   ├── 1b/                                        ← restart-backend.ps1（决策 24 强制）
+│   ├── desktop/                                   ← 启动 / 关闭 / 桌面快捷方式（决策 35 / 36）
+│   ├── import-data/                               ← nav_history / 比例时间线导入（Phase 3）
 │   ├── git/                                       ← push-deferred / 提交辅助
 │   └── smoke/                                     ← smoke 测试入口
 │
@@ -262,7 +270,15 @@ Fincontrol/                                       ← 工作区根（单仓多�
 
 ---
 
-## 验证结果（2026-07-25）
+## 验证结果（2026-07-25 基线 + 2026-09-30 增量）
+
+### 2026-09-30 增量（提前交付 + 单进程）
+
+| 验证项 | 结果 | 证据 |
+|---|---|---|
+| 净值 / 比例 / AI 顾问 / 首页 / 数据管理 5 页面 | ✅ 关键功能通过、无控制台报错 | 2026-09-30 会话端到端验证（7 个接口全部 code=0）|
+| 单端口路径行为（`/`、`/nav`、`/ratio`、`/ai`、`/data` 直刷 + `/api/not-exist` 404）| ✅ 8/8 | [决策 36 子档](docs/phase-1/decisions/decision-36-single-process-runtime.md) §4 |
+| 关闭 / 启动流程 | ✅ | 关闭 7.7s 无交互阻塞；启动复用 jar 8.4s，幂等路径 1.3s |
 
 ### 阶段专项验收（Phase 1 真正可声明的状态）
 
@@ -378,11 +394,11 @@ Fincontrol/                                       ← 工作区根（单仓多�
 |---|---|---|---|
 | `/` | HomePage（首页资产看板）| 1 | ✅ 完成 |
 | `/data` | DataPage（数据管理）| 1 | ✅ 核心完成（Phase 2 补 UI）|
-| `/ai` | AIPage（AI 顾问）| 1→5 | ⏳ 后端 API 完整 / 前端占位 |
+| `/ai` | AIPage（AI 顾问）| 5 | ✅ 完成（2026-09-30 提前交付：对话 + RAG）|
 | `/config` | ConfigPage（资产配置）| 2 | ⏳ 占位 |
 | `/correction` | CorrectionPage（月度操作台）| 2 | ⏳ 占位 |
-| `/nav` | NAVPage（净值曲线）| 3 | ⏳ 占位 |
-| `/ratio` | RatioPage（比例演化）| 3 | ⏳ 占位 |
+| `/nav` | NAVPage（净值曲线）| 3 | ✅ 完成（2026-09-30 提前交付）|
+| `/ratio` | RatioPage（比例演化）| 3 | ✅ 完成（2026-09-30 提前交付）|
 | `/quarterly` | QuarterlyPage（季度操作台）| 5 | ⏳ 占位 |
 
 详见 `fincontrol-frontend/package.json` 和 `src/App.jsx`（RouterShell + 8 路由 + 标题同步）。
@@ -393,7 +409,8 @@ Fincontrol/                                       ← 工作区根（单仓多�
 
 | 文档 | 路径 | 说明 |
 |---|---|---|
-| **Phase 0 决策汇总（含决策 34）** | [docs/phase-0/decisions.md](docs/phase-0/decisions.md) | 决策 1–34 权威汇总表位于文档最末；决策 34 锁定 Phase 1 收官 + 后续路线 |
+| **Phase 0 决策汇总（决策 1–36）** | [docs/phase-0/decisions.md](docs/phase-0/decisions.md) | 权威汇总表位于文档最末；决策 34 = Phase 1 收官 + 路线重排，决策 36 = 单进程运行形态 |
+| **Phase 变更记录** | [docs/phase-1/phase-change-log.md](docs/phase-1/phase-change-log.md) | Phase 划分 vs 实际交付（净值/比例、AI 顾问提前交付；当前边界重定）|
 | **Phase 1a 验收清单** | [docs/phase-1/checklists/phase-1a.md](docs/phase-1/checklists/phase-1a.md) | 24 项 API + 8 项 P0 实时清单 |
 | **Phase 1b 验收清单（历史编号）** | [docs/phase-1/checklists/phase-1b.md](docs/phase-1/checklists/phase-1b.md) | 23 项 UI + 4 项 P0 + 1b.3 补救 + 1b.4 设计债务收尾 |
 | **Phase 1 子阶段计划** | [docs/phase-1/subphase-plan.md](docs/phase-1/subphase-plan.md) | 1a.1–1a.10 实施蓝图 |
@@ -407,6 +424,9 @@ Fincontrol/                                       ← 工作区根（单仓多�
 ---
 
 ## 本地开发快速启动
+
+> **日常使用（推荐，2026-09-30 起）**：双击桌面 `FinControl.lnk`（或 `scripts/desktop/launch-fincontrol.ps1`）→ 单进程启动（后端 8080 托管前端产物），浏览器访问 http://localhost:8080/ ；关闭点页面右上角按钮，或双击 `FinControl Stop.lnk`。前端改动后需 `npm --prefix fincontrol-frontend run build` 重新构建产物（决策 36）。
+> 下列 1–4 步为**开发模式**（前端 5173 + 后端 8080 双进程）。
 
 ```cmd
 :: 1. 启动 MySQL，建库 + 跑 schema
@@ -430,7 +450,8 @@ npm run dev
 
 启动后访问：
 
-- 前端 http://localhost:5173/
+- （单进程与开发模式）主入口 http://localhost:8080/
+- （开发模式）前端 http://localhost:5173/
 - 后端 Swagger UI http://localhost:8080/swagger-ui.html
 - 后端 API 文档 http://localhost:8080/v3/api-docs
 - 后端健康检查 http://localhost:8080/actuator/health
@@ -465,9 +486,11 @@ npm run dev
 | 2026-07-22 | 决策 25 v3（持有收益 Smart Fallback）+ 决策 26（parse single/multi toggle）| 1b.2 step 7 |
 | 2026-07-24 | 决策 30 / 31（settings 表）+ 决策 32（user_correct 优先）| 1b.4 PR3plus |
 | 2026-07-25 | 决策 33（七条 UX + V6 收尾）+ 决策 34（Phase 1 收官 + 路线重排）| 1b.4 PR6b / PR7 收官 |
+| 2026-09-28 ~ 09-30 | Phase 3 净值曲线 / 比例演化 + AI 顾问前端 UI 提前交付（Phase 变更记录建档）| 外部数据导入（nav_history）+ RAG 知识库 |
+| 2026-09-30 | 决策 36（单进程运行形态：后端托管前端产物，8080 单端口）；追认补登决策 9 / 10 / 11 | 设备迁移后启动链断裂 + 文档体系整理 |
 
 ---
 
 *Phase 1 收官完成时间：2026-07-25 12:42（Asia/Shanghai）*
-*最新 commit：`4756b2a`（1b.4-pr7 Fix 8 · success banner 双段动画）*
+*最新 commit：`dd89197`（决策 36 · 单进程运行形态）*
 *权威阶段计划：[docs/phase-0/decisions.md#决策-34phase-1-里程碑收官与后续阶段重排2026-07-25](docs/phase-0/decisions.md#决策-34phase-1-里程碑收官与后续阶段重排2026-07-25)*

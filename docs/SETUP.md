@@ -1,6 +1,8 @@
 # FinControl 本地开发环境搭建指南
 
 > Phase 0/1 产出。本指南回答"如何执行 db-schema.sql"、"VISION_API_KEY 在哪配置"、"前后端是否分别启动"等实操问题。
+>
+> **运行形态（2026-09-30，决策 36）**：日常使用为**单进程**（后端 8080 托管前端产物）：双击桌面 `FinControl.lnk` 启动，关闭点页面右上角按钮或 `FinControl Stop.lnk`；前端改动后用 `npm --prefix fincontrol-frontend run build` 重新构建。**本文档以下内容描述开发模式**（MySQL + 后端 8080 + Vite 5173，用于改代码 / 联调）。
 
 ---
 

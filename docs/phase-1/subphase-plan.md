@@ -24,6 +24,8 @@
 | 配套文档 | acceptance-criteria.md / checklists/ / api-contract.md / decisions.md / test-records/manual-tests/2026-07-16_phase1a-phase1a2-acceptance.md |
 | 适用阶段 | Phase 1a（后端）+ Phase 1b（前端）|
 
+> **状态标注（2026-09-30 补注）**：本文档为 Phase 1a 启动时的实施蓝图，内容停在 1a.8（2026-07-18），历史编号与勾选状态不追写。Phase 1 已于 2026-07-25 收官（决策 34）；Phase 3 / Phase 5 部分能力的提前交付见 [phase-change-log.md](./phase-change-log.md)。
+
 ---
 
 ## 1. 拆分原则

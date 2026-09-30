@@ -307,15 +307,17 @@
 
 ## 7. Phase 1 不做（明确排除）
 
+> **状态标注（2026-09-30 补注）**：本表是 Phase 1 收官时的历史排除清单。其后 Phase 3 的「净值曲线 / 比例演化」与 Phase 5 的「AI 顾问前端 UI」已**提前交付**，详见 [phase-change-log.md](./phase-change-log.md)。
+
 以下项**不在 Phase 1 范围内**，避免范围蔓延：
 
 - ❌ 月度操作台（Phase 2）
 - ❌ 资产配置页面 UI（Phase 2，**后端 API 已实现**）
-- ❌ 净值曲线（Phase 3）
-- ❌ 比例演化看板（Phase 3）
+- ❌ 净值曲线（Phase 3）→ 2026-09-30 **已提前交付**
+- ❌ 比例演化看板（Phase 3）→ 2026-09-30 **已提前交付**
 - ❌ 季度操作台（Phase 5a）
 - ❌ 多用户、登录、SDK（Phase 5b/5c）
-- ❌ nav_history 表设计（Phase 3a）
+- ❌ nav_history 表设计（Phase 3a）→ 2026-09-30 **已提前交付**（nav_history + nav_milestone 2 表；daily_returns / event_log / manual_nav_entry 未建）
 - ❌ target_ratio_history 表设计（Phase 2）
 - ❌ 移动端适配（Phase 5c）
 
