@@ -45,15 +45,18 @@ public class ChatService {
     private final IntentClassifier intentClassifier;
     private final AiRouter aiRouter;
     private final PromptLoaderService promptLoader;
+    private final KnowledgeBaseService knowledgeBase;
 
     public ChatService(ChatHistoryMapper chatHistoryMapper,
                        IntentClassifier intentClassifier,
                        AiRouter aiRouter,
-                       PromptLoaderService promptLoader) {
+                       PromptLoaderService promptLoader,
+                       KnowledgeBaseService knowledgeBase) {
         this.chatHistoryMapper = chatHistoryMapper;
         this.intentClassifier = intentClassifier;
         this.aiRouter = aiRouter;
         this.promptLoader = promptLoader;
+        this.knowledgeBase = knowledgeBase;
     }
 
     public ChatSendResponse send(Long userId, ChatSendRequest req) {
@@ -117,6 +120,12 @@ public class ChatService {
         String promptVersion;
         if (isInvestment) {
             systemPrompt = promptLoader.get("ai_assistant");
+            // RAG：检索微观控制金融学知识库相关条目，追加到 system prompt
+            String context = knowledgeBase.formatContext(knowledgeBase.retrieve(message, 3));
+            if (!context.isBlank()) {
+                systemPrompt = systemPrompt + "\n\n【参考知识】\n" + context
+                        + "\n\n回答时可参考上述知识，但需结合用户问题灵活运用，不要逐字复述。";
+            }
             routedTo = ROUTED_MAIN;
             promptVersion = PROMPTVersion;
         } else {

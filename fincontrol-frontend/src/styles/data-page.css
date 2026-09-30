@@ -847,3 +847,59 @@
   gap: 8px;
 }
 
+/* ============================================================
+ * 解析预览弹窗补充（2026-09-28 修复）
+ * ============================================================ */
+
+/* D7 消失-重现提示：放在基金名称列内，不再撑爆类别下拉列 */
+.data-page .re-confirm-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #b45309;
+}
+
+/* 金额/收益数字列：等宽对齐、不换行，避免正负收益撑动行高 */
+.data-page .profit-cell {
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* DedupEngine 告警条 */
+.data-page .dedup-warnings {
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.data-page .dedup-warnings-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #92400e;
+}
+.data-page .dedup-warning-item {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #78350f;
+  word-break: break-all;
+}
+.data-page .dedup-warning-item strong {
+  margin-right: 4px;
+}
+/* 不完整记录类告警降级为中性灰色（确实被安全忽略，不需用户紧张） */
+.data-page .dedup-warning-item.dedup-warning--DATA_INCOMPLETE {
+  color: #6b7280;
+}
+
+/* 日期编辑器内联错误 */
+.data-page .date-edit-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #dc2626;
+  line-height: 1.5;
+}
+

@@ -32,7 +32,7 @@ services:
     volumes:
       - fincontrol-mysql-data:/var/lib/mysql
       # schema 首次启动时自动导入（绝对路径，避免 docker-compose 上下文路径问题）
-      - C:/Users/lbc19/Desktop/Fincontrol/docs/phase-0/db-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./docs/phase-0/db-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
       interval: 10s

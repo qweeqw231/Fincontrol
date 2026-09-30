@@ -55,7 +55,7 @@ public class CategoryMasterService {
         CategoryMaster row = new CategoryMaster();
         row.setNameCanonical(input.canonical());
         row.setAliases(writeAliases(input.aliases()));
-        row.setActive(input.active());
+        row.setIsActive(input.active());
         if (mapper.insert(row) != 1) {
             throw new BusinessException(ErrorCode.DATABASE_ERROR, "category_master INSERT 失败");
         }
@@ -73,7 +73,7 @@ public class CategoryMasterService {
         validateNoConflict(id, input);
         existing.setNameCanonical(input.canonical());
         existing.setAliases(writeAliases(input.aliases()));
-        existing.setActive(input.active());
+        existing.setIsActive(input.active());
         if (mapper.updateById(existing) != 1) {
             throw new BusinessException(ErrorCode.DATABASE_ERROR,
                     "category_master UPDATE 失败: id=" + id);
@@ -203,7 +203,7 @@ public class CategoryMasterService {
                 .id(row.getId())
                 .nameCanonical(row.getNameCanonical())
                 .aliases(parseAliases(row.getAliases()))
-                .active(Boolean.TRUE.equals(row.getActive()))
+                .active(Boolean.TRUE.equals(row.getIsActive()))
                 .createdAt(row.getCreatedAt())
                 .updatedAt(row.getUpdatedAt())
                 .build();

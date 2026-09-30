@@ -45,10 +45,20 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     // 网络错误 / HTTP 错误
-    const status = error.response?.status
+    // 修复：旧实现只抛 { code: status*100, message: axios 默认文案, raw }，
+    // 后端 GlobalExceptionHandler 返回的业务 body（{message/msg}）被整个丢弃，
+    // 上层既拿不到 err.response.data，也无法把"快照已存在"之类的提示展示给用户。
+    const status = error.response?.status || 0
+    const data = error.response?.data
+    const backendMessage = data && typeof data === 'object'
+      ? (data.message || data.msg || null)
+      : (typeof data === 'string' ? data : null)
     return Promise.reject({
       code: status ? status * 100 : 0,
-      message: error.message || '网络错误',
+      status,
+      message: backendMessage || error.message || '网络错误',
+      // 透传完整 response，兼容既有调用方 err.response.data.message 的读法
+      response: error.response,
       raw: error,
     })
   },

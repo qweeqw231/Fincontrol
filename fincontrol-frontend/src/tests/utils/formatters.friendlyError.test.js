@@ -39,4 +39,30 @@ describe('friendlyError', () => {
     expect(friendlyError({ message: '余额不足' })).toBe('余额不足')
     expect(friendlyError({ message: '快照日期不能为空' })).toBe('快照日期不能为空')
   })
+
+  it('修复: 拦截器映射码 40000（HTTP 400）不再误报"服务器错误"', () => {
+    // 无后端业务文案、带 axios 默认文案 → 分类兜底
+    expect(friendlyError({
+      code: 40000, status: 400, message: 'Request failed with status code 400',
+    })).toBe('请求参数错误')
+    expect(friendlyError({
+      code: 40400, status: 404, message: 'Request failed with status code 404',
+    })).toBe('请求参数错误')
+  })
+
+  it('修复: 拦截器映射码 50000（HTTP 500）→ 服务器错误', () => {
+    expect(friendlyError({
+      code: 50000, status: 500, message: 'Request failed with status code 500',
+    })).toBe('服务器错误，请稍后重试')
+  })
+
+  it('修复: 带 status 的拦截器错误优先透传后端短文案', () => {
+    expect(friendlyError({
+      code: 40000, status: 400, message: '该日期快照已存在，请先删除',
+    })).toBe('该日期快照已存在，请先删除')
+    // Spring 默认英文 error 文案无信息量，不透传，走分类兜底
+    expect(friendlyError({
+      code: 50000, status: 500, message: 'Internal Server Error',
+    })).toBe('服务器错误，请稍后重试')
+  })
 })

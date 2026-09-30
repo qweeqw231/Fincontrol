@@ -8,6 +8,22 @@ import { ENDPOINTS } from '../api/endpoints.js'
 import { revokeAll, revokeOne } from '../utils/blob.js'
 import HistoryLimitDialog from '../components/data/HistoryLimitDialog.jsx'
 
+/** DedupEngine warning code → 中文短标签（与后端 DedupEngine 告警码对齐） */
+const DEDUP_WARNING_LABELS = {
+  CATEGORY_CONFLICT: '分类冲突',
+  DISCREPANCY: '金额偏差',
+  TOP_INCONSISTENT: '页首总额不一致',
+  DATA_INCOMPLETE: '不完整记录已忽略',
+  OVERWRITE_REQUIRED: '将覆盖已有快照',
+}
+
+/** 收益字段格式化：null/undefined 显示 —，0 值正常显示 ¥0.00 */
+function formatProfit(v) {
+  if (v === null || v === undefined || v === '') return '—'
+  const n = Number(v)
+  return Number.isFinite(n) ? `¥${n.toFixed(2)}` : '—'
+}
+
 /**
  * 1b.3 数据管理页
  * <p>功能：
@@ -76,6 +92,8 @@ export default function DataPage() {
   const [error, setError] = useState(null)
   const [parsedAsset, setParsedAsset] = useState(null)
   const [parseInfo, setParseInfo] = useState(null)
+  // DedupEngine 报告（CATEGORY_CONFLICT / DISCREPANCY / TOP_INCONSISTENT / DATA_INCOMPLETE 等告警）
+  const [dedupReport, setDedupReport] = useState(null)
 
   // 1b.3.9 快照管理列表
   const [metaList, setMetaList] = useState([])
@@ -146,6 +164,7 @@ export default function DataPage() {
   // 3) 确定时调 setSnapshotDate + setShowConfirmModal 保持预览，AI 解析结果不变（只改提交时的日期）
   const [confirmingDateEdit, setConfirmingDateEdit] = useState(false)
   const [editingDate, setEditingDate] = useState(false)
+  const [dateEditError, setDateEditError] = useState('')
   const [editYear, setEditYear] = useState(new Date().getFullYear())
   const [editMonth, setEditMonth] = useState(new Date().getMonth() + 1)
   const [editDay, setEditDay] = useState(new Date().getDate())
@@ -157,25 +176,34 @@ export default function DataPage() {
       setEditMonth(parseInt(parts[1], 10))
       setEditDay(parseInt(parts[2], 10))
     }
+    setDateEditError('')
     setConfirmingDateEdit(true)  // 先弹确认
   }
   function confirmDateEdit() {
     // 确认 → 进入日期选择
     setConfirmingDateEdit(false)
+    setDateEditError('')
     setEditingDate(true)
   }
   function cancelDateEdit() {
     // 取消（无论在确认态还是编辑态）
     setConfirmingDateEdit(false)
     setEditingDate(false)
+    setDateEditError('')
   }
   function applyDateEdit() {
-    // 确定 → 应用新日期到 snapshotDate
+    // 确定 → 校验日期合法后应用新日期到 snapshotDate
+    const maxDay = new Date(editYear, editMonth, 0).getDate()
+    if (!Number.isInteger(editDay) || editDay < 1 || editDay > maxDay) {
+      setDateEditError(`${editYear} 年 ${editMonth} 月只有 ${maxDay} 天，请重新选择日期`)
+      return
+    }
     const yyyy = String(editYear).padStart(4, '0')
     const mm = String(editMonth).padStart(2, '0')
     const dd = String(editDay).padStart(2, '0')
     setSnapshotDate(`${yyyy}-${mm}-${dd}`)
     setEditingDate(false)
+    setDateEditError('')
   }
   // PR4a DATA-012：editingDate/editYear/editMonth/editDay 编辑状态机已删除（日期移到 header 副标题）
   // PR6 恢复：editingDate + editYear/Month/Day 状态机在 2-step 弹窗内使用（点击日期 → 确认弹窗 → 日期选择器）
@@ -225,6 +253,7 @@ export default function DataPage() {
     setStep('idle')
     setError(null)
     setParsedAsset(null)
+    setDedupReport(null)
     setConfirmSuccess(false)  // PR3+ BUG-001：上传新图时重置 success banner
   }
 
@@ -289,6 +318,7 @@ export default function DataPage() {
         { headers: { 'X-User-Id': '1' } }
       )
       setParsedAsset(parseResp.parsedAsset)
+      setDedupReport(parseResp.dedupReport || null)
       setParseInfo({
         imageCount: parseResp.imageCount,
         fundCount: parseResp.parsedAsset?.categories?.reduce((s, c) => s + (c.funds?.length || 0), 0) || 0,
@@ -327,12 +357,20 @@ export default function DataPage() {
       const overrides = {}
       const reConfirms = {}
       for (const item of matchResp.matchedFunds || []) {
-        overrides[item.fundName] = {
-          category: item.category,
-          source: item.source,
-          confirmedAt: item.confirmedAt,
-          lastSeenSnapshotDate: item.lastSeenSnapshotDate,
+        // 关键：只有用户明确确认过的映射（user_correct / user_manual）才能作为 override。
+        // ai_guess 是 AI 历史猜测，绝不能套用：
+        //  1) 否则本次 AI 已修正的分类会被旧猜测劫持（dropdown 显示旧错类）；
+        //  2) 行状态会误显"✅ 已确认"、入库阻塞计数失效（口径与后端
+        //     SnapshotQueryService.loadUserCorrectOverrides 保持一致）。
+        if (item.source === 'user_correct' || item.source === 'user_manual') {
+          overrides[item.fundName] = {
+            category: item.category,
+            source: item.source,
+            confirmedAt: item.confirmedAt,
+            lastSeenSnapshotDate: item.lastSeenSnapshotDate,
+          }
         }
+        // D7 消失-重现状态与 source 无关，任何有锚点记录的基金都要提示
         if (item.firstMissingSnapshotDate) {
           reConfirms[item.fundName] = {
             firstMissingSnapshotDate: item.firstMissingSnapshotDate,
@@ -350,12 +388,6 @@ export default function DataPage() {
   }
 
   // 决策 33 v2 · 派生计算
-  function getEffectiveCategory(fundName, originalCategory) {
-    // 优先级: overrides (已 user_correct) > dirty (草稿) > original (AI 原猜)
-    if (categoryOverrides[fundName]) return categoryOverrides[fundName].category
-    if (categoryDirty[fundName]) return categoryDirty[fundName]
-    return originalCategory
-  }
   const pendingCount = useMemo(() => {
     if (!parsedSummary) return 0
     let n = 0
@@ -370,11 +402,11 @@ export default function DataPage() {
 
   // 1b4pr6b Fix B：各类小计实时联动（derivedCategories）
   // 输入: parsedAsset (原始 AI 解析) + categoryOverrides (已确认) + categoryDirty (草稿)
-  // 逻辑: 按 effective category (override > dirty > AI 原猜) 重新分桶到 8 个 canonical 类别
+  // 逻辑: 按 effective category (override > dirty > AI 原猜) 重新分桶到 7 个 canonical 类别
   // 效果: dropdown 改 1 个 fund → 小计表实时刷新 + 批量确认 → 小计一次刷新多行
   const derivedCategories = useMemo(() => {
     if (!parsedAsset) return []
-    // 1. 初始化 8 个空桶（7 canonical + 余额类）
+    // 1. 初始化 7 个 canonical 空桶（FUND_CATEGORIES 含余额类）
     const buckets = new Map()
     for (const cat of FUND_CATEGORIES) {
       buckets.set(cat, { categoryName: cat, categoryTotal: 0, fundCount: 0, funds: [] })
@@ -393,9 +425,27 @@ export default function DataPage() {
         }
       }
     }
-    // 3. 返回非空桶（包含全部 8 类，即使 fundCount=0 也保留，让表格显示“空”行）
-    return FUND_CATEGORIES.map((c) => buckets.get(c)).filter((b) => b.fundCount > 0 || c === '余额类' || buckets.get(c).categoryTotal > 0 || true)
+    // 3. 始终返回 7 个 canonical 桶（含空桶），让小计表稳定显示 7 行
+    return FUND_CATEGORIES.map((c) => buckets.get(c))
   }, [parsedAsset, categoryOverrides, categoryDirty])
+
+  // 概览卡实时合计：与各类小计表、基金明细表同口径（override/dirty 实时联动），
+  // 不再使用 openConfirmModal 时冻结的 parsedSummary（否则顶部卡片与小计表数字打架）
+  const derivedTotals = useMemo(() => {
+    let six = 0
+    let balance = 0
+    let count = 0
+    for (const c of derivedCategories) {
+      const total = Number(c.categoryTotal || 0)
+      if (c.categoryName === '余额类') {
+        balance += total
+      } else {
+        six += total
+      }
+      count += c.fundCount || 0
+    }
+    return { six, balance, total: six + balance, count }
+  }, [derivedCategories])
 
   // 决策 33 v2 · API 调用
   async function confirmOverride(fundName, category) {
@@ -430,7 +480,10 @@ export default function DataPage() {
         console.warn('[PR9-Bug4] bumpRefresh failed:', e)
       }
     } catch (e) {
+      // 保留页面错误提示，同时 rethrow 让批量/全部提交的调用方能感知失败
+      // （否则部分基金确认失败也会被当成全部成功，弹窗照关、入库照走）
       setError(friendlyError(e))
+      throw e
     } finally {
       setOverridesSaving((s) => ({ ...s, [fundName]: false }))
     }
@@ -450,6 +503,19 @@ export default function DataPage() {
       setOverridesSaving((s) => ({ ...s, [fundName]: false }))
     }
   }
+  // 统一关闭预览弹窗：丢弃未提交草稿、退出批量模式、收起子弹窗，
+  // 避免关闭后再次打开时 dropdown 仍显示旧草稿 / checkbox 残留勾选
+  function closeConfirmModal() {
+    setShowConfirmModal(false)
+    setCategoryDirty({})
+    setBatchMode(false)
+    setSelectedFunds(new Set())
+    setBatchCategory('固收类')
+    setShowBatchConfirmModal(false)
+    setBatchToast(null)
+    setCategoryConfirmIntent(null)
+    setShowSubmitDirtyModal(false)
+  }
   function handleConfirm() {
     if (dirtyCount > 0) {
       setShowSubmitDirtyModal(true)
@@ -458,9 +524,14 @@ export default function DataPage() {
     doConfirm()
   }
   async function submitAllDirty() {
-    // 逐行调 update
-    for (const [fundName, cat] of Object.entries(categoryDirty)) {
-      await confirmOverride(fundName, cat)
+    // 逐行调 update；任意一条失败立即停止，不继续入库
+    try {
+      for (const [fundName, cat] of Object.entries(categoryDirty)) {
+        await confirmOverride(fundName, cat)
+      }
+    } catch (e) {
+      setError(friendlyError(e))
+      return
     }
     doConfirm()
   }
@@ -552,6 +623,7 @@ export default function DataPage() {
       setFiles([])
       setFilePreviews([])
       setParsedAsset(null)
+      setDedupReport(null)
       // 1b.4-pr7 (DATA-016) Fix 7：关键——在 setParseInfo(null) 之前抢救 fundCount 到局部变量。
       // 原因：Fix 6 试过 setLastSuccessFundCount(parseInfo?.fundCount ?? 0)，但 React 18 batched
       // 只保护 render 不被打断，setState 函数体读其他 state 是当前值——上一行 setParseInfo(null)
@@ -582,7 +654,7 @@ export default function DataPage() {
       // 原因：用户上传错日期时也会被强制改 current，违反"未确认就不切 current"的设计。
       setSetCurrentPrompt({ date: snapshotDateForPrompt, fundCount })
     } catch (confirmErr) {
-      // PR3+ BUG-005：错误 message 优先取后端业务 message（e.response.data.message），其次 axios 默认
+      // PR3+ BUG-005：错误 message 优先取后端业务 message，其次拦截器归一化后的 message
       const msg = confirmErr?.response?.data?.message
         || confirmErr?.response?.data?.msg
         || confirmErr?.message
@@ -591,8 +663,9 @@ export default function DataPage() {
       setError(`入库失败: ${msg}`)
       setStep('error')
       setConfirmSuccess(false)
-      // PR3+hotfix BUG-006：失败路径也关闭 modal（按钮已先关，但保险），并清理 parseInfo
-      setShowConfirmModal(false)
+      // PR3+hotfix BUG-006：失败路径也关闭 modal 并清理弹窗状态；
+      // parsedAsset 保留以便用户修正后重试（重新打开预览会重拉 match）
+      closeConfirmModal()
       setParsedSummary(null)
       setParseInfo(null)
       // 1b.4-pr7 Fix 3 保险：失败路径不弹 prompt
@@ -930,8 +1003,8 @@ export default function DataPage() {
 
       {/* 1b.3.10 确认入库弹窗（解析数据预览） */}
       {showConfirmModal && parsedSummary && parsedSummary.fundCount != null && (
-        <div className="modal-backdrop show-confirm-modal" onClick={() => setShowConfirmModal(false)}>
-          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-backdrop show-confirm-modal" onClick={closeConfirmModal}>
+          <div className="modal modal--wide" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 920 }}>
             {/* 1b.4 PR4a · DATA-012：快照日期移到 modal-header 副标题（PR6 增强：点击修改） */}
             <div className="modal-header">
               <h2>
@@ -948,7 +1021,7 @@ export default function DataPage() {
                   {snapshotDate} <span className="modal-date-edit-hint">✎</span>
                 </span>
               </h2>
-              <button className="modal-close" onClick={() => setShowConfirmModal(false)} aria-label="关闭">×</button>
+              <button className="modal-close" onClick={closeConfirmModal} aria-label="关闭">×</button>
             </div>
 
             {/* PR6：点击日期 → 确认弹窗（"需要修改吗？"）→ 点击确认才出现 3 select 滚轮 */}
@@ -980,16 +1053,28 @@ export default function DataPage() {
                     <select
                       className="date-edit-select"
                       value={editYear}
-                      onChange={(e) => setEditYear(parseInt(e.target.value, 10))}
+                      onChange={(e) => {
+                        const y = parseInt(e.target.value, 10)
+                        setEditYear(y)
+                        // 切换年份后钳制日（2 月闰年 28/29 天）
+                        const maxDay = new Date(y, editMonth, 0).getDate()
+                        if (editDay > maxDay) setEditDay(maxDay)
+                      }}
                     >
-                      {Array.from({ length: 5 }, (_, i) => 2023 + i).map((y) => (
+                      {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 3 + i).map((y) => (
                         <option key={y} value={y}>{y} 年</option>
                       ))}
                     </select>
                     <select
                       className="date-edit-select"
                       value={editMonth}
-                      onChange={(e) => setEditMonth(parseInt(e.target.value, 10))}
+                      onChange={(e) => {
+                        const m = parseInt(e.target.value, 10)
+                        setEditMonth(m)
+                        // 切换月份后钳制日（如 31 号切到 2/4/6/9/11 月）
+                        const maxDay = new Date(editYear, m, 0).getDate()
+                        if (editDay > maxDay) setEditDay(maxDay)
+                      }}
                     >
                       {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                         <option key={m} value={m}>{m} 月</option>
@@ -1000,11 +1085,14 @@ export default function DataPage() {
                       value={editDay}
                       onChange={(e) => setEditDay(parseInt(e.target.value, 10))}
                     >
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                      {Array.from({ length: new Date(editYear, editMonth, 0).getDate() }, (_, i) => i + 1).map((d) => (
                         <option key={d} value={d}>{d} 日</option>
                       ))}
                     </select>
                   </div>
+                  {dateEditError && (
+                    <div className="date-edit-error" role="alert">{dateEditError}</div>
+                  )}
                   <div className="modal-confirm-actions">
                     <button className="secondary-btn" onClick={cancelDateEdit}>取消</button>
                     <button className="primary-btn" onClick={applyDateEdit}>确定</button>
@@ -1013,23 +1101,37 @@ export default function DataPage() {
               </div>
             )}
             <div className="modal-body">
-              {/* 概览卡片（PR4a DATA-012：5 列 → 4 列） */}
+              {/* DedupEngine 告警：分类冲突 / 金额偏差 / 顶部总额不一致 / 不完整记录被忽略等 */}
+              {dedupReport?.warnings?.length > 0 && (
+                <div className="dedup-warnings" data-testid="dedup-warnings">
+                  <div className="dedup-warnings-title">
+                    ⚠ 解析告警（{dedupReport.warnings.length}）：去重前 {dedupReport.inputRecordCount} 条 → 去重后 {dedupReport.mergedRecordCount} 条
+                  </div>
+                  {dedupReport.warnings.map((w, i) => (
+                    <div key={`${w.code}-${i}`} className={`dedup-warning-item dedup-warning--${w.code}`}>
+                      <strong>[{DEDUP_WARNING_LABELS[w.code] || w.code}]</strong>
+                      {w.message}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* 概览卡片（数字全部来自 derivedTotals，与各类小计、明细表实时联动） */}
               <div className="overview-summary">
                 <div className="overview-card highlight">
                   <div className="label">总资产（含余额类）</div>
-                  <div className="value">¥{Number(parsedSummary.totalWithBalance).toFixed(2)}</div>
+                  <div className="value">¥{derivedTotals.total.toFixed(2)}</div>
                 </div>
                 <div className="overview-card">
                   <div className="label">六大类</div>
-                  <div className="value">¥{Number(parsedSummary.sixCategoriesTotal).toFixed(2)}</div>
+                  <div className="value">¥{derivedTotals.six.toFixed(2)}</div>
                 </div>
                 <div className="overview-card">
                   <div className="label">余额类</div>
-                  <div className="value">¥{Number(parsedSummary.balanceFundTotal).toFixed(2)}</div>
+                  <div className="value">¥{derivedTotals.balance.toFixed(2)}</div>
                 </div>
                 <div className="overview-card">
                   <div className="label">基金数</div>
-                  <div className="value">{parsedSummary.fundCount}</div>
+                  <div className="value">{derivedTotals.count}</div>
                 </div>
               </div>
 
@@ -1081,7 +1183,7 @@ export default function DataPage() {
                 style={{ marginTop: '16px' }}>
                 {/* 1b4pr6b 批量确认：顶部 toggle 按钮（不进入批量模式时也可见，作为进入入口） */}
                 <div className="batch-toolbar">
-                  <h3 style={{ margin: 0 }}>基金明细（{parsedSummary.fundCount} 只）</h3>
+                  <h3 style={{ margin: 0 }}>基金明细（{derivedTotals.count} 只）</h3>
                   <button
                     className={batchMode ? 'secondary-btn' : 'primary-btn'}
                     onClick={toggleBatchMode}
@@ -1118,15 +1220,17 @@ export default function DataPage() {
                   </div>
                 )}
 
-                {/* 1b4pr6b Fix C：表格 colgroup 条件渲染（5 列 vs 6 列与 th/td 数量一致） */}
+                {/* 1b4pr6b Fix C：表格 colgroup 条件渲染（批量模式多 1 列 checkbox） */}
                 <table className="data-table">
                   <colgroup>
                     {batchMode && <col style={{ width: '40px' }} />}
-                    <col style={{ width: 'auto' }} />
-                    <col style={{ width: '160px' }} />
-                    <col style={{ width: '100px' }} />
-                    <col style={{ width: '100px' }} />
-                    <col style={{ width: '120px' }} />
+                    <col style={{ width: 'auto', minWidth: '150px' }} />
+                    <col style={{ width: '150px' }} />
+                    <col style={{ width: '96px' }} />
+                    <col style={{ width: '96px' }} />
+                    <col style={{ width: '96px' }} />
+                    <col style={{ width: '88px' }} />
+                    <col style={{ width: '92px' }} />
                   </colgroup>
                   <thead>
                     <tr>
@@ -1134,25 +1238,31 @@ export default function DataPage() {
                       <th>基金名称</th>
                       <th>类别（dropdown）</th>
                       <th>金额（元）</th>
+                      <th>持有收益</th>
+                      <th>累计收益</th>
                       <th>状态</th>
                       <th>操作</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {parsedSummary.categories.flatMap((c) => (c.funds || []).map((f) => {
+                    {derivedCategories.flatMap((c) => (c.funds || []).map((f) => {
                       const override = categoryOverrides[f.fundName]
                       const dirty = categoryDirty[f.fundName]
-                      const dropdownVal = dirty || (override ? override.category : c.categoryName)
+                      // f.originalCategory = 本次 AI 原猜（derivedCategories 构造时注入）；
+                      // dropdown 显示优先级：未提交草稿 > 用户已确认 > 本次 AI 原猜
+                      const aiCategory = f.originalCategory || c.categoryName
+                      const dropdownVal = dirty || (override ? override.category : aiCategory)
+                      // 仅 user_correct / user_manual 才算已确认（match 的 ai_guess 不进 overrides）
                       const isOverridden = !!override
                       const isDirty = !!dirty
                       const saving = !!overridesSaving[f.fundName]
                       const reConfirm = pendingReConfirms[f.fundName]
-                      // Bug 2 fix：effectiveOriginal = override 优先，否则 AI 原猜 c.categoryName
-                      const effectiveOriginal = override ? override.category : c.categoryName
+                      // effectiveOriginal = override 优先，否则本次 AI 原猜
+                      const effectiveOriginal = override ? override.category : aiCategory
                       // 批量模式：checkbox 三态（白方/红对勾/灰禁）
                       const isBatchConfirmed = batchMode && override && override.category === batchCategory
                       return (
-                        <tr key={`${c.categoryName}-${f.fundName}`}
+                        <tr key={f.fundName}
                             className={isOverridden ? 'fund-row-verified' : 'fund-row-pending'}>
                           {batchMode && (
                             <td className="batch-checkbox-cell">
@@ -1178,22 +1288,23 @@ export default function DataPage() {
                               )}
                             </td>
                           )}
-                          <td>{f.fundName}</td>
                           <td>
+                            <div>{f.fundName}</div>
+                            {/* D7 消失-重现提示放在基金名列（宽列），不再撑爆类别下拉列 */}
                             {reConfirm && (
-                              <div className="modal-warning-banner re-confirm" style={{ marginBottom: 4 }}>
-                                ⚠ 上次确认 {reConfirm.lastSeenSnapshotDate}，可能于 {reConfirm.firstMissingSnapshotDate} 及之前清仓。本次确认后，日期会更新。
+                              <div className="re-confirm-hint" title="消失-重现提示">
+                                ⚠ 上次确认 {reConfirm.lastSeenSnapshotDate}，可能于 {reConfirm.firstMissingSnapshotDate} 及之前清仓
                               </div>
                             )}
+                          </td>
+                          <td>
                             <select
                               value={dropdownVal}
                               disabled={saving}
                               onChange={(e) => {
                                 const v = e.target.value
-                                // Bug 2 fix：比较 v 与 effectiveOriginal（不是 c.categoryName）
-                                // 原因：如果用户之前已 override=A股权益类，现在 dropdown 显示 A股权益类
-                                //   但 AI 原猜为商品类，c.categoryName 是商品类。
-                                //   旧逻辑会把"未改动"误判成"回到商品类"，删除 dirty 是错的。
+                                // 比较 v 与 effectiveOriginal（用户已确认值或本次 AI 原猜），
+                                // 选回原值即清草稿；选其他值记为未提交草稿
                                 if (v === effectiveOriginal) {
                                   setCategoryDirty((d) => { const n = { ...d }; delete n[f.fundName]; return n })
                                 } else {
@@ -1207,10 +1318,13 @@ export default function DataPage() {
                               ))}
                             </select>
                           </td>
-                          <td>¥{Number(f.amount || 0).toFixed(2)}</td>
+                          <td className="profit-cell">¥{Number(f.amount || 0).toFixed(2)}</td>
+                          <td className="profit-cell">{formatProfit(f.holdingProfit != null ? f.holdingProfit : f.profit)}</td>
+                          <td className="profit-cell">{formatProfit(f.cumulativeProfit)}</td>
                           <td>
                             {isOverridden ? (
-                              <span className="badge badge-verified" data-testid="status-verified">✅ 已确认</span>
+                              <span className="badge badge-verified" title={`source=${override.source}`}
+                                data-testid="status-verified">✅ 已确认</span>
                             ) : (
                               <span className="badge badge-guess" data-testid="status-guess">🤖 ai_guess</span>
                             )}
@@ -1245,7 +1359,7 @@ export default function DataPage() {
               </p>
             </div>
             <div className="modal-footer">
-              <button className="secondary-btn" onClick={() => setShowConfirmModal(false)}>取消</button>
+              <button className="secondary-btn" onClick={closeConfirmModal}>取消</button>
               {/* 决策 33 D1：严格阻塞（pendingCount > 0 时按钮 disabled）
                   + D2：dirtyCount > 0 弹二次确认 modal（handleConfirm 拦截） */}
               <button
@@ -1292,7 +1406,11 @@ export default function DataPage() {
                 onClick={async () => {
                   const intent = categoryConfirmIntent
                   setCategoryConfirmIntent(null)
-                  await confirmOverride(intent.fundName, intent.newCategory)
+                  try {
+                    await confirmOverride(intent.fundName, intent.newCategory)
+                  } catch {
+                    // confirmOverride 已设置 error banner，这里仅防止 unhandled rejection
+                  }
                 }}
                 data-testid="category-confirm-confirm"
               >确认修改</button>

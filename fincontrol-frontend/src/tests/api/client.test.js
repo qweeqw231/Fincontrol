@@ -38,4 +38,38 @@ describe('apiClient 拦截器', () => {
       raw: response.data,
     })
   })
+
+  it('响应拦截器：HTTP 4xx 时透传后端 body 与 status（修复错误文案丢失）', async () => {
+    const interceptor = apiClient.interceptors.response.handlers[0]
+    const axiosError = {
+      message: 'Request failed with status code 400',
+      response: {
+        status: 400,
+        data: { code: 40001, message: '该日期快照已存在，请先删除' },
+      },
+    }
+    await expect(
+      Promise.reject(interceptor.rejected(axiosError))
+    ).rejects.toMatchObject({
+      code: 40000,
+      status: 400,
+      message: '该日期快照已存在，请先删除',
+      response: axiosError.response,
+    })
+  })
+
+  it('响应拦截器：HTTP 5xx 无 body message 时回退 axios 默认文案', async () => {
+    const interceptor = apiClient.interceptors.response.handlers[0]
+    const axiosError = {
+      message: 'Request failed with status code 503',
+      response: { status: 503, data: {} },
+    }
+    await expect(
+      Promise.reject(interceptor.rejected(axiosError))
+    ).rejects.toMatchObject({
+      code: 50300,
+      status: 503,
+      message: 'Request failed with status code 503',
+    })
+  })
 })

@@ -137,8 +137,25 @@ export function friendlyError(err) {
   // 业务错误：{ code, message }
   if (typeof err.code === 'number') {
     if (err.code === 0) return '网络异常，请检查后端服务'
-    if (err.code >= 400 && err.code < 500) return '请求参数错误'
-    if (err.code >= 500) return '服务器错误，请稍后重试'
+
+    // 拦截器对 HTTP 错误使用 status * 100 的映射码（40000 / 50000…），
+    // 旧实现直接拿映射码与裸 HTTP 码比较，导致 4xx 全部落进 >=500 分支误报"服务器错误"。
+    // 同时兼容历史裸码（400/500）与业务码（1001 等）。
+    const httpStatus = err.code >= 1000 ? Math.floor(err.code / 100) : err.code
+
+    // 新拦截器 reject 的对象带 status：此时 err.message 已优先取后端 body 的业务文案，
+    // 安全的短文案直接透传（如"该日期快照已存在"）；axios 默认文案 / Spring 默认英文
+    // error 文案无信息量，继续走下面的分类兜底。
+    const msg = err.message
+    const axiosDefault = typeof msg === 'string' && /^Request failed with status code/.test(msg)
+    const springDefault = typeof msg === 'string' && /^(Bad Request|Unauthorized|Forbidden|Not Found|Internal Server Error|Service Unavailable|Gateway Timeout)$/.test(msg)
+    const safeShort = typeof msg === 'string' && msg.length < 80 && !msg.includes('\n')
+    if (typeof err.status === 'number' && err.status > 0 && safeShort && !axiosDefault && !springDefault) {
+      return msg
+    }
+
+    if (httpStatus >= 400 && httpStatus < 500) return '请求参数错误'
+    if (httpStatus >= 500) return '服务器错误，请稍后重试'
     if (err.message) return err.message
     return '请求失败'
   }

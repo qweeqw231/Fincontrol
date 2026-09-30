@@ -25,7 +25,7 @@ public class CategoryMaster {
     private String aliases;
 
     @TableField("is_active")
-    private Boolean active;
+    private Boolean isActive;
 
     @TableField("created_at")
     private LocalDateTime createdAt;

@@ -84,9 +84,13 @@ CREATE TABLE fund_category_map (
   source       VARCHAR(30)  NOT NULL DEFAULT 'user_manual' COMMENT '确认方式：ai_guess/ai_guess_confirmed/user_correct/user_manual/user_voided',
   confirmed_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '确认时间',
   last_seen_at DATETIME     NULL COMMENT '最近一次出现在截图中的时间（1a.8.8：stale 判定 + re-confirm 去弹窗）',
+  last_seen_snapshot_date DATE NULL COMMENT '决策33 D7(R5)：上次有该基金的 confirm snapshot_date；锚点=MAX(此字段)',
+  first_missing_snapshot_date DATE NULL COMMENT '决策33 D7(R5)：首次发现该基金缺失的 confirm snapshot_date；重现时清空',
   UNIQUE KEY uk_user_fund     (user_id, fund_name),
   INDEX idx_user_category     (user_id, category),
-  INDEX idx_user_last_seen    (user_id, last_seen_at)
+  INDEX idx_user_last_seen    (user_id, last_seen_at),
+  INDEX idx_user_last_seen_sd (user_id, last_seen_snapshot_date),
+  INDEX idx_user_first_missing (user_id, first_missing_snapshot_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金-大类映射表';
 
 -- ============================================
@@ -168,32 +172,122 @@ CREATE TABLE operation_log (
   INDEX idx_user_snapshot_date (user_id, snapshot_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作日志表（月度/季度校正流水）';
 
+-- 1a.10：七大类主数据（DB-driven 类别 + 别名）
+CREATE TABLE category_master (
+  id              BIGINT      PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  name_canonical  VARCHAR(50) NOT NULL COMMENT '标准类别名',
+  aliases         JSON        NOT NULL COMMENT '别名数组（JSON）',
+  is_active       BOOLEAN     NOT NULL DEFAULT TRUE COMMENT '是否启用',
+  created_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_category_master_canonical (name_canonical),
+  KEY idx_category_master_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='1a.10 七大类主数据';
+
+-- 决策 27：跨日期 is_current 快照元数据（per-date is_latest + current 切换）
+CREATE TABLE snapshot_meta (
+  id              BIGINT      PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  user_id         BIGINT      NOT NULL COMMENT '用户ID',
+  snapshot_date   DATE        NOT NULL COMMENT '快照日期',
+  is_latest       BOOLEAN     NOT NULL DEFAULT FALSE COMMENT 'per-date 标记（与 asset_raw.is_latest 语义一致）',
+  is_current      BOOLEAN     NOT NULL DEFAULT FALSE COMMENT '跨日期当前快照（每 user 最多 1 行 true）',
+  confirmed_at    DATETIME    NOT NULL COMMENT 'confirm 时戳',
+  created_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_user_date (user_id, snapshot_date),
+  KEY idx_user_current (user_id, is_current),
+  KEY idx_user_latest (user_id, is_latest)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='决策27：跨日期 is_current 快照元数据';
+
+-- 决策 31：全局配置表（单用户 MVP）
+CREATE TABLE settings (
+  user_id               BIGINT  NOT NULL COMMENT '用户ID（单用户默认1）',
+  max_snapshot_age_days INT     NOT NULL DEFAULT 7 COMMENT '历史限制天数；-1=不限制；7/14/30/180=限定天数',
+  created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='决策31：全局配置表';
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- ============================================
--- 1a.8 增量脚本：已建库兼容（chat_history 加 used_provider + fallback_triggered）
+-- 1a.8+ 增量脚本：已建库兼容（补字段/补索引，幂等）
 -- ============================================
--- 上面 CREATE TABLE 已含新字段；下面这段用于已存在 chat_history 表的库补字段
--- MySQL 8.0+ 支持 IF NOT EXISTS（ADD COLUMN IF NOT EXISTS）
-ALTER TABLE chat_history
-  ADD COLUMN IF NOT EXISTS used_provider VARCHAR(20) NULL COMMENT '1a.8：本响应实际使用的 provider',
-  ADD COLUMN IF NOT EXISTS fallback_triggered TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1a.8：本响应是否走了 fallback';
+-- 上面 CREATE TABLE 已含所有新字段；下面这段用于已存在旧表的库补字段。
+-- 注意：MySQL 不支持 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`（那是 MariaDB 语法），
+-- 统一用存储过程查 information_schema 实现"存在则跳过"。
+DELIMITER //
+DROP PROCEDURE IF EXISTS add_col_if_not_exists//
+CREATE PROCEDURE add_col_if_not_exists(
+  IN p_table      VARCHAR(64),
+  IN p_column     VARCHAR(64),
+  IN p_definition TEXT
+)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME   = p_table
+      AND COLUMN_NAME  = p_column
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE ', p_table, ' ADD COLUMN ', p_column, ' ', p_definition);
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END//
 
--- ============================================
--- 1a.8.8 增量脚本：已建库兼容（fund_category_map 加 last_seen_at）
--- ============================================
-ALTER TABLE fund_category_map
-  ADD COLUMN IF NOT EXISTS last_seen_at DATETIME NULL COMMENT '1a.8.8：最近一次出现在截图中的时间',
-  ADD INDEX IF NOT EXISTS idx_user_last_seen (user_id, last_seen_at);
+DROP PROCEDURE IF EXISTS add_idx_if_not_exists//
+CREATE PROCEDURE add_idx_if_not_exists(
+  IN p_table      VARCHAR(64),
+  IN p_index      VARCHAR(64),
+  IN p_definition TEXT
+)
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME   = p_table
+      AND INDEX_NAME   = p_index
+  ) THEN
+    SET @sql = CONCAT('ALTER TABLE ', p_table, ' ADD INDEX ', p_index, ' ', p_definition);
+    PREPARE stmt FROM @sql;
+    EXECUTE stmt;
+    DEALLOCATE PREPARE stmt;
+  END IF;
+END//
+DELIMITER ;
 
--- ============================================
--- 1a.9 增量脚本：已建库兼容（asset_raw + asset_snapshot 加 total_asset_source）
--- ============================================
-ALTER TABLE asset_raw
-  ADD COLUMN IF NOT EXISTS total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top' COMMENT '1a.9：该快照总额来源（top/visible_sum）';
+-- chat_history：1a.8 加 used_provider + fallback_triggered
+CALL add_col_if_not_exists('chat_history', 'used_provider',
+  'VARCHAR(20) NULL COMMENT ''1a.8：本响应实际使用的 provider''');
+CALL add_col_if_not_exists('chat_history', 'fallback_triggered',
+  'TINYINT(1) NOT NULL DEFAULT 0 COMMENT ''1a.8：本响应是否走了 fallback''');
 
-ALTER TABLE asset_snapshot
-  ADD COLUMN IF NOT EXISTS total_asset_source VARCHAR(20) NOT NULL DEFAULT 'top' COMMENT '1a.9：top=顶部总资产 / visible_sum=deduped fund 加总';
+-- fund_category_map：1a.8.8 加 last_seen_at + 索引
+CALL add_col_if_not_exists('fund_category_map', 'last_seen_at',
+  'DATETIME NULL COMMENT ''1a.8.8：最近一次出现在截图中的时间''');
+CALL add_idx_if_not_exists('fund_category_map', 'idx_user_last_seen',
+  '(user_id, last_seen_at)');
+
+-- fund_category_map：决策33 D7(R5) 加 last_seen_snapshot_date + first_missing_snapshot_date
+CALL add_col_if_not_exists('fund_category_map', 'last_seen_snapshot_date',
+  'DATE NULL COMMENT ''决策33 D7(R5)：上次有该基金的 confirm snapshot_date''');
+CALL add_col_if_not_exists('fund_category_map', 'first_missing_snapshot_date',
+  'DATE NULL COMMENT ''决策33 D7(R5)：首次发现该基金缺失的 confirm snapshot_date''');
+CALL add_idx_if_not_exists('fund_category_map', 'idx_user_last_seen_sd',
+  '(user_id, last_seen_snapshot_date)');
+CALL add_idx_if_not_exists('fund_category_map', 'idx_user_first_missing',
+  '(user_id, first_missing_snapshot_date)');
+
+-- asset_raw / asset_snapshot：1a.9 加 total_asset_source
+CALL add_col_if_not_exists('asset_raw', 'total_asset_source',
+  'VARCHAR(20) NOT NULL DEFAULT ''top'' COMMENT ''1a.9：该快照总额来源（top/visible_sum）''');
+CALL add_col_if_not_exists('asset_snapshot', 'total_asset_source',
+  'VARCHAR(20) NOT NULL DEFAULT ''top'' COMMENT ''1a.9：top=顶部总资产 / visible_sum=deduped fund 加总''');
+
+DROP PROCEDURE IF EXISTS add_col_if_not_exists;
+DROP PROCEDURE IF EXISTS add_idx_if_not_exists;
 
 -- ============================================
 -- 初始化数据：用户默认配置
@@ -224,11 +318,31 @@ INSERT INTO prompt_versions (prompt_name, prompt_content, version, change_reason
    '第三轮评审P0 3.1.1补充few-shot示例（7对正例 + 7对反例）')
 ON DUPLICATE KEY UPDATE prompt_content = VALUES(prompt_content), change_reason = VALUES(change_reason);
 
+-- 1a.10：category_master 七大类 canonical 种子（幂等）
+INSERT INTO category_master (name_canonical, aliases) VALUES
+  ('货币类',       JSON_ARRAY('货币', '货基', '货币基金')),
+  ('固收类',       JSON_ARRAY('固收', '债券', '债券类', '纯债', '短债', '固收+', '中短债')),
+  ('商品类',       JSON_ARRAY('商品', '黄金', '大宗商品', '黄金ETF')),
+  ('A股权益类',    JSON_ARRAY('A股', '股票', '股票类', 'A股权益', '股票指数', '中证', '宽基', '沪深300', '中证500', '中证1000')),
+  ('海外权益类',    JSON_ARRAY('海外权益', 'QDII', '海外股票', '海外QDII', '纳斯达克', '标普', '海外')),
+  ('港股大中华类',  JSON_ARRAY('港股', '大中华', '港股QDII', '恒生', '港股/大中华类', '港股/大中华')),
+  ('余额类',       JSON_ARRAY('余额', '余额宝'))
+ON DUPLICATE KEY UPDATE
+  aliases = VALUES(aliases),
+  is_active = TRUE,
+  updated_at = CURRENT_TIMESTAMP;
+
+-- 决策 31：settings 全局配置种子（单用户 MVP，默认 7 天历史限制）
+INSERT INTO settings (user_id, max_snapshot_age_days)
+VALUES (1, 7)
+ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP;
+
 -- ============================================
 -- Schema 初始化完成
 -- ============================================
 -- 执行验证：
 -- SELECT table_name, table_comment FROM information_schema.tables
 --   WHERE table_schema = DATABASE() ORDER BY table_name;
--- 应返回 7 张表。
+-- 应返回 10 张表（asset_raw / asset_snapshot / category_master / chat_history /
+--   fund_category_map / operation_log / prompt_versions / settings / snapshot_meta / user_config）。
 -- ============================================
