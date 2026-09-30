@@ -13,23 +13,20 @@
 ```
 docs/
 ├── phase-1/
-│   ├── work-plans/                                    ← 子阶段实施工作计划
+│   ├── work-plans/                                    ← 子阶段实施工作计划（1a / 1b 分目录）
 │   │   ├── README.md                                  ← 工作计划规范
-│   │   └── 2026-07-16_phase1a4-work-plan.md
+│   │   ├── 1a/                                        ← Phase 1a 各 PR 计划
+│   │   └── 1b/                                        ← Phase 1b 各 PR 计划
 │   └── checklists/
 │       ├── phase-1a.md                                ← Phase 1a 总体进度清单
 │       └── phase-1b.md                                ← Phase 1b 总体进度清单
 └── test-records/
-    ├── README.md                                      ← 本说明
+    ├── README.md                                      ← 本说明 + 手动测试记录索引
     ├── manual-tests/                                  ← ★ 人手写（验收计划 / 报告 / 手测记录）
-    │   ├── 2026-07-16_phase1a4-acceptance-plan.md
-    │   ├── 2026-07-16_phase1a3-supplemental-acceptance.md
-    │   └── ...
+    │   ├── 0/                                         ← Phase 0 验收
+    │   ├── 1a/                                        ← Phase 1a
+    │   └── 1b/                                        ← Phase 1b
     ├── automated-smoke/                               ← ★ 脚本写（自动化 smoke 输出）
-    │   ├── README.md
-    │   └── 1a7/                                      ← 按阶段分子目录
-    │       ├── 2026-07-17_phase1a7-smoke.log         ← smoke log（commit）
-    │       └── api-test-output/                      ← curl 响应（gitignored）
     └── screenshots/                                   ← UI 截图（asset，不是 log）
 ```
 
@@ -48,6 +45,84 @@ docs/
 | 手动测试 | `<日期>_<测试名>.md`（在 `manual-tests/` 下） | `2026-07-09_smoke-test.md` |
 | **自动化 smoke log** | `<日期>_<phase>-smoke.log`（在 `automated-smoke/<phase>/` 下）| `2026-07-17_phase1a7-smoke.log` |
 | **自动化 API 输出** | `api-test-output/<日期>_<api-name>.json`（在 `automated-smoke/<phase>/` 下，gitignored） | `api-test-output/2026-07-09_screenshot_parse.json` |
+
+---
+
+## 手动测试记录索引（2026-09-30 建档）
+
+> 全部历史记录**保留原地**，本索引仅用于导航（不改名、不合并、不归档）。同一专题通常「计划 + 报告」成对（先 acceptance-plan 后 acceptance-report）。
+>
+> 2026-09-30：删除 1 份重复文件 `2026-07-22_phase1b2-completion-report.md`（与 `2026-07-22_phase1b2-acceptance-report.md` MD5 完全相同的副本，内容未丢失）。
+
+### Phase 0（`manual-tests/0/`，1 份）
+
+| 日期 | 文件 | 类型 |
+|---|---|---|
+| 2026-07-09 | `0/2026-07-09_phase0-acceptance.md` | 验收 |
+
+### Phase 1a（`manual-tests/1a/`，28 份）
+
+| 日期 | 文件 | 类型 |
+|---|---|---|
+| 2026-07-20 | `1a/2026-07-20_phase1a10-cache-gray-test-acceptance.md` | 验收（缓存灰测）|
+| 2026-07-19 | `1a/2026-07-19_phase1a10-real-e2e.md` | 报告（真实 E2E）|
+| 2026-07-19 | `1a/2026-07-19_phase1a10-acceptance-plan.md` | 计划 |
+| 2026-07-19 | `1a/2026-07-19_phase1a9-real-e2e.md` | 报告（真实 E2E）|
+| 2026-07-19 | `1a/2026-07-19_phase1a-acceptance.md` | 验收（Phase 1a 整体）|
+| 2026-07-18 | `1a/2026-07-18_prompt-v2.6-upgrade-tutorial.md` | 教程（1a.9 prompt）|
+| 2026-07-18 | `1a/2026-07-18_prompt-v2.3-upgrade-tutorial.md` | 教程（prompt）|
+| 2026-07-18 | `1a/2026-07-18_phase1a8-vision-routing-results.md` | 报告（路由实测）|
+| 2026-07-18 | `1a/2026-07-18_phase1a8-v3_3-real-data-check.md` | 报告（真实数据复核）|
+| 2026-07-18 | `1a/2026-07-18_phase1a8-v3_2-real-data-check.md` | 报告 |
+| 2026-07-18 | `1a/2026-07-18_phase1a8-v3_2-acceptance-plan.md` | 计划 |
+| 2026-07-18 | `1a/2026-07-18_phase1a8-v3_1-real-data-check.md` | 报告 |
+| 2026-07-18 | `1a/2026-07-18_phase1a8-v2-real-data-check.md` | 报告 |
+| 2026-07-18 | `1a/2026-07-18_phase1a8-v2-acceptance-plan.md` | 计划 |
+| 2026-07-18 | `1a/2026-07-18_phase1a8-process-report.md` | 过程报告 |
+| 2026-07-18 | `1a/2026-07-18_phase1a8-acceptance-report.md` | 报告 |
+| 2026-07-18 | `1a/2026-07-18_phase1a8-acceptance-plan.md` | 计划 |
+| 2026-07-17 | `1a/2026-07-17_phase1a7-acceptance-report.md` | 报告 |
+| 2026-07-17 | `1a/2026-07-17_phase1a7-acceptance-plan.md` | 计划 |
+| 2026-07-17 | `1a/2026-07-17_phase1a6-acceptance-report.md` | 报告 |
+| 2026-07-17 | `1a/2026-07-17_phase1a6-acceptance-plan.md` | 计划 |
+| 2026-07-17 | `1a/2026-07-17_phase1a5-acceptance-report.md` | 报告 |
+| 2026-07-17 | `1a/2026-07-17_phase1a5-acceptance-plan.md` | 计划 |
+| 2026-07-17 | `1a/2026-07-17_phase1a4-acceptance-report.md` | 报告 |
+| 2026-07-16 | `1a/2026-07-16_phase1a4-acceptance-plan.md` | 计划 |
+| 2026-07-16 | `1a/2026-07-16_phase1a3-supplemental-acceptance.md` | 报告（补充）|
+| 2026-07-16 | `1a/2026-07-16_phase1a3-dedup-and-snapconfirm-acceptance.md` | 报告 |
+| 2026-07-16 | `1a/2026-07-16_phase1a-phase1a2-acceptance.md` | 验收 |
+
+### Phase 1b（`manual-tests/1b/`，24 份）
+
+| 日期 | 文件 | 类型 |
+|---|---|---|
+| 2026-07-25 | `1b/2026-07-25_1b4-pr9-acceptance-plan.md` | 计划 |
+| 2026-07-25 | `1b/2026-07-25_1b4-pr8-acceptance-report.md` | 报告 |
+| 2026-07-25 | `1b/2026-07-25_1b4-pr8-acceptance-plan.md` | 计划 |
+| 2026-07-25 | `1b/2026-07-25_1b4-pr7-acceptance-report.md` | 报告（Phase 1 收官）|
+| 2026-07-25 | `1b/2026-07-25_1b4-pr7-acceptance-plan.md` | 计划 |
+| 2026-07-25 | `1b/2026-07-25_1b4-pr6b-acceptance-report.md` | 报告 |
+| 2026-07-25 | `1b/2026-07-25_1b4-pr6b-acceptance-plan.md` | 计划 |
+| 2026-07-24 | `1b/2026-07-24_1b4-pr6a-acceptance-report.md` | 报告 |
+| 2026-07-24 | `1b/2026-07-24_1b4-pr6a-acceptance-plan.md` | 计划 |
+| 2026-07-24 | `1b/2026-07-24_1b4-pr4a-acceptance-report.md` | 报告 |
+| 2026-07-24 | `1b/2026-07-24_1b4-pr4a-acceptance-plan.md` | 计划 |
+| 2026-07-24 | `1b/2026-07-24_1b4-pr3plus-acceptance-plan.md` | 计划 |
+| 2026-07-24 | `1b/2026-07-24_1b4-pr2-acceptance-report.md` | 报告 |
+| 2026-07-24 | `1b/2026-07-24_1b4-pr1-acceptance-plan.md` | 计划 |
+| 2026-07-24 | `1b/2026-07-24_1b4-pr0-acceptance-plan.md` | 计划 |
+| 2026-07-22 | `1b/2026-07-22_phase1b3-runtime-verification.md` | 验证 |
+| 2026-07-22 | `1b/2026-07-22_phase1b3-remediation-acceptance-plan.md` | 计划（补救）|
+| 2026-07-22 | `1b/2026-07-22_phase1b3-comprehensive-acceptance-report.md` | 报告（综合）|
+| 2026-07-22 | `1b/2026-07-22_phase1b3-acceptance-report.md` | 报告 |
+| 2026-07-22 | `1b/2026-07-22_phase1b3-acceptance-plan.md` | 计划 |
+| 2026-07-22 | `1b/2026-07-22_phase1b2-acceptance-report.md` | 报告 |
+| 2026-07-22 | `1b/2026-07-22_phase1b2-acceptance-plan.md` | 计划 |
+| 2026-07-21 | `1b/2026-07-21_phase1b1-acceptance-report.md` | 报告 |
+| 2026-07-21 | `1b/2026-07-21_phase1b1-acceptance-plan.md` | 计划 |
+
+> 注：1b.2 的「计划 → 报告」闭环见 `2026-07-22_phase1b2-acceptance-plan.md` + `2026-07-22_phase1b2-acceptance-report.md`（被 1b.2 work-plan §292 引用）。
 
 ---
 

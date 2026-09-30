@@ -23,6 +23,7 @@ scripts/
 │       ├── README.md
 │       └── *.bat
 ├── import-data/        # 外部数据导入（决策 36 配套；Phase 3 可视化数据源）
+├── check-decision-refs.cjs  # 文档防腐：校验全仓「决策 N」引用是否均已登记主表
 └── git/                # Git 工具（绕过 cmd.exe 路径含空格的限制）
     └── commit-and-push.sh
 ```
