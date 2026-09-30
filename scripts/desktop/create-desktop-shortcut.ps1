@@ -1,6 +1,11 @@
-# 1b.4 PR8 / Decision 35: Create desktop shortcut FinControl.lnk
+# Decision 35 / 36: Create desktop shortcuts (launch + stop)
 # Pure-ASCII only (PowerShell 5.1 compatibility, no Chinese chars in source)
-# Idempotent: existing shortcut will be skipped
+# Idempotent: existing shortcuts are overwritten with the current target/icon
+#
+# Decision 36 (2026-09-30): now creates TWO shortcuts, because the single-process
+# runtime makes "open" and "close" symmetric one-click actions:
+#   FinControl.lnk        -> launch-fincontrol.ps1  (MySQL check + backend, opens 8080)
+#   FinControl Stop.lnk   -> stop-fincontrol.ps1    (graceful backend shutdown)
 
 $ErrorActionPreference = 'Stop'
 
@@ -8,18 +13,21 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 
 $DesktopPath = [Environment]::GetFolderPath('Desktop')
-$lnkPath = Join-Path $DesktopPath 'FinControl.lnk'
 $logoPath = Join-Path $ProjectRoot 'fincontrol-frontend\public\brand\logo.png'
-$targetScript = Join-Path $ProjectRoot 'scripts\desktop\launch-fincontrol.ps1'
+$launchScript = Join-Path $ProjectRoot 'scripts\desktop\launch-fincontrol.ps1'
+$stopScript = Join-Path $ProjectRoot 'scripts\desktop\stop-fincontrol.ps1'
+$PowerShellExe = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
 
 if (-not (Test-Path -LiteralPath $logoPath)) {
     Write-Host "[create-shortcut] ERROR: logo.png not found at $logoPath" -ForegroundColor Red
     Write-Host "[create-shortcut] Please run Step 0 first to copy brand assets" -ForegroundColor Yellow
     exit 1
 }
-if (-not (Test-Path -LiteralPath $targetScript)) {
-    Write-Host "[create-shortcut] ERROR: launch-fincontrol.ps1 not found at $targetScript" -ForegroundColor Red
-    exit 1
+foreach ($s in @($launchScript, $stopScript)) {
+    if (-not (Test-Path -LiteralPath $s)) {
+        Write-Host "[create-shortcut] ERROR: script not found at $s" -ForegroundColor Red
+        exit 1
+    }
 }
 
 # Convert logo.png -> logo.ico if needed (Windows IconLocation requires .ico)
@@ -86,35 +94,51 @@ public static class IcoHelper {
     Write-Host "[create-shortcut] logo.ico is up to date, reusing existing file" -ForegroundColor Gray
 }
 
-if (Test-Path -LiteralPath $lnkPath) {
-    Write-Host "[create-shortcut] Desktop FinControl.lnk already exists; skipping" -ForegroundColor Cyan
-    Write-Host "[create-shortcut]   Path: $lnkPath" -ForegroundColor Gray
-    Write-Host "[create-shortcut]   Delete it manually if you want to re-create" -ForegroundColor Gray
-    exit 0
-}
-
-Write-Host "[create-shortcut] Creating desktop shortcut..." -ForegroundColor Cyan
-Write-Host "[create-shortcut]   Desktop path: $lnkPath" -ForegroundColor Gray
-Write-Host "[create-shortcut]   Target script: $targetScript" -ForegroundColor Gray
+Write-Host "[create-shortcut] Creating/overwriting desktop shortcuts..." -ForegroundColor Cyan
+Write-Host "[create-shortcut]   Desktop path: $DesktopPath" -ForegroundColor Gray
 Write-Host "[create-shortcut]   Icon: $iconPath" -ForegroundColor Gray
+
+$targets = @(
+    @{
+        Lnk         = Join-Path $DesktopPath 'FinControl.lnk'
+        Script      = $launchScript
+        Description = 'FinControl - launch (MySQL check + backend; opens http://localhost:8080/)'
+    },
+    @{
+        Lnk         = Join-Path $DesktopPath 'FinControl Stop.lnk'
+        Script      = $stopScript
+        Description = 'FinControl - stop (graceful backend shutdown; MySQL80 is left running)'
+    }
+)
 
 try {
     $WshShell = New-Object -ComObject WScript.Shell
-    $Shortcut = $WshShell.CreateShortcut($lnkPath)
-    $Shortcut.TargetPath = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
-    $Shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$targetScript`""
-    $Shortcut.WorkingDirectory = $ProjectRoot
-    $Shortcut.IconLocation = $iconPath
-    $Shortcut.Description = 'FinControl - Personal Asset Allocation Control (click to launch)'
-    $Shortcut.WindowStyle = 7
-    $Shortcut.Save()
+    foreach ($t in $targets) {
+        $Shortcut = $WshShell.CreateShortcut($t.Lnk)
+        $Shortcut.TargetPath = $PowerShellExe
+        $Shortcut.Arguments = "-ExecutionPolicy Bypass -File `"$($t.Script)`""
+        $Shortcut.WorkingDirectory = $ProjectRoot
+        $Shortcut.IconLocation = $iconPath
+        $Shortcut.Description = $t.Description
+        $Shortcut.WindowStyle = 7
+        $Shortcut.Save()
+        Write-Host "[create-shortcut] OK $(Split-Path -Leaf $t.Lnk)" -ForegroundColor Green
+        Write-Host "[create-shortcut]    -> $($t.Script)" -ForegroundColor Gray
+    }
 
-    Write-Host "[create-shortcut] OK Desktop shortcut created" -ForegroundColor Green
     Write-Host ""
     Write-Host "You can now:" -ForegroundColor Cyan
-    Write-Host "  1. Double-click FinControl.lnk on your desktop to launch the system" -ForegroundColor White
-    Write-Host "  2. Browser will auto-open http://localhost:5173/" -ForegroundColor White
-    Write-Host "  3. After uploading snapshots, click the top-right shutdown button to stop services" -ForegroundColor White
+    Write-Host "  1. Double-click 'FinControl.lnk' to launch (browser opens http://localhost:8080/)" -ForegroundColor White
+    Write-Host "  2. Use the page (frontend + backend share ONE port 8080)" -ForegroundColor White
+    Write-Host "  3. Click the top-right shutdown button, or double-click 'FinControl Stop.lnk'" -ForegroundColor White
+    Write-Host ""
+    Write-Host "Notes:" -ForegroundColor Cyan
+    Write-Host "  - MySQL80 is a Windows auto-start service; neither shortcut starts/stops it" -ForegroundColor Gray
+    Write-Host "    (toggling a service needs admin rights and would raise a UAC prompt every time)" -ForegroundColor Gray
+    Write-Host "  - Frontend code changed? Rebuild once, then relaunch:" -ForegroundColor Gray
+    Write-Host "      cd fincontrol-frontend; npm run build" -ForegroundColor Gray
+    Write-Host "    (or run launch-fincontrol.ps1 -ForceRebuild)" -ForegroundColor Gray
+    Write-Host "  - Frontend dev mode still works: cd fincontrol-frontend; npm run dev" -ForegroundColor Gray
     Write-Host ""
 } catch {
     Write-Host "[create-shortcut] ERROR: $($_.Exception.Message)" -ForegroundColor Red

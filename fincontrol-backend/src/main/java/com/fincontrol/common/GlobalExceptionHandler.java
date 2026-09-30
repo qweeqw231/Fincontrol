@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * 全局异常处理：业务异常 → 携带 errorCode 的 ApiResponse；
@@ -74,6 +75,15 @@ public class GlobalExceptionHandler {
         log.warn("JSON parse error {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(ApiResponse.error(3001, "视觉模型 API 返回非 JSON：" + ex.getMessage()));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponse<Object>> handleNoResource(NoResourceFoundException ex) {
+        // 决策 36：后端托管前端静态资源后，未命中的静态路径/接口会抛本异常。
+        // 若不单独处理，会被下方 handleAny(Exception) 兜成 500，把「路径写错」伪装成「服务故障」。
+        log.warn("NoResourceFound: {}", ex.getResourcePath());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(ApiResponse.error(2001, "资源不存在: " + ex.getResourcePath()));
     }
 
     @ExceptionHandler(Exception.class)

@@ -46,6 +46,16 @@ spring:
       file-size-threshold: 2MB
 
   # ============================
+  # 静态资源（决策 36：托管前端 dist）
+  # ============================
+  # 引用 fincontrol.frontend.static-locations，保持单一来源。
+  # 必须让 Spring 自身静态位置包含 dist：根路径 / 依赖其 welcome-page 机制
+  # （PathResourceResolver 收到空 resourcePath 时直接返回 null，不会回调自定义 resolver）。
+  web:
+    resources:
+      static-locations: ${fincontrol.frontend.static-locations}
+
+  # ============================
   # Jackson 时区
   # ============================
   jackson:
@@ -100,6 +110,17 @@ management:
 # ============================================
 fincontrol:
   default-user-id: 1
+
+  # 决策 36：单进程运行形态 —— 由后端直接托管前端 build 产物（dist）
+  # 「开」= MySQL(常驻) + 本服务；「关」= 首页按钮 → POST /api/system/shutdown
+  # 前端开发仍可用 npm run dev 走 5173 + Vite proxy，两种模式互不影响。
+  frontend:
+    # 逗号分隔的 Spring 资源位置。启动脚本会传入绝对路径（与工作目录无关）；
+    # 默认值适用于「工作目录 = 仓库根」时手动 java -jar。
+    # 注意：本值同时被下面 spring.web.resources.static-locations 引用 ——
+    # 必须让 Spring 自身的静态位置包含 dist，根路径 / 才会命中其 welcome-page 机制
+    # （PathResourceResolver 不处理根路径，只在 WebMvcConfig 的 resolver 里兜底是不够的）。
+    static-locations: ${FINCONTROL_FRONTEND_STATIC:classpath:/static/,file:./fincontrol-frontend/dist/}
 
   cors:
     allowed-origins:
