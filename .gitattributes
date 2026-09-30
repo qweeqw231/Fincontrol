@@ -1,0 +1,34 @@
+# ============================================
+# 行尾策略（2026-09-30 新增）
+# ============================================
+# 背景：本机 core.autocrlf=true 来自 Git for Windows 的系统级默认配置
+# （C:/Program Files/Git/etc/gitconfig），而仓库 blob 为 LF。
+# 仓库此前没有 .gitattributes，导致行尾行为依赖每台机器的 Git 安装选项：
+# 同样的工作区文件在不同机器上会被判定为"已修改"或"未修改"。
+#
+# 本文件把行尾策略固化到仓库，使其与机器配置无关。
+# 注意：text 属性只影响检出/提交时的转换，仓库内 blob 统一为 LF（不产生历史噪声）。
+
+# ---------- shell 脚本必须为 LF ----------
+# 若被检出为 CRLF，shebang 会变成 "#!/bin/bash\r"，
+# 用 ./xxx.sh 执行会报 "bad interpreter: No such file or directory"
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# ---------- Windows 原生脚本为 CRLF ----------
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# ---------- 二进制：禁止任何行尾转换 ----------
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.xlsx  binary
+*.jar   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
