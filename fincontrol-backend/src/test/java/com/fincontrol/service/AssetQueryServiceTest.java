@@ -99,7 +99,7 @@ class AssetQueryServiceTest {
     }
 
     @Test
-    @DisplayName("1b.3 R2 解析历史：fundCount=0 + status=imported + parseError → 基金数未知 + 错误")
+    @DisplayName("1b.3 R2 解析历史：fundCount=0 + status=imported → 基金数未知（imported 不显示 parseError）")
     void operationsRecent_fundCount_zero_with_error() {
         ParseLogItem item = new ParseLogItem();
         item.setLogId(2L);
@@ -109,13 +109,16 @@ class AssetQueryServiceTest {
         item.setParseError("无法从模型响应中恢复结构：no JSON");
         when(parseLogQueryService.listLatest(USER_ID, 5)).thenReturn(List.of(item));
 
+        // 2026-10-05 修复：生产逻辑（AssetQueryService#getRecentOperations）对
+        // status!="parse_failed/parse_unknown" 一律按 fundCount 分流 → "基金数未知"；
+        // parseError 仅在 parse_failed/parse_unknown 分支拼进 summary。
         OperationsRecentResponse resp = service.getRecentOperations(USER_ID, 5);
         assertThat(resp.getItems().get(0).getSummary())
-                .isEqualTo("解析失败：无法从模型响应中恢复结构：no JSON");
+                .isEqualTo("基金数未知");
     }
 
     @Test
-    @DisplayName("1b.3 R2 解析历史：parse_failed → 截图解析失败")
+    @DisplayName("1b.3 R2 解析历史：parse_failed + 无 parseError → 截图解析失败（结构不可恢复）")
     void operationsRecent_parseFailed() {
         ParseLogItem item = new ParseLogItem();
         item.setLogId(3L);
@@ -125,7 +128,8 @@ class AssetQueryServiceTest {
         when(parseLogQueryService.listLatest(USER_ID, 5)).thenReturn(List.of(item));
 
         OperationsRecentResponse resp = service.getRecentOperations(USER_ID, 5);
-        assertThat(resp.getItems().get(0).getSummary()).isEqualTo("截图解析失败");
+        // 2026-10-05 修复：parse_failed 且 parseError 为空 → P5-2a 增强文案
+        assertThat(resp.getItems().get(0).getSummary()).isEqualTo("截图解析失败（结构不可恢复）");
     }
 
     @Test

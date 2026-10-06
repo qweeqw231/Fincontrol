@@ -100,3 +100,22 @@ CREATE TABLE IF NOT EXISTS snapshot_meta (
 CREATE UNIQUE INDEX IF NOT EXISTS uk_snap_meta_user_date ON snapshot_meta(user_id, snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_snap_meta_user_current ON snapshot_meta(user_id, is_current);
 CREATE INDEX IF NOT EXISTS idx_snap_meta_user_latest ON snapshot_meta(user_id, is_latest);
+
+-- 2026-10-05 修复：PR3plus 决策 30/31 引入 settings 表（SnapShotConfirmService 历史限制校验会读），
+-- H2 schema 未同步导致 SnapShotConfirmRealFourPageH2Test 报 "Table settings not found"。
+-- 与 db-schema.sql 同构（PK=user_id）；空表时 SettingsService 兜底默认 7 天。
+CREATE TABLE IF NOT EXISTS settings (
+    user_id BIGINT NOT NULL PRIMARY KEY,
+    max_snapshot_age_days INT NOT NULL DEFAULT 7,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2026-10-05 修复（对齐生产库 SHOW CREATE TABLE）：fund_category_map 决策33 D7 新增两列，
+-- H2 schema 未同步导致 upsertByFundName 报 "Column last_seen_snapshot_date not found"。
+ALTER TABLE fund_category_map ADD COLUMN IF NOT EXISTS last_seen_snapshot_date DATE NULL;
+ALTER TABLE fund_category_map ADD COLUMN IF NOT EXISTS first_missing_snapshot_date DATE NULL;
+CREATE INDEX IF NOT EXISTS idx_map_user_last_seen_sd
+    ON fund_category_map(user_id, last_seen_snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_map_user_first_missing
+    ON fund_category_map(user_id, first_missing_snapshot_date);

@@ -92,6 +92,13 @@ class SnapshotControllerTest {
     @MockBean
     private com.fincontrol.mapper.CategoryMasterMapper categoryMasterMapper;
 
+    // 2026-10-05 修复：Phase 1b.x 新增 mapper 补齐（@MapperScan 仍会创建全部 mapper，缺一即炸 context）
+    @MockBean private com.fincontrol.mapper.SnapshotMetaMapper snapshotMetaMapper;
+    @MockBean private com.fincontrol.mapper.SettingsMapper settingsMapper;
+    @MockBean private com.fincontrol.mapper.NavHistoryMapper navHistoryMapper;
+    @MockBean private com.fincontrol.mapper.OperationLogMapper operationLogMapper;
+    @MockBean private com.fincontrol.mapper.NavMilestoneMapper navMilestoneMapper;
+
     private SnapshotLatestResponse latestFixture() {
         return SnapshotLatestResponse.builder()
                 .snapshotDate(LocalDate.of(2026, 7, 16))

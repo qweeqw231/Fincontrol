@@ -300,7 +300,7 @@ class DedupEngineTest {
         existing.add("摩根纳指A");
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                List.of(singleFundAsset("img1", "2026-07-16", "权益类", "天弘纳指A", "100.00", "5.00")),
+                List.of(singleFundAsset("img1", "2026-07-16", "A股权益类", "天弘纳指A", "100.00", "5.00")),
                 existing,
                 Map.of(),
                 LocalDate.of(2026, 7, 16),
@@ -320,7 +320,7 @@ class DedupEngineTest {
         existing.add("天弘纳指A");
 
         DedupResult result = new DedupEngine().deduplicate(new DedupInput(
-                List.of(singleFundAsset("img1", "2026-07-16", "权益类", "天弘纳指A", "100.00", "5.00")),
+                List.of(singleFundAsset("img1", "2026-07-16", "A股权益类", "天弘纳指A", "100.00", "5.00")),
                 existing,
                 Map.of(),
                 LocalDate.of(2026, 7, 16),
@@ -351,18 +351,18 @@ class DedupEngineTest {
         img1.setConversationId("img1");
         img1.setSnapshotDate("2026-07-16");
         List<CategoryBlock> img1Cats = new ArrayList<>();
-        img1Cats.add(fund("权益类", "天弘纳指A", "600.00", "30.00"));
+        img1Cats.add(fund("A股权益类", "天弘纳指A", "600.00", "30.00"));
         img1Cats.add(fund("余额类", "余额宝", "100.00", "1.00"));
         img1.setCategories(img1Cats);
         input.add(img1);
         // img2
-        input.add(singleFundAsset("img2", "2026-07-16", "权益类", "摩根纳指A", "400.00", "20.00"));
+        input.add(singleFundAsset("img2", "2026-07-16", "A股权益类", "摩根纳指A", "400.00", "20.00"));
         // img3（重复 fileId=img1，A 维度去重）
         ParsedAsset img3 = new ParsedAsset();
         img3.setConversationId("img1");
         img3.setSnapshotDate("2026-07-16");
         List<CategoryBlock> img3Cats = new ArrayList<>();
-        img3Cats.add(fund("权益类", "天弘纳指A", "700.00", "40.00"));  // 后入优先
+        img3Cats.add(fund("A股权益类", "天弘纳指A", "700.00", "40.00"));  // 后入优先
         img3.setCategories(img3Cats);
         input.add(img3);
 
@@ -376,7 +376,7 @@ class DedupEngineTest {
 
         // A 维度：img1 和 img3 同 fileId → img3 整张替换 img1（img1 的余额宝 100 随之丢失）→ drop 1
         // C 维度：img3 的天弘纳指A 700 + img2 的摩根纳指A 400 → 2 个 fund
-        // D 维度：权益类 1100；余额类 0（img1 被 img3 整张替换，余额宝 100 丢失）
+        // D 维度：A股权益类 1100；余额类 0（img1 被 img3 整张替换，余额宝 100 丢失）
         // E 维度：confirmedOverwrite=true → 0 warning
         assertThat(result.report().inputRecordCount()).isEqualTo(4);
         assertThat(result.report().mergedRecordCount()).isEqualTo(2);
@@ -472,10 +472,10 @@ class DedupEngineTest {
         // 报警：4 页顶部不一致
         assertThat(result.report().warnings())
                 .anyMatch(w -> "TOP_INCONSISTENT".equals(w.code()));
-        // fallback 到 deduped sum (4 只 unique fund = 7884.68 + 2987.32 + 3000 + 2000 = 15872)
-        // tops[0]=7884.68, deduped=15872 → 偏差 101% > 1% → DISCREPANCY
+        // 2026-10-05 修复：top 不一致时已 fallback 到 visible_sum，不再用 tops.get(0) 误报 DISCREPANCY
         assertThat(result.report().warnings())
-                .anyMatch(w -> "DISCREPANCY".equals(w.code()));
+                .noneMatch(w -> "DISCREPANCY".equals(w.code()));
+        assertThat(result.merged().getTotalAssetSource()).isEqualTo("visible_sum");
     }
 
     @Test
@@ -565,6 +565,71 @@ class DedupEngineTest {
         assertThat(warning.context().get("diffPct"))
                 .isEqualTo(new BigDecimal("4.00"));
         assertThat(warning.message()).contains("3%阈值");
+    }
+
+    // ========================================================================
+    // 2026-10-05 修复：0 金额占位行容错 + 非 7 大类类别告警
+    // ========================================================================
+
+    @Test
+    @DisplayName("2026-10-05 · 后入 0 金额占位行（截断行）不覆盖已有非零记录")
+    void dedup_zeroAmountLaterPlaceholder_keepsNonZeroExisting() {
+        // 复现真实事故：图1 读到完整明细（390.98）；图2 该基金被截断，AI 用 0.00 占位。
+        // 旧"后入优先"→ 0.00 覆盖 390.98（安信新价值事故）；新行为：跳过占位行 + ZERO_AMOUNT_SKIPPED。
+        List<ParsedAsset> input = new ArrayList<>();
+        input.add(singleFundAsset("img1", "2026-10-05", "固收类",
+                "安信新价值灵活配置混合A", "390.98", "0.98"));
+        input.add(singleFundAsset("img2", "2026-10-05", "固收类",
+                "安信新价值灵活配置混合A", "0.00", "0.00"));
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                input, new HashSet<>(), Map.of(), LocalDate.of(2026, 10, 5), false));
+
+        boolean kept = result.merged().getCategories().stream()
+                .flatMap(c -> c.getFunds().stream())
+                .anyMatch(f -> "安信新价值灵活配置混合A".equals(f.getFundName())
+                        && new BigDecimal("390.98").compareTo(f.getAmount()) == 0);
+        assertThat(kept).as("后入 0 金额占位行不得覆盖 390.98").isTrue();
+        assertThat(result.report().warnings())
+                .anyMatch(w -> "ZERO_AMOUNT_SKIPPED".equals(w.code())
+                        && "skipped_later_zero".equals(w.context().get("direction")));
+    }
+
+    @Test
+    @DisplayName("2026-10-05 · 首入 0 金额占位行被后入非零记录替换")
+    void dedup_zeroAmountFirstPlaceholder_replacedByLaterNonZero() {
+        List<ParsedAsset> input = new ArrayList<>();
+        input.add(singleFundAsset("img1", "2026-10-05", "固收类",
+                "安信新价值灵活配置混合A", "0.00", "0.00"));
+        input.add(singleFundAsset("img2", "2026-10-05", "固收类",
+                "安信新价值灵活配置混合A", "390.98", "0.98"));
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                input, new HashSet<>(), Map.of(), LocalDate.of(2026, 10, 5), false));
+
+        boolean kept = result.merged().getCategories().stream()
+                .flatMap(c -> c.getFunds().stream())
+                .anyMatch(f -> "安信新价值灵活配置混合A".equals(f.getFundName())
+                        && new BigDecimal("390.98").compareTo(f.getAmount()) == 0);
+        assertThat(kept).as("首入 0 金额占位行应被后入非零记录替换").isTrue();
+        assertThat(result.report().warnings())
+                .anyMatch(w -> "ZERO_AMOUNT_SKIPPED".equals(w.code())
+                        && "replaced_zero_first".equals(w.context().get("direction")));
+    }
+
+    @Test
+    @DisplayName("2026-10-05 · 非 7 大类类别（旧 prompt 残留）→ SUSPECT_CATEGORY warning")
+    void dedup_suspectCategory_emitsWarning() {
+        // 旧 v1.0 口径「权益类」不是现行 7 大类 canonical → 提示人工复核
+        List<ParsedAsset> input = List.of(
+                singleFundAsset("img1", "2026-10-05", "权益类", "某幻觉基金", "100.00", "1.00"));
+
+        DedupResult result = new DedupEngine().deduplicate(new DedupInput(
+                input, new HashSet<>(), Map.of(), LocalDate.of(2026, 10, 5), false));
+
+        assertThat(result.report().warnings())
+                .anyMatch(w -> "SUSPECT_CATEGORY".equals(w.code())
+                        && "权益类".equals(w.context().get("categoryName")));
     }
 
     @Test

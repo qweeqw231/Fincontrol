@@ -128,7 +128,7 @@ class ParseLogQueryTest {
     }
 
     @Test
-    @DisplayName("R2-T5: 成功但无可恢复结构 → status=imported + parseError")
+    @DisplayName("R2-T5: 成功但无可恢复结构 → status=parse_unknown + parseError（P5-2a 不冒充 imported）")
     void successWithoutStructure() {
         String content = "模型只输出了纯文本没有 JSON。";
         when(chatHistoryMapper.selectAssistantByType(1L,
@@ -136,7 +136,9 @@ class ParseLogQueryTest {
                 .thenReturn(List.of(buildRow(5L, "conv-5", content)));
 
         ParseLogItem item = service.listLatest(1L, 1).get(0);
-        assertThat(item.getStatus()).isEqualTo("imported");
+        // 2026-10-05 修复：生产 ParseLogQueryService 有意将"无结构"标为 parse_unknown
+        // （P5-2a：不冒充 imported），断言按实际行为校准。
+        assertThat(item.getStatus()).isEqualTo("parse_unknown");
         assertThat(item.getFundCount()).isEqualTo(0);
         assertThat(item.getParseError()).contains("无法从模型响应中恢复结构");
     }

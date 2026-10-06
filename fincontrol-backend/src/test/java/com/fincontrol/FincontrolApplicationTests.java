@@ -56,6 +56,16 @@ class FincontrolApplicationTests {
     @MockBean
     private JdbcTemplate jdbcTemplate;
 
+    // 2026-10-05 修复：Phase 1b.x 新增 mapper 补齐（排除 MyBatis 自动配置后，
+    // @MapperScan 仍会创建全部 mapper，缺一即炸 context —— 原失败链 assetRawQueryMapper）。
+    @MockBean private com.fincontrol.mapper.UserConfigMapper userConfigMapper;
+    @MockBean private com.fincontrol.mapper.SnapshotMetaMapper snapshotMetaMapper;
+    @MockBean private com.fincontrol.mapper.SettingsMapper settingsMapper;
+    @MockBean private com.fincontrol.mapper.AssetRawQueryMapper assetRawQueryMapper;
+    @MockBean private com.fincontrol.mapper.NavHistoryMapper navHistoryMapper;
+    @MockBean private com.fincontrol.mapper.OperationLogMapper operationLogMapper;
+    @MockBean private com.fincontrol.mapper.NavMilestoneMapper navMilestoneMapper;
+
     @Test
     void contextLoadsWithoutDatabase() {
         // Phase 1a.1 / 1a.2 DoD：Spring 容器可装配 + 持有所有 mock 的持久化依赖占位

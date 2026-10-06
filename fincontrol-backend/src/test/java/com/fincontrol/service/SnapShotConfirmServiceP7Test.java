@@ -88,8 +88,10 @@ class SnapShotConfirmServiceP7Test {
                 .thenReturn(new BigDecimal("100.00"));
         when(assetSnapshotMapper.countLatestByUserAndDateAndCategory(anyLong(), any(LocalDate.class), any()))
                 .thenReturn(1);
-        // PR3plus 决策 30/31：默认 7 天限制（testDate 7/22 < 7/24 不会超）
-        when(settingsService.getMaxSnapshotAgeDays(anyLong())).thenReturn(7);
+        // 2026-10-05 修复时间炸弹：本测试类验证的是 writeFundCategoryMap / 幂等 upsert 行为，
+        // 不验证历史限制策略（那是 SettingsService 的职责）→ 统一 mock 为 -1（不限制）。
+        // 修复前 mock 7 天 + 固定 fixture 日期 2026-07-22，系统时间推移到超过 7 天后 9 个用例全部失败。
+        when(settingsService.getMaxSnapshotAgeDays(anyLong())).thenReturn(-1);
     }
 
     // ========================================================================

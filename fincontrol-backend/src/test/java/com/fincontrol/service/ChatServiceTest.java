@@ -8,6 +8,7 @@ import com.fincontrol.dto.chat.ChatSendRequest;
 import com.fincontrol.dto.chat.ChatSendResponse;
 import com.fincontrol.entity.ChatHistory;
 import com.fincontrol.mapper.ChatHistoryMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,9 +19,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -40,11 +45,20 @@ class ChatServiceTest {
     @Mock private IntentClassifier intentClassifier;
     @Mock private AiRouter aiRouter; // 1a.8 替换原 TextAiClient
     @Mock private PromptLoaderService promptLoader;
+    @Mock private KnowledgeBaseService knowledgeBase; // 1b.x RAG 新增依赖（ChatService.java:124 投资分支会调用）
 
     @InjectMocks private ChatService service;
 
     private static final Long USER_ID = 1L;
     private static final String AI_PROMPT = "你是 FinControl AI 顾问...";
+
+    @BeforeEach
+    void stubKnowledgeBaseEmptyContext() {
+        // 2026-10-05 修复：RAG 知识库默认返回空上下文，避免投资分支调用未 stub 的 mock 抛 NPE
+        // （修复前本类 5 个用例全挂在 ChatService.java:124；LENIENT 模式下未用 stub 不报错）。
+        when(knowledgeBase.retrieve(anyString(), anyInt())).thenReturn(List.of());
+        when(knowledgeBase.formatContext(anyList())).thenReturn("");
+    }
 
     private void stubChatSuccess(String content) {
         when(aiRouter.callChat(any(), anyString()))
