@@ -1,6 +1,7 @@
 package com.fincontrol.service;
 
 import com.fincontrol.common.BusinessException;
+import com.fincontrol.common.CategoryEnum;
 import com.fincontrol.common.ErrorCode;
 import com.fincontrol.dto.screenshot.ParsedAsset;
 import com.fincontrol.dto.screenshot.ParsedAsset.CategoryBlock;
@@ -141,6 +142,9 @@ public class DedupEngine {
         //                                (a, b) -> a.amount() >= b.amount() ? a : b));
         List<ParsedAsset> dedupedHash = dedupedFileId;
 
+        // 2026-10-05 容错：非 7 大类类别告警去重集合（同一 conversationId + 类别只报一次）
+        Set<String> suspectSeenCategories = new HashSet<>();
+
         // 维度 C + D：按 fund_name + snapshot_date 合并（同名完整记录后入优先；按 category 累加）
         // 1a.8.7：holding_profit / cumulative_profit 双字段同名合并也取后入；跨页只有标题的行
         // （holding 与 cumulative 同时为 null）不能覆盖另一页的完整记录。
@@ -150,6 +154,24 @@ public class DedupEngine {
             for (CategoryBlock cat : a.getCategories()) {
                 if (cat == null || cat.getFunds() == null) continue;
                 String categoryName = trimToNull(cat.getCategoryName());
+                // 2026-10-05 容错：AI 返回无法识别（非 7 大类 canonical 且别名表也未注册）的类别
+                // （旧 prompt 残留如"权益类/另类资产/保障类"，或幻觉）→ SUSPECT_CATEGORY 提示
+                // 该分类下基金需人工复核。"其他" 是 mapToParsedAsset 对缺失类别的刻意兜底；
+                // 空分类块（旧 prompt 模板残留）不告警。
+                if (categoryName != null && CategoryEnum.fromAlias(categoryName) == null
+                        && !"其他".equals(categoryName) && !cat.getFunds().isEmpty()) {
+                    String suspectKey = a.getConversationId() + "|" + categoryName;
+                    if (suspectSeenCategories.add(suspectKey)) {
+                        Map<String, Object> ctx = new LinkedHashMap<>();
+                        ctx.put("conversationId", a.getConversationId());
+                        ctx.put("categoryName", categoryName);
+                        ctx.put("fundCount", cat.getFunds().size());
+                        warnings.add(new DedupWarning("SUSPECT_CATEGORY",
+                                "类别 '" + categoryName + "' 不是系统 7 大类之一，该分类下 "
+                                        + cat.getFunds().size() + " 只基金需人工复核（疑似旧版 prompt 或 AI 幻觉）",
+                                ctx));
+                    }
+                }
                 for (FundLine fund : cat.getFunds()) {
                     if (fund == null) continue;
                     String key = trimToNull(fund.getFundName());
@@ -178,6 +200,31 @@ public class DedupEngine {
                         mergedFunds.put(key, new MergedFund(
                                 key, categoryName, fund.getAmount(), holding, cumulative,
                                 Boolean.TRUE.equals(fund.getIsUserConfirmed()), fund.getConfirmedAt()));
+                    } else if (fund.getAmount().signum() == 0 && existing.amount.signum() > 0) {
+                        // 2026-10-05 修复：后入 0 金额占位行不覆盖已有非零记录。
+                        // 真实事故：图1 读到完整明细（安信新价值 390.98），图2 该行被截断、
+                        // AI 用 0.00 占位 → 旧"后入优先"把 390.98 覆盖成 0.00。
+                        log.warn("dedup ZERO_AMOUNT_SKIPPED: fund='{}' 后入记录 amount=0（category='{}'），"
+                                        + "保留已有非零记录 {}（category='{}'）",
+                                key, categoryName, existing.amount, existing.categoryName);
+                        addZeroAmountWarning(warnings, key, existing.categoryName, existing.amount,
+                                "skipped_later_zero");
+                    } else if (existing.amount.signum() == 0 && fund.getAmount().signum() > 0) {
+                        // 2026-10-05 修复：首入是 0 金额占位行（截断行被 AI 补 0）→ 采纳后入非零记录
+                        // （category + 金额/收益一起覆盖；占位行的 category 同样不可信）
+                        String zeroCategory = existing.categoryName;
+                        log.info("dedup ZERO_AMOUNT_REPLACED: fund='{}' 首入 amount=0（category='{}'），"
+                                        + "采纳后入非零记录 category='{}' amount={}",
+                                key, zeroCategory, categoryName, fund.getAmount());
+                        existing.categoryName = categoryName;
+                        existing.amount = fund.getAmount();
+                        existing.profit = holding;
+                        existing.holdingProfit = holding;
+                        existing.cumulativeProfit = cumulative;
+                        existing.userConfirmed = Boolean.TRUE.equals(fund.getIsUserConfirmed());
+                        existing.confirmedAt = fund.getConfirmedAt();
+                        addZeroAmountWarning(warnings, key, categoryName, fund.getAmount(),
+                                "replaced_zero_first");
                     } else if (!Objects.equals(existing.categoryName, categoryName)) {
                         // 1b.4-pr3plus 决策 32：维度 D 冲突 → 优先采纳 user_correct 的 category。
                         // 1) fund_category_map.source='user_correct' 有该 fund → 以 user_correct 为准
@@ -313,7 +360,9 @@ public class DedupEngine {
         merged.setTotalAssetSource(totalSource);
 
         // 校验：top vs dedupedSum 偏差超过可配置阈值 → DISCREPANCY warning（不阻塞）
-        if (!tops.isEmpty()) {
+        // 2026-10-05 修复：仅 totalSource=top 时校验 —— top 不一致时已发 TOP_INCONSISTENT 并
+        // fallback 到 visible_sum，再用 tops.get(0) 对比会产生误导性双重告警
+        if (!tops.isEmpty() && "top".equals(totalSource)) {
             BigDecimal refTop = tops.get(0);
             BigDecimal diff = refTop.subtract(dedupedSum).abs();
             BigDecimal diffRatio = refTop.compareTo(BigDecimal.ZERO) == 0
@@ -450,6 +499,31 @@ public class DedupEngine {
                     + "' 与已有 '" + keptCategory + "'），保留首次并跳过";
         }
         warnings.add(new DedupWarning("CATEGORY_CONFLICT", message, context));
+    }
+
+    /**
+     * 2026-10-05：0 金额占位行容错 warning helper（两个方向共用）。
+     * <ul>
+     *   <li>{@code direction="skipped_later_zero"}：后入 0 金额占位行被跳过，保留已有非零记录</li>
+     *   <li>{@code direction="replaced_zero_first"}：首入 0 金额占位行被后入非零记录替换</li>
+     * </ul>
+     */
+    private static void addZeroAmountWarning(List<DedupWarning> warnings,
+                                             String fundName,
+                                             String keptCategory,
+                                             BigDecimal keptAmount,
+                                             String direction) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("fundName", fundName);
+        context.put("keptCategory", keptCategory);
+        context.put("keptAmount", keptAmount);
+        context.put("direction", direction);
+        String message = "skipped_later_zero".equals(direction)
+                ? "fund '" + fundName + "' 后入记录 amount=0（截断行占位），保留已有非零记录 "
+                        + keptAmount + "（category='" + keptCategory + "'）"
+                : "fund '" + fundName + "' 首入记录 amount=0（截断行占位），已采纳后入非零记录 "
+                        + keptAmount + "（category='" + keptCategory + "'）";
+        warnings.add(new DedupWarning("ZERO_AMOUNT_SKIPPED", message, context));
     }
 
     private static List<String> missingFields(String categoryName, FundLine fund) {

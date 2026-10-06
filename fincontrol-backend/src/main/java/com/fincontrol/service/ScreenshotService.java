@@ -265,23 +265,27 @@ public class ScreenshotService {
                     "single 模式解析全部失败，无可用结果");
         }
 
-        // 单图 dedup：合并所有 ParsedAsset 的 categories，按 fundName 去重
-        ParsedAsset merged = mergeSingleModeAssets(assets, req.getDataTime());
-
-        // OCR 写盘（单图模式合并 1 个日志）
+        // 2026-10-05 修复：不再预合并（各图属同一账户同一时点，total_asset 相加必然翻倍：
+        // 10501.05 + 3955.97 + ... → 26057.75 事故根因；且预合并会把"截断行 0 金额占位"
+        // 排在完整记录之后，配合旧"后入优先"把 390.98 覆盖成 0.00）。
+        // 直接把 N 个单图 ParsedAsset 交给 DedupEngine 统一处理：
+        //   - 维度 C/D：fundName 去重 + 类别冲突（kept_first / user_correct 语义不变）
+        //   - 1a.9 双轨 total：N 页 top 一致 → top；不一致 → visible_sum + TOP_INCONSISTENT
         String mergedConvId = "conv-batch-single-" + UUID.randomUUID();
-        merged.setConversationId(mergedConvId);
 
-        writeOcrLog("batch-single-" + mergedConvId, "minimax", false,
-                "single-mode-merged-" + imageCount + "-files", merged, null);
-
-        // DedupEngine 内部去重（1b.4-pr3plus 决策 32：传空 user_correct map，parse 阶段无 user_correct 上下文）
-        LocalDate dedupDate = parseDateOrToday(merged.getSnapshotDate());
+        LocalDate dedupDate = parseDateOrToday(req.getDataTime() != null
+                ? req.getDataTime().toString()
+                : assets.get(0).getSnapshotDate());
+        // 1b.4-pr3plus 决策 32：parse 阶段无 user_correct 上下文，传空 map
         DedupEngine.DedupResult dedup = dedupEngine.deduplicate(new DedupEngine.DedupInput(
-                List.of(merged), Set.of(), Map.of(), dedupDate, true));
+                assets, Set.of(), Map.of(), dedupDate, true));
         ParsedAsset dedupMerged = dedup.merged();
         dedupMerged.setConversationId(mergedConvId);
-        dedupMerged.setSnapshotDate(merged.getSnapshotDate());
+        dedupMerged.setSnapshotDate(dedupDate.toString());
+
+        // OCR 写盘（单图模式合并 1 个日志：记录去重后的最终结果）
+        writeOcrLog("batch-single-" + mergedConvId, "minimax", false,
+                "single-mode-dedup-merged-" + imageCount + "-files", dedupMerged, null);
 
         return ScreenshotBatchParseResponse.builder()
                 .parsedAsset(dedupMerged)
@@ -291,52 +295,6 @@ public class ScreenshotService {
                 .cacheHit(false)
                 .imageCount(imageCount)
                 .build();
-    }
-
-    /** single 模式：把 4 张 ParsedAsset 合并成 1 个（不主动去重，交给 DedupEngine 在 confirm 时做）。
-     * <p>决策 9 1a.10 DedupEngine 本身有完整 dedup（fundName + category 镜像），不重造轮子。
-     */
-    private ParsedAsset mergeSingleModeAssets(List<ParsedAsset> assets, LocalDate overrideDate) {
-        ParsedAsset merged = new ParsedAsset();
-        merged.setSnapshotDate(overrideDate != null ? overrideDate.toString() : assets.get(0).getSnapshotDate());
-
-        Map<String, ParsedAsset.CategoryBlock> blockMap = new LinkedHashMap<>();
-        List<String> matchedFunds = new ArrayList<>();
-        BigDecimal total = BigDecimal.ZERO;
-
-        for (ParsedAsset a : assets) {
-            if (a.getTotalAsset() != null) total = total.add(a.getTotalAsset());
-            if (a.getCategories() != null) {
-                for (ParsedAsset.CategoryBlock src : a.getCategories()) {
-                    ParsedAsset.CategoryBlock dst = blockMap.computeIfAbsent(
-                            src.getCategoryName(),
-                            k -> {
-                                ParsedAsset.CategoryBlock b = new ParsedAsset.CategoryBlock();
-                                b.setCategoryName(k);
-                                b.setTargetRatio(src.getTargetRatio());
-                                b.setFunds(new ArrayList<>());
-                                return b;
-                            });
-                    if (dst.getTargetRatio() == null) dst.setTargetRatio(src.getTargetRatio());
-                    if (dst.getCategoryTotal() == null) dst.setCategoryTotal(src.getCategoryTotal());
-                    if (src.getFunds() != null) {
-                        dst.getFunds().addAll(src.getFunds());
-                        for (ParsedAsset.FundLine fl : src.getFunds()) {
-                            if (fl.getFundName() != null) matchedFunds.add(fl.getFundName());
-                        }
-                    }
-                }
-            }
-        }
-        merged.setTotalAsset(total);
-        List<ParsedAsset.CategoryBlock> mergedBlocks = new ArrayList<>(blockMap.values());
-        for (ParsedAsset.CategoryBlock b : mergedBlocks) {
-            b.setFundCount(b.getFunds() == null ? 0 : b.getFunds().size());
-        }
-        merged.setCategories(mergedBlocks);
-        merged.setMatchedFunds(matchedFunds);
-        merged.setUnmatchedFunds(Collections.emptyList());
-        return merged;
     }
 
     private static void sleep(long ms) {

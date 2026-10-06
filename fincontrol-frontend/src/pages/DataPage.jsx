@@ -15,6 +15,8 @@ const DEDUP_WARNING_LABELS = {
   TOP_INCONSISTENT: '页首总额不一致',
   DATA_INCOMPLETE: '不完整记录已忽略',
   OVERWRITE_REQUIRED: '将覆盖已有快照',
+  ZERO_AMOUNT_SKIPPED: '零金额占位行',
+  SUSPECT_CATEGORY: '可疑分类',
 }
 
 /** 收益字段格式化：null/undefined 显示 —，0 值正常显示 ¥0.00 */
@@ -312,10 +314,12 @@ export default function DataPage() {
         throw new Error('upload 部分失败: ' + fileIds.length + '/4');
       }
       setStep('parsing')
+      // 2026-10-05 修复：single 模式串行解析 N 图（每图最长 2×300s），全局 120s 必超时 →
+      // 本请求放宽到 10min，避免前端先断、用户重试叠加成 20+ 分钟等待
       const parseResp = await apiClient.post(
         `${ENDPOINTS.SCREENSHOT_PARSE_BATCH}?mode=${mode}`,
         { userId: 1, fileIds, dataTime: snapshotDate },
-        { headers: { 'X-User-Id': '1' } }
+        { headers: { 'X-User-Id': '1' }, timeout: 600000 }
       )
       setParsedAsset(parseResp.parsedAsset)
       setDedupReport(parseResp.dedupReport || null)

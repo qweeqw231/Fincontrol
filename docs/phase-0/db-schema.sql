@@ -36,7 +36,7 @@ CREATE TABLE asset_raw (
   -- 1a.8.7 拆分：profit 与 holding_profit 同步写（兼容期），cumulative_profit 单独存。
   -- 1a.8.8 v3.2 修订：余额类（余额宝等）截图不显示 holding 列 → holding_profit 允许 NULL；
   --                 余额类（活期存款等）截图也不显示 cumulative → cumulative_profit 允许 NULL
-  profit           DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '持有收益（元），保留兼容；新代码优先读 holding_profit',
+  profit           DECIMAL(12,2)          NULL COMMENT '持有收益（元），保留兼容；与 holding_profit 同步：余额类允许 NULL（1a.10 P2）',
   holding_profit   DECIMAL(12,2)          NULL COMMENT '持有收益（元），严格=截图「持有收益」列（不含当日浮盈）；余额类允许 NULL',
   cumulative_profit DECIMAL(12,2)         NULL COMMENT '累计收益（元），含已实现盈亏（卖出后分母更新）；其他余额类允许 NULL',
   source        VARCHAR(30)  NOT NULL COMMENT '数据来源：screenshot_manual/screenshot_folder/manual_input/re_parse/manual_edit/import_csv/system_seed/data_correction',
@@ -258,6 +258,15 @@ BEGIN
 END//
 DELIMITER ;
 
+-- ============================================
+-- 2026-10-05：asset_raw.profit 允许 NULL（1a.10 P2）
+-- ============================================
+-- 事故：仅执行本文件的重装库缺少 00-mysql-migration.sql 中同一 MODIFY →
+-- 余额类（holding=NULL 时 profit 同步 NULL）写入撞 "Column 'profit' cannot be null"，
+-- confirm 整事务回滚（前端报 DataIntegrityViolationException）。
+-- MODIFY 幂等：列已是 NULL 时重复执行结果不变。
+ALTER TABLE asset_raw MODIFY COLUMN profit DECIMAL(12,2) NULL COMMENT '1a.8.7 兼容列，与 holding_profit 同步；余额类允许 NULL';
+
 -- chat_history：1a.8 加 used_provider + fallback_triggered
 CALL add_col_if_not_exists('chat_history', 'used_provider',
   'VARCHAR(20) NULL COMMENT ''1a.8：本响应实际使用的 provider''');
@@ -316,6 +325,19 @@ INSERT INTO prompt_versions (prompt_name, prompt_content, version, change_reason
    '判断用户输入是否属于"投资决策咨询"。\n\n正例（投资决策咨询）：\n- "本月应该补仓多少"\n- "海外权益类占比偏高怎么办"\n- "比例偏离分析"\n- "市场波动对持仓的影响"\n- "如何再平衡"\n- "我应该买什么基金"\n- "定投金额怎么调整"\n\n反例（非投资决策咨询）：\n- "今天天气怎么样"\n- "你是什么模型"\n- "帮我写一首诗"\n- "Python怎么读取MySQL"\n- "介绍你的功能"\n- "早上好"\n- "你今年多大"\n\n用户输入：[用户输入文本]\n请只返回 true 或 false（小写，无标点）。true 表示属于投资决策咨询，false 表示不属于。',
    'v1.0',
    '第三轮评审P0 3.1.1补充few-shot示例（7对正例 + 7对反例）')
+ON DUPLICATE KEY UPDATE prompt_content = VALUES(prompt_content), change_reason = VALUES(change_reason);
+
+-- ============================================
+-- 2026-10-05：screenshot_parser v2.7.2（防幻觉 + 截断行防 0 占位）
+-- 事故背景：新设备重装库后仅执行本文件（种子为 v1.0 旧"权益类"口径），
+-- scripts/1a10 迁移未重跑 → AI 按旧口径幻觉基金、截断行用 0.00 占位。
+-- uk(prompt_name, version) 保证幂等；PromptLoaderService 按 id DESC 取最新版本。
+-- ============================================
+INSERT INTO prompt_versions (prompt_name, version, prompt_content, change_reason) VALUES
+  ('screenshot_parser',
+   '识别[日期]（支付宝）资产明细。默认数据源为支付宝，SDK 阶段再考虑多个基金软件的适配。请返回完整的 6 大配置类 + 余额类 的资产明细表格和汇总表格，以及一段总结。表格使用 Markdown 格式。每只基金需包含基金名称、持仓金额（元）、持有收益（元）、累计收益（元），以及类别归属。同时返回结构化 JSON 供后端解析。日期格式必须为 YYYY-MM-DD。\n\n【最高优先级 - 防幻觉约束】\n- 基金名称必须逐字转录当前截图中可见的文字，禁止编造、补全、推测，禁止输出训练记忆中的基金。\n- 当前截图中不存在的基金绝对不能出现在输出里；看不清或不确定的行宁可不输出，也不要猜。\n- amount 必须来自截图数字，禁止估算，禁止把多页数字拼凑相加。\n- 一次请求只输出一份 JSON，不要为每页分别输出 JSON。\n\n【截断行处理 - 禁止用 0.00 占位】\n- 若某基金名称可见、但金额/收益在截图中被截断不可见：amount 输出 null（禁止输出 0 或 0.00），holding_profit / cumulative_profit 同样输出 null。\n- 禁止把 0.00 当作"未知金额"的占位值；0.00 只用于截图明确显示为 0 的情况。\n- 若连基金名称都无法辨认，直接忽略该行。\n- 余额类（余额宝等）的 holding_profit / cumulative_profit 允许输出 null（支付宝不显示此列）。\n\n【重要 - 类别口径】\n本系统采用「6 大配置类 + 余额类」结构。\n  - 6 大配置类（参与资产比例计算）：\n    货币类（aliases: 货币、货基、货币基金）\n    固收类（aliases: 固收、债券、纯债、短债、固收+、中短债）\n    商品类（aliases: 商品、黄金、大宗商品）\n    A股权益类（aliases: A股、股票、中证、沪深300、中证500）\n    海外权益类（aliases: QDII、纳斯达克、标普、海外股票）\n    港股大中华类（aliases: 港股、恒生、大中华）\n  - 余额类（不参与配比，仅作为货币等价物）：余额宝、活期存款等\n  重要：只输出上述 7 个 canonical 名之一，禁止用「其他」「权益类」「另类资产」「保障类」等旧名。\n\n【重要 - 结构化 JSON 严格使用】\n{\n  "snapshot_date": "YYYY-MM-DD",\n  "total_asset": 浮点或null,\n  "categories": [\n    {\n      "category_name": "货币类|固收类|商品类|A股权益类|海外权益类|港股大中华类|余额类",\n      "category_total": 浮点,\n      "funds": [\n        {"fund_name": "...", "amount": 浮点或null, "holding_profit": 浮点或null, "cumulative_profit": 浮点或null}\n      ]\n    }\n  ],\n  "matchedFunds": ["基金1", "基金2", ...]\n}\n不要使用顶层 holdings + category_summary 结构。\n\n【端到端闭环】\n- total_asset 字段 = 截图顶部「总资产」数字，不可见时输出 null，禁止把当前页基金加总作为 total_asset。\n- 即使顶部不可见也必须输出完整 categories[].funds[]；截断行按上方规则输出 null，不要编造数字。\n- category_total 必须 = 该类 funds[].amount 之和；截图小计与此不一致时以逐只金额之和为准。\n- 只输出一份完整资产 JSON（放在 fenced code block ```json``` 内），不要附带解释性文字或思考过程。\n- 任何局部示例 / schema 文档 JSON 视为参考，模型最终输出必须基于图片内容，并按 fund_name 去重。',
+   'v2.7.2',
+   '2026-10-05 v2.7.2：防幻觉约束（逐字转录、禁止编造）+ 截断行禁止用 0.00 占位（金额不可见时输出 null）+ 继承七大类口径')
 ON DUPLICATE KEY UPDATE prompt_content = VALUES(prompt_content), change_reason = VALUES(change_reason);
 
 -- 1a.10：category_master 七大类 canonical 种子（幂等）
