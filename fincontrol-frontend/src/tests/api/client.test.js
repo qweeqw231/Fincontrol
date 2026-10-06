@@ -48,9 +48,9 @@ describe('apiClient 拦截器', () => {
         data: { code: 40001, message: '该日期快照已存在，请先删除' },
       },
     }
-    await expect(
-      Promise.reject(interceptor.rejected(axiosError))
-    ).rejects.toMatchObject({
+    // 2026-10-06 修复：interceptor.rejected() 本身返回 rejected Promise，
+    // 旧写法再包一层 Promise.reject 会让断言对象变成 Promise 本体（并产生 unhandled rejection）
+    await expect(interceptor.rejected(axiosError)).rejects.toMatchObject({
       code: 40000,
       status: 400,
       message: '该日期快照已存在，请先删除',
@@ -64,9 +64,9 @@ describe('apiClient 拦截器', () => {
       message: 'Request failed with status code 503',
       response: { status: 503, data: {} },
     }
-    await expect(
-      Promise.reject(interceptor.rejected(axiosError))
-    ).rejects.toMatchObject({
+    // 2026-10-06 修复：interceptor.rejected() 本身返回 rejected Promise，
+    // 旧写法再包一层 Promise.reject 会让断言对象变成 Promise 本体（并产生 unhandled rejection）
+    await expect(interceptor.rejected(axiosError)).rejects.toMatchObject({
       code: 50300,
       status: 503,
       message: 'Request failed with status code 503',

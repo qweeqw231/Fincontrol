@@ -14,6 +14,12 @@ if (typeof URL.revokeObjectURL !== 'function') {
   URL.revokeObjectURL = () => {}
 }
 
+// jsdom 不实现 Element.prototype.scrollIntoView（AIPage 消息列表自动滚底依赖）
+// 2026-10-06：补 no-op，修复 App.test 渲染 AIPage 时 "scrollIntoView is not a function"
+if (typeof Element.prototype.scrollIntoView !== 'function') {
+  Element.prototype.scrollIntoView = () => {}
+}
+
 afterEach(() => {
   cleanup()
 })

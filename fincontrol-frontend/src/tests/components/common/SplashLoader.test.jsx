@@ -97,6 +97,8 @@ describe('SplashLoader logic (1b.4 PR8)', () => {
     // 验证路径与决策 35 中「品牌资源组织 = fincontrol-frontend/public/brand/」一致
     expect(img.src).toMatch(/\/brand\/logo_animation\.gif$/)
     // 路径以 /brand/ 开头（Vite public 静态资源）
-    expect(img.src.startsWith('/brand/')).toBe(true)
+    // 2026-10-06 修复：jsdom 中 img.src 返回绝对 URL（http://localhost/brand/...），
+    // 改用 getAttribute 读取原始属性值
+    expect(img.getAttribute('src').startsWith('/brand/')).toBe(true)
   })
 })
