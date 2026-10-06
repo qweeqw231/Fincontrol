@@ -119,3 +119,89 @@ CREATE INDEX IF NOT EXISTS idx_map_user_last_seen_sd
     ON fund_category_map(user_id, last_seen_snapshot_date);
 CREATE INDEX IF NOT EXISTS idx_map_user_first_missing
     ON fund_category_map(user_id, first_missing_snapshot_date);
+
+-- 2026-10-06 新增（2a 校正页）：operation_log + 三张校正明细表。
+-- 与 docs/phase-0/db-schema.sql 7/7.1/7.2/7.3 同构；供 CorrectionConfirm IT 与
+-- 校正记录读写测试使用。
+CREATE TABLE IF NOT EXISTS operation_log (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL DEFAULT 1,
+    operation_date DATETIME NOT NULL,
+    operation_type VARCHAR(30) NOT NULL,
+    correction_mode VARCHAR(20) NULL,
+    snapshot_date DATE NULL,
+    v_curr DECIMAL(12,2) NULL,
+    v_monetary DECIMAL(12,2) NULL,
+    v_bond DECIMAL(12,2) NULL,
+    v_high_vol DECIMAL(12,2) NULL,
+    u_high DECIMAL(12,2) NULL,
+    u_monetary_dca DECIMAL(12,2) NULL,
+    u_bond_dca DECIMAL(12,2) NULL,
+    delta_m_theory DECIMAL(12,2) NULL,
+    delta_b_theory DECIMAL(12,2) NULL,
+    delta_m_actual DECIMAL(12,2) NULL,
+    delta_b_actual DECIMAL(12,2) NULL,
+    rounding_strategy VARCHAR(30) NULL,
+    deviation_m DECIMAL(5,2) NULL,
+    deviation_b DECIMAL(5,2) NULL,
+    target_ratios VARCHAR(200) NULL,
+    budget_limit_used DECIMAL(12,2) NULL,
+    total_investment DECIMAL(12,2) NULL,
+    triggered_boundary VARCHAR(100) NULL,
+    warnings TEXT NULL,
+    source VARCHAR(30) NOT NULL DEFAULT 'monthly_correction',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    confirmed_at TIMESTAMP NULL
+);
+CREATE INDEX IF NOT EXISTS idx_op_user_date ON operation_log(user_id, operation_date);
+CREATE INDEX IF NOT EXISTS idx_op_user_type_date ON operation_log(user_id, operation_type, operation_date);
+CREATE INDEX IF NOT EXISTS idx_op_user_snapshot_date ON operation_log(user_id, snapshot_date);
+
+CREATE TABLE IF NOT EXISTS correction_iteration (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL DEFAULT 1,
+    operation_log_id BIGINT NOT NULL,
+    sort_order INT NOT NULL,
+    alpha DECIMAL(6,4) NULL,
+    e_high DECIMAL(12,2) NULL,
+    delta_m DECIMAL(12,2) NULL,
+    delta_b DECIMAL(12,2) NULL,
+    zoh_triggered BOOLEAN NOT NULL DEFAULT FALSE,
+    total_investment DECIMAL(12,2) NULL,
+    over_limit DECIMAL(12,2) NULL,
+    note VARCHAR(200) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ci_op ON correction_iteration(operation_log_id);
+CREATE INDEX IF NOT EXISTS idx_ci_user ON correction_iteration(user_id);
+
+CREATE TABLE IF NOT EXISTS correction_asset_detail (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL DEFAULT 1,
+    operation_log_id BIGINT NOT NULL,
+    sort_order INT NOT NULL,
+    phase VARCHAR(20) NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    amount DECIMAL(12,2) NULL,
+    ratio_actual DECIMAL(6,2) NULL,
+    ratio_target DECIMAL(6,2) NULL,
+    deviation DECIMAL(6,2) NULL,
+    delta_raw DECIMAL(12,2) NULL,
+    delta_amount DECIMAL(12,2) NULL,
+    note VARCHAR(200) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cad_op ON correction_asset_detail(operation_log_id);
+CREATE INDEX IF NOT EXISTS idx_cad_user ON correction_asset_detail(user_id);
+
+CREATE TABLE IF NOT EXISTS correction_param (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL DEFAULT 1,
+    operation_log_id BIGINT NOT NULL,
+    param_key VARCHAR(50) NOT NULL,
+    num_value DECIMAL(18,4) NULL,
+    text_value VARCHAR(300) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_cp_op_key ON correction_param(operation_log_id, param_key);
+CREATE INDEX IF NOT EXISTS idx_cp_user_key ON correction_param(user_id, param_key);

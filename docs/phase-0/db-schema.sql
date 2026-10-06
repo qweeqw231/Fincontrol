@@ -14,6 +14,9 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- 删除已有表（按外键反序）
+DROP TABLE IF EXISTS correction_param;
+DROP TABLE IF EXISTS correction_asset_detail;
+DROP TABLE IF EXISTS correction_iteration;
 DROP TABLE IF EXISTS operation_log;
 DROP TABLE IF EXISTS chat_history;
 DROP TABLE IF EXISTS prompt_versions;
@@ -144,6 +147,7 @@ CREATE TABLE operation_log (
   user_id            BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
   operation_date     DATETIME     NOT NULL COMMENT '用户操作当天时间',
   operation_type     VARCHAR(30)  NOT NULL COMMENT '操作类型：monthly_correction/quarterly_correction/manual_adjustment',
+  correction_mode    VARCHAR(20)  NULL COMMENT '2a：校正模式（zoh_only=纯低波ZOH / lqr_zoh=LQR-ZOH联合 / manual=手工战术；NULL=未分类历史行）',
   snapshot_date      DATE         NULL COMMENT '关联快照日期',
   v_curr             DECIMAL(12,2) NULL COMMENT '操作时六大类合计（不含余额类，第二轮P0已澄清）',
   v_monetary         DECIMAL(12,2) NULL COMMENT '货币类市值',
@@ -171,6 +175,70 @@ CREATE TABLE operation_log (
   INDEX idx_user_op_type_date (user_id, operation_type, operation_date),
   INDEX idx_user_snapshot_date (user_id, snapshot_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='操作日志表（月度/季度校正流水）';
+
+-- ============================================
+-- 7.1 correction_iteration（校正迭代轮次明细表 · 2a 校正页提前交付）
+-- ============================================
+-- 一次校正的求解过程拆分为多轮（如 6/30 联合校正 α 七轮压缩），每轮一行。
+CREATE TABLE correction_iteration (
+  id               BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  user_id          BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
+  operation_log_id BIGINT       NOT NULL COMMENT '关联 operation_log.id',
+  sort_order       INT          NOT NULL COMMENT '轮次顺序（0=初始，1..n=第 n 轮）',
+  alpha            DECIMAL(6,4) NULL COMMENT '本轮高波校正预算占比 α（小数，如 0.2000/0.0419）',
+  e_high           DECIMAL(12,2) NULL COMMENT '本轮高波校正预算 E_high（元）',
+  delta_m          DECIMAL(12,2) NULL COMMENT '本轮低波货币补仓 Δm（元）',
+  delta_b          DECIMAL(12,2) NULL COMMENT '本轮低波固收补仓 Δb（元）',
+  zoh_triggered    BOOLEAN      NOT NULL DEFAULT FALSE COMMENT '本轮 Δm 是否触发 ZOH 补仓（≥ purchaseThreshold）',
+  total_investment DECIMAL(12,2) NULL COMMENT '本轮总投入（元）',
+  over_limit       DECIMAL(12,2) NULL COMMENT '超出 M_max 金额（元）；NULL=未超限',
+  note             VARCHAR(200) NULL COMMENT '备注（如“第 7 次迭代，满足约束”）',
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  INDEX idx_ci_op   (operation_log_id),
+  INDEX idx_ci_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='2a：校正迭代/调节轮次明细（α 压缩与分布式调节）';
+
+-- ============================================
+-- 7.2 correction_asset_detail（校正逐资产明细表 · 2a 校正页提前交付）
+-- ============================================
+-- 一行 = 一个阶段 × 一个类别；phase 枚举：pre_six/post_six/pre_high/post_high。
+CREATE TABLE correction_asset_detail (
+  id               BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  user_id          BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
+  operation_log_id BIGINT       NOT NULL COMMENT '关联 operation_log.id',
+  sort_order       INT          NOT NULL COMMENT '展示顺序',
+  phase            VARCHAR(20)  NOT NULL COMMENT '阶段：pre_six=校正前六大类/post_six=校正后六大类/pre_high=高波内部校正前/post_high=高波内部校正后',
+  category         VARCHAR(50)  NOT NULL COMMENT 'canonical 类别名',
+  amount           DECIMAL(12,2) NULL COMMENT '该阶段市值（元）',
+  ratio_actual     DECIMAL(6,2) NULL COMMENT '实际占比（%）：six 阶段=占六大类；high 阶段=高波内部占比',
+  ratio_target     DECIMAL(6,2) NULL COMMENT '目标占比（%）',
+  deviation        DECIMAL(6,2) NULL COMMENT '偏差（百分点，actual - target）',
+  delta_raw        DECIMAL(12,2) NULL COMMENT '本类补仓求解原值（元，未取整）',
+  delta_amount     DECIMAL(12,2) NULL COMMENT '本类补仓执行值（元，取整后）',
+  note             VARCHAR(200) NULL COMMENT '备注（如“锚定资产 Δ=0”）',
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  INDEX idx_cad_op   (operation_log_id),
+  INDEX idx_cad_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='2a：校正逐资产明细（校正前/后 × 六大类与高波内部）';
+
+-- ============================================
+-- 7.3 correction_param（校正参数与指标表 · 2a 校正页提前交付）
+-- ============================================
+-- key-value 存放不适合建列的参数与指标，便于新增指标不改表。
+-- 常用 param_key 枚举：surplus/mMax/mMaxSource/alphaInit/alphaDecay/alphaFinal/
+-- zohThreshold/zohStepPointEHigh/zohStepTotal/icDrrBefore/icDrrAfter/icDrrPct/
+-- anchor/zohTriggered/actualTransfer/kktNote。
+CREATE TABLE correction_param (
+  id               BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  user_id          BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
+  operation_log_id BIGINT       NOT NULL COMMENT '关联 operation_log.id',
+  param_key        VARCHAR(50)  NOT NULL COMMENT '参数键（见上方枚举）',
+  num_value        DECIMAL(18,4) NULL COMMENT '数值型值',
+  text_value       VARCHAR(300) NULL COMMENT '文本型值',
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  UNIQUE KEY uk_cp_op_key (operation_log_id, param_key),
+  INDEX idx_cp_user_key (user_id, param_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='2a：校正参数与指标（key-value）';
 
 -- 1a.10：七大类主数据（DB-driven 类别 + 别名）
 CREATE TABLE category_master (
@@ -295,8 +363,67 @@ CALL add_col_if_not_exists('asset_raw', 'total_asset_source',
 CALL add_col_if_not_exists('asset_snapshot', 'total_asset_source',
   'VARCHAR(20) NOT NULL DEFAULT ''top'' COMMENT ''1a.9：top=顶部总资产 / visible_sum=deduped fund 加总''');
 
+-- operation_log：2a 加 correction_mode（校正模式：zoh_only/lqr_zoh/manual）
+CALL add_col_if_not_exists('operation_log', 'correction_mode',
+  'VARCHAR(20) NULL COMMENT ''2a：校正模式（zoh_only=纯低波ZOH / lqr_zoh=LQR-ZOH联合 / manual=手工战术；NULL=未分类历史行）''');
+
 DROP PROCEDURE IF EXISTS add_col_if_not_exists;
 DROP PROCEDURE IF EXISTS add_idx_if_not_exists;
+
+-- ============================================
+-- 2a 校正明细表（已建库兼容：CREATE TABLE IF NOT EXISTS 幂等）
+-- ============================================
+-- 与上方 7.1/7.2/7.3 同构；仅用于已存在旧库补齐新表。
+-- 注意：整份文件从头重跑会 DROP 全部表，已建库请勿整体重跑；可执行
+-- fincontrol-backend/scripts/2a-correction/00-correction-tables.sql（等效且带校验）或仅本段。
+CREATE TABLE IF NOT EXISTS correction_iteration (
+  id               BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  user_id          BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
+  operation_log_id BIGINT       NOT NULL COMMENT '关联 operation_log.id',
+  sort_order       INT          NOT NULL,
+  alpha            DECIMAL(6,4) NULL,
+  e_high           DECIMAL(12,2) NULL,
+  delta_m          DECIMAL(12,2) NULL,
+  delta_b          DECIMAL(12,2) NULL,
+  zoh_triggered    BOOLEAN      NOT NULL DEFAULT FALSE,
+  total_investment DECIMAL(12,2) NULL,
+  over_limit       DECIMAL(12,2) NULL,
+  note             VARCHAR(200) NULL,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_ci_op   (operation_log_id),
+  INDEX idx_ci_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='2a：校正迭代/调节轮次明细（α 压缩与分布式调节）';
+
+CREATE TABLE IF NOT EXISTS correction_asset_detail (
+  id               BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  user_id          BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
+  operation_log_id BIGINT       NOT NULL COMMENT '关联 operation_log.id',
+  sort_order       INT          NOT NULL,
+  phase            VARCHAR(20)  NOT NULL,
+  category         VARCHAR(50)  NOT NULL,
+  amount           DECIMAL(12,2) NULL,
+  ratio_actual     DECIMAL(6,2) NULL,
+  ratio_target     DECIMAL(6,2) NULL,
+  deviation        DECIMAL(6,2) NULL,
+  delta_raw        DECIMAL(12,2) NULL,
+  delta_amount     DECIMAL(12,2) NULL,
+  note             VARCHAR(200) NULL,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_cad_op   (operation_log_id),
+  INDEX idx_cad_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='2a：校正逐资产明细（校正前/后 × 六大类与高波内部）';
+
+CREATE TABLE IF NOT EXISTS correction_param (
+  id               BIGINT       PRIMARY KEY AUTO_INCREMENT COMMENT '主键',
+  user_id          BIGINT       NOT NULL DEFAULT 1 COMMENT '用户ID',
+  operation_log_id BIGINT       NOT NULL COMMENT '关联 operation_log.id',
+  param_key        VARCHAR(50)  NOT NULL,
+  num_value        DECIMAL(18,4) NULL,
+  text_value       VARCHAR(300) NULL,
+  created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_cp_op_key (operation_log_id, param_key),
+  INDEX idx_cp_user_key (user_id, param_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='2a：校正参数与指标（key-value）';
 
 -- ============================================
 -- 初始化数据：用户默认配置
@@ -365,6 +492,7 @@ ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP;
 -- 执行验证：
 -- SELECT table_name, table_comment FROM information_schema.tables
 --   WHERE table_schema = DATABASE() ORDER BY table_name;
--- 应返回 10 张表（asset_raw / asset_snapshot / category_master / chat_history /
---   fund_category_map / operation_log / prompt_versions / settings / snapshot_meta / user_config）。
+-- 应返回 13 张表（asset_raw / asset_snapshot / category_master / chat_history /
+--   fund_category_map / operation_log / prompt_versions / settings / snapshot_meta / user_config /
+--   correction_iteration / correction_asset_detail / correction_param）。
 -- ============================================

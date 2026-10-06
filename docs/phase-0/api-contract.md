@@ -741,6 +741,79 @@ POST /api/correction/monthly/confirm
 - 写入 `operation_log` 表（**第二轮 P0 2.1.10 新增表**）
 - 不修改 asset_raw 或 asset_snapshot
 - `operationDate` 是用户操作当天
+- **2a 扩展**：请求可附 `uMonetaryDca/uBondDca/eHigh`（低波定投份额与高波校正预算，计入方程组分母）、`vHighVol/totalInvestment/budgetLimitUsed/notes/correctionMode/source`；写入行 `correction_mode` 默认 `zoh_only`
+
+### 5.5 季度 LQR-ZOH 联合校正 API（2a 新增，2026-10-07 交付）
+
+```
+GET  /api/correction/quarterly/defaults
+POST /api/correction/quarterly/calculate
+POST /api/correction/quarterly/confirm
+```
+
+**5.5.1 `GET /api/correction/quarterly/defaults`**
+
+响应 `data`：`snapshotDate / vCurr / vHighVol / categories / targetRatios / uHighDefault /
+purchaseThreshold / alphaInitDefault(0.20) / alphaDecayDefault(0.8) /
+uMonetaryDcaTheory / uBondDcaTheory / snapshotNote`；无当前快照时 `data=null`。
+
+**5.5.2 `POST /api/correction/quarterly/calculate`**
+
+请求（缺省字段自动从当前快照与 user_config 补齐；`surplus` 与 `mMax` 至少给出一个）：
+
+```json
+{
+  "surplus": 700, "mMax": 1000, "mMaxSource": "manual",
+  "uHigh": 618, "uMonetaryDca": 0, "uBondDca": 0,
+  "alphaInit": 0.20, "alphaDecay": 0.8,
+  "mode": "mMaxCapped",
+  "alphaProbes": [20, 30, 35, 39, 45, 50], "probeBaseMmax": 1260
+}
+```
+
+- `mode`：`auto`（α 迭代压缩，6/30 场景，E = M_max × α，每轮 × decay 直到总投入 ≤ M_max）；
+  `mMaxCapped`（人为上限倒推 + ZOH 阶跃点分析，9/30 场景）
+
+响应 `data`（完整求解过程，与 mcf §3.6 / 9-30 计算过程文档同构）：
+`vCurr / vHighVol / preSix[] / highVolPre[] / anchor / targetRatios / params /
+alphaTable[]（α/E_high/Δm/Δb/zohTriggered/totalInvestment/overLimit/note）/
+zohStep（eHighAtStep/deltaMAtStep/totalBeforeStep/totalAfterStep/jumpAmount）/
+chosen（alphaFinal/eHigh/deltaMRaw/deltaBRaw/deltaMActual/deltaBActual/zohTriggered/totalInvestment/roundingStrategy）/
+alphaIterations / lqr（deltas[]/kktNote/betaTriggered[]）/ icDrr（fBefore/fAfter/ratioPct，单位百分点²）/
+highVolPost[] / plan[] / warnings[]`
+
+**5.5.3 `POST /api/correction/quarterly/confirm`**
+
+请求 = 主表字段（同 5.4）+ 三类明细数组，单事务写 4 张表：
+
+```json
+{
+  "snapshotDate": "2026-09-30", "correctionMode": "lqr_zoh",
+  "vCurr": 9525.87, "uHigh": 618, "totalInvestment": 1000,
+  "iterations": [{ "sortOrder": 0, "alpha": 0.20, "eHigh": 252, "deltaM": 67.89, "deltaB": 97.84, "zohTriggered": false, "totalInvestment": 870 }],
+  "assets": [{ "phase": "pre_high", "category": "商品类", "amount": 2207.71, "ratioActual": 31.31, "ratioTarget": 33.33, "deviation": -2.02, "deltaRaw": 207.12, "deltaAmount": 207 }],
+  "params": [{ "key": "icDrrPct", "numValue": 67.4 }, { "key": "anchor", "textValue": "海外权益类" }]
+}
+```
+
+- `assets[].phase` 枚举：`pre_six / post_six / pre_high / post_high`
+- 写入 `operation_log` + `correction_iteration` + `correction_asset_detail` + `correction_param`（见 db-schema §7.1–7.3）
+- 不修改 asset_raw / asset_snapshot
+- 响应：`operationLogId / operationDate / writtenToOperationLog / detailRows`
+
+### 5.6 校正记录查询 API（2a 新增）
+
+```
+GET /api/correction/operations
+GET /api/correction/operations/{id}
+```
+
+- 列表 `items[]`：`id / operationDate / operationType / correctionMode / snapshotDate /
+  vCurr / deltaMTheory / deltaMActual / deltaBTheory / deltaBActual / totalInvestment /
+  roundingStrategy / triggered / notes[] / source / hasDetail / icDrrPct / anchor`
+- 详情：`operation`（同列表单项）+ `iterations[]` + `assets[]` + `params{}`（key → {numValue, textValue}）
+- 记录不存在或跨用户访问 → 错误码 1005
+- 说明：`GET /api/nav/operations`（Phase 3）为净值页时间线的精简视图，两接口并存
 
 ---
 
@@ -1405,6 +1478,7 @@ GET /api/parse-logs
 | 1002 | 基金名称缺失 | 400 |
 | 1003 | 金额必须 > 0 | 400 |
 | 1004 | 大类名称不在枚举值内 | 400 |
+| 1005 | 校正参数无效（2a：缺快照/缺 M_max/目标比例无效/记录不存在） | 400 |
 | 2001 | 该日期无快照数据 | 404 |
 | 2002 | 同日已有快照 + 未 confirmedOverwrite | 409 |
 | 2003 | 超过撤销时限（10 秒）| 410 |
@@ -1421,8 +1495,8 @@ GET /api/parse-logs
 
 以下 API 在 Phase 2-3 启动前补齐：
 
-- [ ] Phase 2：`GET /api/correction/quarterly/calculate`（LQR 季度策略）
-- [ ] Phase 2：`POST /api/correction/quarterly/confirm`
+- [x] ~~Phase 2：`GET /api/correction/quarterly/calculate`（LQR 季度策略）~~ → 2026-10-07 以 `POST /api/correction/quarterly/calculate` 交付（§5.5）
+- [x] ~~Phase 2：`POST /api/correction/quarterly/confirm`~~ → 2026-10-07 交付（§5.5，含迭代/资产/参数明细四表写入）
 - [ ] Phase 3：`GET /api/nav/history?from=&to=`（净值曲线）
 - [ ] Phase 3：`POST /api/nav/manual-correction`（手动校正）
 - [ ] Phase 3：`GET /api/snapshot/ratios?date=`（比例演化）

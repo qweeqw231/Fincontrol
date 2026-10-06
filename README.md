@@ -2,7 +2,7 @@
 
 > 个人资产配置控制系统 —— 以支付宝基金截图作为数据源，借助多模态模型完成基金去重、分类与三表事务入库，并通过 React 资产看板呈现当前快照、累计/持有收益与配置偏差。
 
-FinControl 是一个以控制论为理论基础、以真实个人账户为实验平台、以多模态 AI 与稳健工程为底座的个人资产配置控制系统。Phase 1（数据流水线闭环）已于 2026-07-25 通过真实用户端到端验收正式收官；Phase 2–5 的范围与排序由 Phase 0 决策 34 统一规定。2026-09-30 起，Phase 3 的净值曲线 / 比例演化与 Phase 5 的 AI 顾问界面已**提前交付**（见 [Phase 变更记录](docs/phase-1/phase-change-log.md)），日常运行采用单进程形态（决策 36，8080 单端口）。
+FinControl 是一个以控制论为理论基础、以真实个人账户为实验平台、以多模态 AI 与稳健工程为底座的个人资产配置控制系统。Phase 1（数据流水线闭环）已于 2026-07-25 通过真实用户端到端验收正式收官；Phase 2–5 的范围与排序由 Phase 0 决策 34 统一规定。2026-09-30，Phase 3 的净值曲线 / 比例演化与 Phase 5 的 AI 顾问界面**提前交付**；2026-10-07，Phase 2 的月度校正台与 Phase 5a 的季度 LQR-ZOH 联合校正台**提前交付**（决策 37，见 [Phase 变更记录](docs/phase-1/phase-change-log.md)）。日常运行采用单进程形态（决策 36，8080 单端口）。
 
 ---
 
@@ -12,18 +12,18 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 
 ---
 
-## 当前状态（2026-09-30）
+## 当前状态（2026-10-07）
 
 | Phase | 状态 | 里程碑证据 |
 |---|---|---|
 | **Phase 0** 基础设施 + 评审决策 | ✅ 完成（2026-07-09）| 7 张表 schema、5 类评审 199 个问题、Phase 0 决策 1–6 锁定 |
 | **Phase 1** 数据流水线闭环 | ✅ 完成（2026-07-25）| 1b.4-pr7 V1–V8 全通过；19 funds / ¥7,850.38 真实 4 图 confirm；后端 SnapShotConfirmServiceP7Test 9/9；前端 Vitest 12 文件 57/57；Vite build 1.08s |
-| **Phase 2** 未完成的数据管理 + 资产配置 + 月度操作台 | ⏳ 待启动 | 复用 Phase 1a 已建 API（`/api/snapshot/history`、`/api/snapshot/{date}`、`/api/parse-logs`、`DELETE /api/snapshot/confirm/{id}`、`/api/screenshot/reparse`）；2026-09 对数据管理页做过局部修复，主体未启动 |
+| **Phase 2** 未完成的数据管理 + 资产配置 + 月度操作台 | 🟡 提前交付（部分，2026-10-07）| 月度校正操作台 `/correction` 已交付（低波 Δm/Δb 方程组求解 + 取整确认 + 全部记录回放，决策 37）；资产配置 `/config`、历史查询 UI 等未启动 |
 | **Phase 3** 数据模型 + 净值/比例/日收益可视化 | 🟡 提前交付（部分，2026-09-30）| 净值曲线 + 比例演化已交付（`nav_history` / `nav_milestone` 2 表 + `NAVPage` / `RatioPage`，commit `987b1c1`）；日收益明细、Dietz/XIRR 升级未做 |
 | **Phase 4** 已知问题、数据校验、UI 优化、前端收尾 | ⏳ 待启动 | 全量 Maven 测试 fixture 债务、跨页面状态、空/错/加载态、可访问性 |
-| **Phase 5** AI 对话 UI、LQR、多用户、移动端 | 🟡 提前交付（部分，2026-09-30）| AI 顾问前端 UI（对话 + RAG 知识库 93 条）已提前交付（commit `9d89397`）；LQR / 多用户 / 移动端未开始 |
+| **Phase 5** AI 对话 UI、LQR、多用户、移动端 | 🟡 提前交付（部分，2026-10-07）| AI 顾问前端 UI（对话 + RAG 知识库 93 条）已提前交付（commit `9d89397`）；季度 LQR-ZOH 联合校正台 `/quarterly` 已交付（决策 37）；多用户 / 移动端未开始 |
 
-详细路线锁定于 [Phase 0 决策 34](docs/phase-0/decisions.md#决策-34phase-1-里程碑收官与后续阶段重排2026-07-25)；运行形态见 [决策 36](docs/phase-0/decisions.md)（单进程 8080 单端口，2026-09-30 起日常使用）。
+详细路线锁定于 [Phase 0 决策 34](docs/phase-0/decisions.md#决策-34phase-1-里程碑收官与后续阶段重排2026-07-25)；运行形态见 [决策 36](docs/phase-0/decisions.md)（单进程 8080 单端口，2026-09-30 起日常使用）；校正台交付见 [决策 37](docs/phase-0/decisions.md)（2026-10-07）。
 
 > **Phase 划分 vs 实际交付**：Phase 编号 = 能力里程碑（设计归属）；实际交付时间线（含「提前交付」标注）以 [Phase 变更记录](docs/phase-1/phase-change-log.md) 为准。
 
@@ -126,10 +126,10 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 | 逐文件状态 + 单文件重试 | 全局 uploading / parsing 已有，逐文件状态缺失 | Phase 2 |
 | 收益列 / DedupReport 完整展示 | preview 只显示总额和分类小计，缺少收益列和去重报告 | Phase 2 |
 | AI 顾问扩展（LQR / 多用户 / 移动端）| 对话 UI（含 RAG）已于 2026-09-30 提前交付 | Phase 5 |
-| 月度操作台 | 决策 4 v2 + 决策 25 已铺垫，UI 与求解待 Phase 2 | Phase 2 |
+| 月度操作台 | ✅ 已交付（2026-10-07，决策 37）：`/correction` 低波求解 + 取整确认 + 记录回放 | Phase 2 |
 | 资产配置页面 | `/config` 占位页 | Phase 2 |
 | 日收益明细 | `daily_returns` 表未建（净值 / 比例已于 2026-09-30 提前交付）| Phase 3 |
-| LQR / 多用户 / 移动端 | — | Phase 5 |
+| LQR / 多用户 / 移动端 | 季度 LQR-ZOH 联合校正台 `/quarterly` 已于 2026-10-07 交付（决策 37）；多用户 / 移动端未开始 | Phase 5 |
 
 ---
 
@@ -141,22 +141,25 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  Browser  React 18 + Vite 5 + React Router 6 + Zustand 5                 │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │ Pages    HomePage │ DataPage │ NAVPage │ RatioPage │ AIPage       │    │
-│  │          占位 3 路由（/config /correction /quarterly）              │    │
-│  │ Stores   assetSnapshot / userConfig / operation / chat            │    │
-│  │ Comps    Recharts Pie / CumulativeReturnCard / CategoryDetail    │    │
-│  │ Tests    Vitest 12 files · 57/57 pass · jsdom env                 │    │
+│  │ Pages    HomePage │ DataPage │ NAVPage │ RatioPage │ AIPage         │    │
+│  │          │ CorrectionPage（月度校正台）│ QuarterlyPage（季度操作台）  │    │
+│  │          占位 1 路由（/config）                                    │    │
+│  │ Stores   assetSnapshot / userConfig / operation / chat / correction│    │
+│  │ Comps    Recharts Pie / CumulativeReturnCard / CategoryDetail     │    │
+│  │          / CorrectionDetailDrawer（校正回放抽屉）                   │    │
+│  │ Tests    Vitest 18 files · 89/89 pass · jsdom env                 │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                     axios 拦截器 (X-User-Id: 1) + Vite proxy /api → 8080 │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Backend  Spring Boot 3.3.5 + Java 17 + MyBatis-Plus 3.5.9              │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │ Controller  Screenshot / Snapshot / Asset / Chat / Conversation  │    │
-│  │              CategoryMap / Settings / ParseLog / Nav               │    │
+│  │              CategoryMap / Settings / ParseLog / Nav / Correction │    │
 │  │ Service     ScreenshotService / SnapShotConfirmService            │    │
 │  │              AssetQueryService / SnapshotQueryService             │    │
 │  │              CategoryMapService / SettingsService                 │    │
 │  │              ChatService / ConversationService / NavQueryService  │    │
+│  │              CorrectionService / CorrectionSolveService           │    │
 │  │ Mapper      MyBatis-Plus BaseMapper + 自定义 SQL/XML              │    │
 │  │ AI          AiRouter (imageCount 路由) + VisionModelClient       │    │
 │  │              + TextAiClient (minimax M3)                         │    │
@@ -166,11 +169,13 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 │  └─────────────────────────────────────────────────────────────────┘    │
 ├─────────────────────────────────────────────────────────────────────────┤
 │  Database  MySQL 8.0 + HikariCP (pool=10)                                │
-│  asset_raw (holding/cumulative profit)  asset_snapshot (is_latest)      │
-│  fund_category_map (source + last_seen + first_missing)                   │
-│  chat_history (used_provider + fallback_triggered)  user_config            │
-│  prompt_versions (screenshot_parser v2.7.1)  snapshot_meta (is_current)   │
-│  settings (max_snapshot_age_days)                                          │
+│  asset_raw / asset_snapshot（is_latest；actual_ratio 展示按金额重算）    │
+│  fund_category_map（source + last_seen + first_missing）                  │
+│  chat_history / user_config / prompt_versions（screenshot_parser v2.7.2） │
+│  snapshot_meta（is_current） / settings / category_master                 │
+│  operation_log（校正流水 + correction_mode）                              │
+│  correction_iteration / correction_asset_detail / correction_param（2a）  │
+│  nav_history / nav_milestone（净值 348 交易日，Phase 3 提前交付）         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -204,7 +209,7 @@ Fincontrol/                                       ← 工作区根（单仓多�
 │   ├── architecture/                              ← 架构主文档 + 4 轮评审记录
 │   │   └── review/                                ← data-pipeline / algorithm / frontend / cross-module 4 份
 │   ├── phase-0/                                   ← Phase 0 决策锁定 + db-schema + api-contract
-│   │   └── decisions.md                           ← 决策 1–36（权威汇总表位于文末；决策 34 = Phase 1 收官 + 路线重排，决策 36 = 单进程运行形态）
+│   │   └── decisions.md                           ← 决策 1–37（权威汇总表位于文末；决策 34 = Phase 1 收官 + 路线重排，决策 36 = 单进程运行形态，决策 37 = 校正台提前交付）
 │   └── phase-1/                                   ← Phase 1 验收 / 子阶段计划 / 子决策
 │       ├── checklists/phase-1a.md + phase-1b.md  ← 24 + 23 + 4 P0 实时清单
 │       ├── subphase-plan.md                       ← Phase 1a.1–1a.10 实施蓝图
@@ -223,10 +228,10 @@ Fincontrol/                                       ← 工作区根（单仓多�
 │
 ├── fincontrol-backend/                            ← 【子仓库 1】Spring Boot 后端
 │   ├── Dockerfile / pom.xml / .dockerignore
-│   ├── scripts/                                   ← SQL / 数据迁移（1b3/00-snapshot-meta.sql 等）
+│   ├── scripts/                                   ← SQL / 数据迁移（1a10 / 1b3 / 2a-correction 校正表）
 │   ├── src/main/java/com/fincontrol/              ← ai / common / controller / dto / entity / mapper / service
 │   ├── src/main/resources/                        ← application.yml + mybatis-config.xml
-│   └── src/test/java/                             ← 单元 + H2 集成测试
+│   └── src/test/java/                             ← 单元 + H2 集成测试（mvn test 296/0/0）
 │
 ├── fincontrol-frontend/                           ← 【子仓库 2】React + Vite 前端
 │   ├── index.html / vite.config.js / package.json
@@ -236,26 +241,27 @@ Fincontrol/                                       ← 工作区根（单仓多�
 │       ├── components/                            ← 业务组件 + common/ + layout/Sidebar
 │       │   ├── common/                            ← ErrorBoundary, PlaceholderPage, StateShell
 │       │   ├── home/                              ← 首页相关
-│       │   └── data/                              ← 数据管理相关（HistoryLimitDialog 等）
+│       │   ├── data/                              ← 数据管理相关（HistoryLimitDialog 等）
+│       │   └── correction/                        ← 校正回放抽屉（CorrectionDetailDrawer）
 │       ├── pages/                                 ← 路由页面
 │       │   ├── HomePage.jsx（✅ 完整）
 │       │   ├── DataPage.jsx（✅ 核心完成，Phase 2 补 UI）
 │       │   ├── AIPage.jsx（✅ 对话界面 + RAG）
 │       │   ├── ConfigPage.jsx（⏳ 占位，Phase 2）
-│       │   ├── CorrectionPage.jsx（⏳ 占位，Phase 2）
+│       │   ├── CorrectionPage.jsx（✅ 月度校正台，2a 提前交付）
 │       │   ├── NAVPage.jsx（✅ 净值曲线，Phase 3 提前交付）
 │       │   ├── RatioPage.jsx（✅ 比例演化，Phase 3 提前交付）
-│       │   └── QuarterlyPage.jsx（⏳ 占位，Phase 5）
-│       ├── stores/                                ← Zustand stores（asset / user / operation / chat）
-│       ├── styles/                                ← 全局 + 页面级 CSS（variables / global / sidebar / data-page / cumulative-return）
-│       ├── utils/                                 ← formatters / blob / categoryColors
-│       └── tests/                                 ← Vitest 12 文件 / 57 用例（jsdom env）
+│       │   └── QuarterlyPage.jsx（✅ LQR-ZOH 联合校正台，2a 提前交付）
+│       ├── stores/                                ← Zustand stores（asset / user / operation / chat / correction）
+│       ├── styles/                                ← 全局 CSS（variables / global / sidebar）；页面级 CSS 随页面存放（ratio-page / nav-page / correction-page）
+│       ├── utils/                                 ← formatters / blob / categoryColors / correctionPayload（2a 确认载荷装配）
+│       └── tests/                                 ← Vitest 18 文件 / 89 用例（jsdom env）
 │
 ├── scripts/                                       ← 跨端运维 / 导入 / smoke / git 辅助
 │   ├── README.md
 │   ├── 1b/                                        ← restart-backend.ps1（决策 24 强制）
 │   ├── desktop/                                   ← 启动 / 关闭 / 桌面快捷方式（决策 35 / 36）
-│   ├── import-data/                               ← nav_history / 比例时间线导入（Phase 3）
+│   ├── import-data/                               ← 外部数据导入（nav_history 348 交易日 / 比例时间线 / 校正过程回填 2a）
 │   ├── git/                                       ← push-deferred / 提交辅助
 │   └── smoke/                                     ← smoke 测试入口
 │
@@ -287,8 +293,8 @@ Fincontrol/                                       ← 工作区根（单仓多�
 | **1b.4-pr7 V1–V8 用户亲手跑通** | ✅ 8/8 | [PR7 最终验收报告](docs/test-records/manual-tests/1b/2026-07-25_1b4-pr7-acceptance-report.md) |
 | **后端 `SnapShotConfirmServiceP7Test`** | ✅ 9/9 | `mvn -o test -Dtest=SnapShotConfirmServiceP7Test` 全绿（PR7 收官） |
 | **后端 `SnapshotQueryServiceTest` 主页固收类修复** | ✅ | 1b.4-pr6b-recovery V6 |
-| **前端 Vitest 单元测试** | ✅ 12 文件 / 57 用例 | `npm --prefix fincontrol-frontend test -- --run` 全绿 |
-| **前端 Vite build** | ✅ 1.08s / 114 modules | `npm --prefix fincontrol-frontend run build` |
+| **前端 Vitest 单元测试** | ✅ 18 文件 / 89 用例（2026-10-07 更新）| `npm --prefix fincontrol-frontend test -- --run` 全绿 |
+| **前端 Vite build** | ✅ 4.57s / 922 modules（2026-10-07 更新）| `npm --prefix fincontrol-frontend run build` |
 | **首页首屏 / 数据管理 / 快照列表 / 状态壳** | ✅ 用户验收 | 决策 33 PR4a + PR7 收官 |
 | **真实 4 图 confirm** | ✅ 19 funds / ¥7,850.38 / 固收¥1,189.92 + 余额¥140.94 | 1b.4-pr6b-recovery V6 验证报告 |
 | **决策 33 七条 UX 规则 + V6 修复** | ✅ 用户跑通 | [决策 33 子档](docs/phase-1/decisions/decision-33-pr6b-category-ux.md) |
@@ -310,14 +316,11 @@ Fincontrol/                                       ← 工作区根（单仓多�
 | Phase 1a.10 真实 4 图 E2E | 2026-07-19 | 19 funds / ¥7,884.68 跑通 | 路径 A 4×单图 + 路径 B 1×parse-batch |
 | Phase 1a JaCoCo 行覆盖 | 2026-07-19 | ~77% | 阈值 ≥ 60% |
 
-### 当前全量 Maven 测试的诚实口径（**注意区分**）
+### 全量测试当前口径（2026-10-07）
 
-- `npm test`、`npm run build`、1b.4-pr7 专项后端测试、PR7 V1–V8 手工验收**全部通过**。
-- 当前的 `mvn test` 全量运行会暴露 3 failures + 55 errors，集中在测试装配和 fixture：H2 集成测试没有 `settings` 表、若干 `WebMvcTest` 在 `local` profile 下被加载到没有 `SqlSessionFactory` 的 mapper。这属于**测试环境/测试基线债务**，不是 1b.4 用户链路的功能故障。
-- 这部分**不构成 Phase 1 退出条件**，但会作为 Phase 4「前端整体收尾 / 全量测试基线」的一项工程任务整改。
-- 未来修复路径（建议在 Phase 4 优先级 P1）：
-  - H2 schema 同步新增 `settings`、`fund_category_map.last_seen_snapshot_date` 等列；
-  - `WebMvcTest` 用 `@MockBean` 显式替代 `assetRawQueryMapper` 等带 SqlSessionFactory 依赖的 bean，或在测试配置中 `@SpringBootTest` 加载 MyBatis。
+- **全绿**：`mvn test` = **296 / 0 failures / 0 errors**（含 2a 校正求解 oracle、H2 四表事务、比例重算回归）；前端 Vitest = **18 文件 / 89 用例**；`npm run build` 通过。
+- 2026-10-05 已清理 Phase 1 遗留的测试基线债务（H2 schema 缺表 / `WebMvcTest` mapper 装配，原 3 failures + 55 errors）——历史说明保留：债务成因是 H2 集成测试缺 `settings` 等表、若干 `WebMvcTest` 在缺少 `SqlSessionFactory` 时加载 mapper；修复方式为 H2 schema 同步 + `@MockBean` 补齐全部 mapper。
+- 历史基线（不要把历史数字与当前状态混为一谈）：2026-07-19 Phase 1a `mvn test` 241/241；2026-07-25 Phase 1 收官时前端 57 用例。
 
 ---
 
@@ -384,8 +387,8 @@ Fincontrol/                                       ← 工作区根（单仓多�
 - ECharts 移除 → **Recharts 2.12**（环形图，决策 16）
 - Ant Design 移除 → **纯手写 CSS**（决策 17，< 50 行/组件）
 - Axios（拦截器 + X-User-Id 默认 1，决策 19 + 22 + 23）
-- Zustand 5（4 stores：assetSnapshot / userConfig / operation / chat）
-- Vitest 2.1 + jsdom + Testing Library（57 用例，决策 13/14/24 + 修正）
+- Zustand 5（5 stores：assetSnapshot / userConfig / operation / correction / chat）
+- Vitest 2.1 + jsdom + Testing Library（89 用例，决策 13/14/24 + 修正）
 - Puppeteer 25（仅 devDependency，决策 13 E2E 留作 Phase 4）
 
 ### 已实现路由
@@ -396,10 +399,10 @@ Fincontrol/                                       ← 工作区根（单仓多�
 | `/data` | DataPage（数据管理）| 1 | ✅ 核心完成（Phase 2 补 UI）|
 | `/ai` | AIPage（AI 顾问）| 5 | ✅ 完成（2026-09-30 提前交付：对话 + RAG）|
 | `/config` | ConfigPage（资产配置）| 2 | ⏳ 占位 |
-| `/correction` | CorrectionPage（月度操作台）| 2 | ⏳ 占位 |
+| `/correction` | CorrectionPage（月度校正台）| 2 | ✅ 完成（2026-10-07 提前交付：低波 Δm/Δb 求解 + 取整确认 + 记录回放，决策 37）|
 | `/nav` | NAVPage（净值曲线）| 3 | ✅ 完成（2026-09-30 提前交付）|
-| `/ratio` | RatioPage（比例演化）| 3 | ✅ 完成（2026-09-30 提前交付）|
-| `/quarterly` | QuarterlyPage（季度操作台）| 5 | ⏳ 占位 |
+| `/ratio` | RatioPage（比例演化）| 3 | ✅ 完成（2026-09-30 提前交付；2026-10-07 修复占比按金额重算）|
+| `/quarterly` | QuarterlyPage（季度操作台）| 5 | ✅ 完成（2026-10-07 提前交付：LQR-ZOH 联合校正 + 历史回放，决策 37）|
 
 详见 `fincontrol-frontend/package.json` 和 `src/App.jsx`（RouterShell + 8 路由 + 标题同步）。
 
@@ -409,7 +412,7 @@ Fincontrol/                                       ← 工作区根（单仓多�
 
 | 文档 | 路径 | 说明 |
 |---|---|---|
-| **Phase 0 决策汇总（决策 1–36）** | [docs/phase-0/decisions.md](docs/phase-0/decisions.md) | 权威汇总表位于文档最末；决策 34 = Phase 1 收官 + 路线重排，决策 36 = 单进程运行形态 |
+| **Phase 0 决策汇总（决策 1–37）** | [docs/phase-0/decisions.md](docs/phase-0/decisions.md) | 权威汇总表位于文档最末；决策 34 = Phase 1 收官 + 路线重排，决策 36 = 单进程运行形态，决策 37 = 校正台提前交付 |
 | **Phase 变更记录** | [docs/phase-1/phase-change-log.md](docs/phase-1/phase-change-log.md) | Phase 划分 vs 实际交付（净值/比例、AI 顾问提前交付；当前边界重定）|
 | **Phase 1a 验收清单** | [docs/phase-1/checklists/phase-1a.md](docs/phase-1/checklists/phase-1a.md) | 24 项 API + 8 项 P0 实时清单 |
 | **Phase 1b 验收清单（历史编号）** | [docs/phase-1/checklists/phase-1b.md](docs/phase-1/checklists/phase-1b.md) | 23 项 UI + 4 项 P0 + 1b.3 补救 + 1b.4 设计债务收尾 |

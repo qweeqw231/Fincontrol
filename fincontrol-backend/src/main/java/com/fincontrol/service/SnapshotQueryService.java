@@ -57,8 +57,9 @@ public class SnapshotQueryService {
     /**
      * 1b4pr6b-recovery：6 大类 canonical 固定顺序，用于 buildCanonicalSummaries
      * 使响应 categories 数组始终齐全 6 行，即使用原始 AssetSnapshot 都被 AI 误猜也补齐。
+     * <p>2a 校正页：公开为 public，供校正求解服务复用同一顺序（单一来源）。
      */
-    private static final List<String> CANONICAL_SIX_CATEGORIES = List.of(
+    public static final List<String> CANONICAL_SIX_CATEGORIES = List.of(
             "货币类", "固收类", "商品类", "A股权益类", "海外权益类", "港股大中华类");
 
     /** 余额类单独处理。 */

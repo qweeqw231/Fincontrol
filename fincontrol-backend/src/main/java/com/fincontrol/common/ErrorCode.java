@@ -37,6 +37,7 @@ public enum ErrorCode {
     FUNDS_COUNT_EXCEEDS_LIMIT(1002, "基金数量超过上限（match 单次最多 50 个）"),
     AMOUNT_MUST_BE_POSITIVE(1003, "金额必须 > 0"),
     INVALID_CATEGORY_NAME(1004, "大类名称不在枚举值内"),
+    INVALID_CORRECTION_PARAM(1005, "校正参数无效"),
     SNAPSHOT_NOT_FOUND(2001, "该日期无快照数据"),
     SNAPSHOT_DATE_CONFLICT(2002, "快照日期与其他对话冲突"),
     UNDO_TIMEOUT(2003, "超过撤销时限（10 秒）"),

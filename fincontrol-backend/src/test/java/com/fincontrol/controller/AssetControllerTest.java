@@ -86,6 +86,11 @@ class AssetControllerTest {
     @MockBean private com.fincontrol.mapper.OperationLogMapper operationLogMapper;
     @MockBean private com.fincontrol.mapper.NavMilestoneMapper navMilestoneMapper;
 
+    // 2026-10-07 修复：2a 校正页新增 mapper 补齐（同前，缺一即炸 context）
+    @MockBean private com.fincontrol.mapper.CorrectionIterationMapper correctionIterationMapper;
+    @MockBean private com.fincontrol.mapper.CorrectionAssetDetailMapper correctionAssetDetailMapper;
+    @MockBean private com.fincontrol.mapper.CorrectionParamMapper correctionParamMapper;
+
     @Test
     void balance_defaultUserId_returnsData() throws Exception {
         AssetBalanceResponse resp = AssetBalanceResponse.builder()

@@ -103,6 +103,23 @@ public class UserConfigService {
         return canonical;
     }
 
+    /**
+     * 2a 校正页：读取数值型配置（key 缺失或损坏时返回默认值并告警）。
+     */
+    public BigDecimal loadDecimal(Long userId, String key, BigDecimal defaultValue) {
+        String raw = safeRead(userId, key);
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return new BigDecimal(raw.trim());
+        } catch (Exception ex) {
+            log.warn("2a user_config.{} 解析失败 userId={} raw={} -> fallback {}",
+                    key, userId, raw, defaultValue);
+            return defaultValue;
+        }
+    }
+
     private String safeRead(Long userId, String key) {
         try {
             return userConfigMapper.selectValue(userId, key);

@@ -66,6 +66,11 @@ class FincontrolApplicationTests {
     @MockBean private com.fincontrol.mapper.OperationLogMapper operationLogMapper;
     @MockBean private com.fincontrol.mapper.NavMilestoneMapper navMilestoneMapper;
 
+    // 2026-10-07 修复：2a 校正页新增 mapper 补齐（同前，缺一即炸 context）
+    @MockBean private com.fincontrol.mapper.CorrectionIterationMapper correctionIterationMapper;
+    @MockBean private com.fincontrol.mapper.CorrectionAssetDetailMapper correctionAssetDetailMapper;
+    @MockBean private com.fincontrol.mapper.CorrectionParamMapper correctionParamMapper;
+
     @Test
     void contextLoadsWithoutDatabase() {
         // Phase 1a.1 / 1a.2 DoD：Spring 容器可装配 + 持有所有 mock 的持久化依赖占位

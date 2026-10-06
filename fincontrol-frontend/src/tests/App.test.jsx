@@ -49,13 +49,22 @@ describe('App · document.title (1b.4 PR4a · GLOBAL-010)', () => {
     expect(document.title).toBe('资产配置 · FinControl')
   })
 
-  it('"/correction" → "纠错页 · FinControl"', () => {
+  it('"/correction" → "月度校正 · FinControl"', () => {
     render(
       <MemoryRouter initialEntries={['/correction']}>
         <RouterShell />
       </MemoryRouter>
     )
-    expect(document.title).toBe('纠错页 · FinControl')
+    expect(document.title).toBe('月度校正 · FinControl')
+  })
+
+  it('"/quarterly" → "季度校正 · FinControl"', () => {
+    render(
+      <MemoryRouter initialEntries={['/quarterly']}>
+        <RouterShell />
+      </MemoryRouter>
+    )
+    expect(document.title).toBe('季度校正 · FinControl')
   })
 
   it('"/ai" → "AI 顾问 · FinControl"', () => {

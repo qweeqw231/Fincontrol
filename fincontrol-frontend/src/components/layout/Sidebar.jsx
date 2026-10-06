@@ -5,15 +5,16 @@ import '../../styles/sidebar.css'
 const STORAGE_KEY = 'fincontrol.sidebar.collapsed'
 
 // 菜单配置（acceptance-criteria §1b.5）
+// 2a（决策 37）：/correction 与 /quarterly 已提前交付 → enabled，可点击导航
 const MENU_ITEMS = [
   { path: '/',            label: '首页',     icon: '🏠', enabled: true,  phase: '1b.2' },
   { path: '/data',        label: '数据管理', icon: '📊', enabled: true,  phase: '1b.3' },
-  { path: '/correction',  label: '月度校正', icon: '📅', enabled: false, phase: 'Phase 2' },
+  { path: '/correction',  label: '月度校正', icon: '📅', enabled: true,  phase: 'Phase 2' },
   { path: '/config',      label: '资产配置', icon: '⚙️', enabled: false, phase: 'Phase 2' },
   { path: '/nav',         label: '净值曲线', icon: '📈', enabled: true,  phase: 'Phase 3' },
   { path: '/ratio',       label: '比例演化', icon: '🥧', enabled: true,  phase: 'Phase 3' },
   { path: '/ai',          label: 'AI 顾问',  icon: '🤖', enabled: true,  phase: '1b.4' },
-  { path: '/quarterly',   label: '季度操作', icon: '🎯', enabled: false, phase: 'Phase 5a' },
+  { path: '/quarterly',   label: '季度操作', icon: '🎯', enabled: true,  phase: 'Phase 5a' },
 ]
 
 export default function Sidebar() {

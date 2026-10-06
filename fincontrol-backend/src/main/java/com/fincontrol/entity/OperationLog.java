@@ -32,6 +32,10 @@ public class OperationLog {
     @TableField("operation_type")
     private String operationType;
 
+    /** 2a：校正模式（zoh_only/lqr_zoh/manual；NULL=未分类历史行） */
+    @TableField("correction_mode")
+    private String correctionMode;
+
     @TableField("snapshot_date")
     private LocalDate snapshotDate;
 
@@ -49,6 +53,12 @@ public class OperationLog {
 
     @TableField("u_high")
     private BigDecimal uHigh;
+
+    @TableField("u_monetary_dca")
+    private BigDecimal uMonetaryDca;
+
+    @TableField("u_bond_dca")
+    private BigDecimal uBondDca;
 
     @TableField("delta_m_theory")
     private BigDecimal deltaMTheory;
@@ -77,9 +87,17 @@ public class OperationLog {
     @TableField("warnings")
     private String warnings;
 
+    /** 2a：操作当时的 user_config.target_ratios（JSON 字符串快照，决策 2） */
+    @TableField("target_ratios")
+    private String targetRatios;
+
     @TableField("source")
     private String source;
 
     @TableField("created_at")
     private LocalDateTime createdAt;
+
+    /** 用户确认时间（2a 校正页写入时置为操作时间） */
+    @TableField("confirmed_at")
+    private LocalDateTime confirmedAt;
 }

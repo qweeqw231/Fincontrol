@@ -2018,6 +2018,33 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 
 ---
 
+## 决策 37：校正台提前交付（月度 ZOH + 季度 LQR-ZOH 联合）+ 过程明细数据模型（2026-10-07）
+
+**状态**：✅ 已实施（2026-10-07）
+
+**背景**：
+- 需求书 §7（月度操作台 CORR-001~006）与 §11（季度操作台 QTR-001~006）已冻结目标契约，但 `/correction`、`/quarterly` 长期为占位页（Phase 2 / Phase 5a）
+- 北极星实证已积累两次 LQR-ZOH 联合校正完整过程：6/30 第一次（α 七轮压缩，mcf §3.6）、9/30 第二次（人为上限 M_max 倒推 + ZOH 阶跃点分析，"2026年9月末LQR-ZOH联合校正计算过程.docx"）
+- `operation_log` 仅能承载摘要（Δm/Δb/总投入），无法承载 α 迭代、高波内部状态、KKT 求解与 IC-DRR
+
+**决策**：
+
+> **提前交付「月度校正台」与「季度 LQR-ZOH 联合校正台」，并新建校正过程明细子表；求解算法全部在后端。**
+
+1. 页面：`/correction` 月度台（默认值→方程组求解→取整弹窗实时重算→确认写库→审计，历史区列全部记录）；`/quarterly` 季度台（α 迭代压缩 / 人为上限倒推 + ZOH 阶跃点 → LQR 高波 KKT 求解 → IC-DRR → 执行方案 → 确认写 4 张表）
+2. 数据模型：`operation_log` 增 `correction_mode`（zoh_only / lqr_zoh / manual）；新增 `correction_iteration`（α 轮次）、`correction_asset_detail`（pre_six/post_six/pre_high/post_high 逐资产）、`correction_param`（key-value 参数与指标）三张明细子表（db-schema §7.1–7.3）
+3. 算法：低波前馈校正二元一次方程组（mcf §2.5）；高波内部归一化 LQR KKT 主动集求解（§2.10）；α 迭代压缩 / 人为上限倒推 / ZOH 阶跃点解析解；IC-DRR（§2.13）。公式已用 4/30、6/30、8/31、9/30 四组真实数据反推验证
+4. 回放：6/30（§3.6）与 9/30（计算过程 docx）完整过程回填为种子数据；6/30 的 Δm=68.30<100 仍执行，标注"早于阈值规则正式化，按历史事实展示"
+5. 口径：低波定投份额默认 0（可一键填理论反推值，6/30 曾采用）；IC-DRR 的偏差平方和统一为百分点²；ZOH 触发判定 Δm ≥ purchaseThreshold（现行 100）
+
+**验证（2026-10-07）**：后端 294 测试全绿（含 4 组真实数据 oracle + H2 四表事务 + JSON 命名守护）；前端 vitest 17 个测试文件全绿 + `npm run build` 通过
+
+**影响范围**：`docs/phase-0/db-schema.sql`（+3 表 1 列）、`api-contract.md` §5.5/§5.6、`fincontrol-backend/scripts/2a-correction/`（迁移脚本）、`scripts/import-data/import-correction-details.cjs`（回填）、`/correction` 与 `/quarterly` 页面、新端点 9 个
+
+**关联**：需求书 §7/§11；决策 2（target_ratios 快照写入 operation_log）；phase-change-log 偏差 D
+
+---
+
 ## 决策总结表（追加后）
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
@@ -2028,6 +2055,7 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 > 子档若未在总表登记，视为未生效决策，代码不可引用。
 > 1b.4 三项决策 30 / 31 / 32 于 2026-07-24 首次总表登记（PR5 收官）。
 > 2026-09-30：追认补登决策 9 / 10 / 11 三行（正文此前已存在或本次补写）；决策 36 于本次登记。
+> 2026-10-07：决策 37 登记（校正台提前交付 + 过程明细数据模型）。
 
 | # | 决策 | 状态 | 关联评审 | 触发 commit |
 |---|------|------|----------|-------------|
@@ -2067,3 +2095,4 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 | 34 | Phase 1 核心闭环收官；未完成数据管理归入 Phase 2；AI 顾问前端 UI 顺延 Phase 5；前端整体收尾归入 Phase 4 | ✅ | 用户 2026-07-25 路线重排 | docs(决策34) |
 | 35 | 日常使用层与品牌资源（1b.4 PR8 扩展：启动页 + 关闭服务按钮 + 桌面快捷方式）| ✅ | Phase 1 收官后补充层 | docs(1b.4-pr8) |
 | 36 | 单进程运行形态（Spring Boot 托管前端 dist，8080 单端口；启动/关闭脚本 + 桌面快捷方式重写）| ✅ | 设备迁移后启动链断裂 + 双进程「关不净」 | dd89197 |
+| 37 | 校正台提前交付（月度 ZOH + 季度 LQR-ZOH 联合）+ 过程明细数据模型（operation_log.correction_mode + 3 张明细子表）| ✅ | 用户 2026-10-06 需求：基于已有校正记录搭建 FinControl 校正页 | docs(2a) |
