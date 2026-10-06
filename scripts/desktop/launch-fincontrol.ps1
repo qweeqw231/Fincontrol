@@ -104,15 +104,38 @@ if (-not (Test-Path -LiteralPath $restartScript)) {
     exit 1
 }
 
-if (Test-Path -LiteralPath $jarPath) {
-    Write-Host "[launch-fincontrol] Starting backend (reusing existing jar)..." -ForegroundColor Cyan
-    & $restartScript -SkipRebuild
-} else {
-    Write-Host "[launch-fincontrol] First run: building backend jar (this takes a while)..." -ForegroundColor Cyan
-    & $restartScript
+# Decision 24: restart-backend.ps1 carries its own SOP (kill + build + start + 90s healthcheck).
+# 2026-10-06 fix: the old code checked $LASTEXITCODE after calling the child script, but the
+# -SkipRebuild path invokes NO native executable (all cmdlets), so $LASTEXITCODE stays $null and
+# "$null -ne 0" evaluates to TRUE -- every cold start was misjudged as failed: exit 1 right after
+# the backend had actually started, so no toast/browser, and the user had to click twice.
+# Replace the exit-code check with (1) try/catch around the child script (it throws on real
+# failures because restart-backend.ps1 sets $ErrorActionPreference='Stop') and (2) a real health
+# probe as the success signal.
+$restartOk = $true
+try {
+    if (Test-Path -LiteralPath $jarPath) {
+        Write-Host "[launch-fincontrol] Starting backend (reusing existing jar)..." -ForegroundColor Cyan
+        & $restartScript -SkipRebuild
+    } else {
+        Write-Host "[launch-fincontrol] First run: building backend jar (this takes a while)..." -ForegroundColor Cyan
+        & $restartScript
+    }
+} catch {
+    $restartOk = $false
+    Write-Host "[launch-fincontrol] ERROR: restart-backend.ps1 failed: $($_.Exception.Message)" -ForegroundColor Red
 }
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[launch-fincontrol] ERROR: backend start failed; see log\backend-stderr.log" -ForegroundColor Red
+
+$backendHealthy = $false
+if ($restartOk) {
+    try {
+        $health = Invoke-RestMethod -Uri 'http://localhost:8080/actuator/health' -TimeoutSec 5
+        $backendHealthy = ($health.status -eq 'UP')
+    } catch { }
+}
+if (-not $backendHealthy) {
+    Write-Host "[launch-fincontrol] ERROR: backend not healthy on http://localhost:8080/actuator/health" -ForegroundColor Red
+    Write-Host "[launch-fincontrol]        see log\backend-stderr.log for details" -ForegroundColor Red
     exit 1
 }
 
