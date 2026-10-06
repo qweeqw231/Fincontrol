@@ -170,10 +170,10 @@
   background: var(--color-bg-blue);
 }
 
-/* 4 张图预览：固定 4 列网格，缩略图高度 120px，object-fit 裁切 */
+/* 截图预览：自适应列宽网格（2026-10-06：支持 1~10 张，5+ 张自动换行），缩略图高度 120px，object-fit 裁切 */
 .data-page .preview-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
@@ -772,6 +772,7 @@
  *   z-index 1000  .modal-backdrop.show-confirm-modal       (预览)
  *   z-index 1100  .modal-backdrop.show-dirty-modal         (脏 modal)
  *   z-index 1200  .modal-backdrop.show-batch-modal         (批量确认)
+ *   z-index 1200  .modal-backdrop.show-accept-ai-modal     (接受剩余 AI 猜测，2026-10-06)
  *   z-index 1300  .modal-backdrop.category-confirm-backdrop (内联单只确认)
  *                  .modal-confirm-backdrop                  (set current / date edit)
  *   z-index 1500  .success-banner
@@ -789,6 +790,11 @@
 }
 .data-page .modal-backdrop.show-batch-modal {
   z-index: 1200;  /* 批量确认 modal — 弹在脏 modal 之上 */
+}
+/* 2026-10-06 修复：接受剩余 AI 猜测弹窗从预览 modal(1000) 内触发，必须高于预览层级，
+   否则被预览 modal 盖住（只见背景变灰、点不到选项）。与批量确认同级（二者互斥，不会同开）。 */
+.data-page .modal-backdrop.show-accept-ai-modal {
+  z-index: 1200;
 }
 .data-page .modal-backdrop.category-confirm-backdrop {
   z-index: 1300;  /* 内联单只确认 modal — 弹在所有 modal 之上（最上层用户操作） */

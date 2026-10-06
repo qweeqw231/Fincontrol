@@ -305,3 +305,68 @@ describe('DataPage · 1b4pr6b 批量确认 UX（focus: 安信 A股→固收）',
     })
   })
 })
+
+/**
+ * 2026-10-06：collectPendingAiGuesses —— 决策 33 D1 阻塞集 /「接受剩余 AI 猜测」目标集
+ * （pendingCount 与接受按钮共用此函数，保证口径永不漂移）
+ */
+describe('DataPage · collectPendingAiGuesses（2026-10-06 接受剩余 AI 猜测）', () => {
+  it('仅收集"无 override 且无 dirty"的行，category 取行所在块（AI 原猜）', async () => {
+    const { collectPendingAiGuesses } = await import('../../pages/DataPage.jsx')
+    const summary = {
+      categories: [
+        { categoryName: 'A股权益类', funds: [{ fundName: '诺安A' }, { fundName: '长城短债' }] },
+        { categoryName: '货币类', funds: [{ fundName: '中加货币E' }] },
+      ],
+    }
+    const overrides = { '诺安A': { category: 'A股权益类' } } // 已确认 → 不计
+    const dirty = { '中加货币E': '货币类' } // 已改动（待 D2 处理）→ 不计
+    const rows = collectPendingAiGuesses(summary, overrides, dirty)
+    expect(rows).toEqual([{ fundName: '长城短债', category: 'A股权益类' }])
+  })
+
+  it('parsedSummary 为空 → []；全部未碰过 → 全部待核对', async () => {
+    const { collectPendingAiGuesses } = await import('../../pages/DataPage.jsx')
+    expect(collectPendingAiGuesses(null, {}, {})).toEqual([])
+    const summary = { categories: [{ categoryName: '商品类', funds: [{ fundName: '国泰黄金C' }] }] }
+    expect(collectPendingAiGuesses(summary, {}, {})).toEqual([
+      { fundName: '国泰黄金C', category: '商品类' },
+    ])
+  })
+})
+
+/**
+ * 2026-10-06：解析草稿持久化（未入库时刷新不丢已解析结果，仍可继续确认流程）
+ */
+describe('DataPage · 解析草稿持久化（2026-10-06 刷新不丢）', () => {
+  it('save/load/clear 往返一致；非法结构安全返回 null', async () => {
+    const { saveParseDraft, loadParseDraft, clearParseDraft } =
+      await import('../../pages/DataPage.jsx')
+    clearParseDraft()
+    expect(loadParseDraft()).toBeNull()
+
+    saveParseDraft({
+      snapshotDate: '2026-10-06',
+      mode: 'single',
+      parsedAsset: { categories: [{ categoryName: '固收类', funds: [{ fundName: '长城短债A' }] }] },
+      dedupReport: null,
+      parseInfo: { imageCount: 5, fundCount: 18 },
+    })
+    const loaded = loadParseDraft()
+    expect(loaded.v).toBe(1)
+    expect(loaded.snapshotDate).toBe('2026-10-06')
+    expect(loaded.parsedAsset.categories).toHaveLength(1)
+    expect(loaded.parseInfo.fundCount).toBe(18)
+    expect(loaded.savedAt).toBeTruthy()
+
+    clearParseDraft()
+    expect(loadParseDraft()).toBeNull()
+
+    // 非法结构（缺 parsedAsset / 版本不符）→ null
+    localStorage.setItem('fincontrol.parseDraft.v1', '{"v":1}')
+    expect(loadParseDraft()).toBeNull()
+    localStorage.setItem('fincontrol.parseDraft.v1', '{"v":2,"parsedAsset":{"categories":[{}]}}')
+    expect(loadParseDraft()).toBeNull()
+    localStorage.removeItem('fincontrol.parseDraft.v1')
+  })
+})

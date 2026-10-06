@@ -552,7 +552,7 @@ export default function HomePage() {
       <StateShell
         icon="📊"
         title="暂无资产快照"
-        sub="上传 4 张支付宝基金截图，自动解析你的六大类配置"
+        sub="上传支付宝基金截图（1~10 张），自动解析你的六大类配置"
         action={
           <button
             className="primary-btn"

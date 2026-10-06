@@ -35,7 +35,7 @@ export const CategoryDetailTable = () => {
       </button>
       {isOpen && (
         allFunds.length === 0 ? (
-          <div className="empty">暂无基金数据（请先上传 4 张截图）</div>
+          <div className="empty">暂无基金数据（请先上传基金截图）</div>
         ) : (
           <table className="cat-detail-table">
             <thead>

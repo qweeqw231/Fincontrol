@@ -27,17 +27,81 @@ function formatProfit(v) {
 }
 
 /**
+ * 2026-10-06：收集"纯 AI 猜测且用户还没碰过"的行。
+ * 该函数是**同一口径**的两个用途的唯一来源：
+ *  1) 决策 33 D1 的阻塞集（pendingCount —— 「确认入库」disabled 依据）；
+ *  2) 「接受剩余 AI 猜测」的目标集（一键按 AI 类别写入确认）。
+ * @returns {Array<{fundName: string, category: string}>} category = 行所在块（AI 原猜归一化后）类别
+ */
+export function collectPendingAiGuesses(parsedSummary, categoryOverrides, categoryDirty) {
+  const rows = []
+  if (!parsedSummary) return rows
+  for (const c of parsedSummary.categories || []) {
+    for (const f of c.funds || []) {
+      // 改过 dropdown 的行（dirty）不计入 —— 否则「确认入库」被禁用 → handleConfirm 不可达
+      // → D2「全部提交」弹窗永远打不开（死锁）；改过的行交给 D2 拦截。
+      if (!categoryOverrides[f.fundName] && !categoryDirty[f.fundName]) {
+        rows.push({ fundName: f.fundName, category: c.categoryName })
+      }
+    }
+  }
+  return rows
+}
+
+// ============================================================================
+// 2026-10-06：解析草稿持久化 —— 未入库时刷新页面不丢已解析结果，仍可继续确认流程
+// ============================================================================
+const PARSE_DRAFT_KEY = 'fincontrol.parseDraft.v1'
+
+/** 保存解析草稿（入库成功/覆盖时更新）。存储失败（配额/隐私模式）静默降级，不阻塞主流程。 */
+export function saveParseDraft(draft) {
+  try {
+    localStorage.setItem(PARSE_DRAFT_KEY, JSON.stringify({
+      v: 1,
+      savedAt: new Date().toISOString(),
+      ...draft,
+    }))
+  } catch (e) {
+    console.warn('[parseDraft] save failed (ignored):', e?.message)
+  }
+}
+
+/** 读取解析草稿；无草稿 / 结构非法（版本不符、缺 parsedAsset）时返回 null。 */
+export function loadParseDraft() {
+  try {
+    const raw = localStorage.getItem(PARSE_DRAFT_KEY)
+    if (!raw) return null
+    const draft = JSON.parse(raw)
+    if (!draft || draft.v !== 1 || !draft.parsedAsset || !draft.parsedAsset.categories?.length) {
+      return null
+    }
+    return draft
+  } catch (e) {
+    return null
+  }
+}
+
+/** 清除解析草稿（入库成功后调用，避免刷新恢复已入库的旧结果）。 */
+export function clearParseDraft() {
+  try {
+    localStorage.removeItem(PARSE_DRAFT_KEY)
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+/**
  * 1b.3 数据管理页
  * <p>功能：
  * <ul>
- *   <li>1b.3.6：4 张图批量上传 dropzone</li>
+ *   <li>1b.3.6：批量上传 dropzone（1~10 张；2026-10-06 解除 4 张限制）</li>
  *   <li>1b.3.7：single/multi toggle + date picker 选 snapshot_date</li>
  *   <li>1b.3.8：is_latest 按钮 + 设为当前快照按钮（按日期）</li>
  *   <li>1b.3.9：snapshot_meta 列表（所有 is_latest=true 行）</li>
  * </ul>
  * <p>提交流程：
  * <ol>
- *   <li>选 4 张图 → /screenshot/upload 得 4 fileId</li>
+ *   <li>选图（1~10 张）→ /screenshot/upload 得 fileId</li>
  *   <li>选 single/multi + snapshot_date → /screenshot/parse-batch?mode={single|multi} 得 19-fund parsedAsset</li>
  *   <li>触发 /snapshot/confirm 写入 DB → 1b.3.2 自动写 snapshot_meta</li>
  *   <li>1b.4-pr7 (DATA-016)：入库成功后弹"设为当前吗?" prompt（蓝色默认改 current，白色取消保留）</li>
@@ -60,7 +124,7 @@ function formatProfit(v) {
  * </ul>
  * <p>2026-07-24 PR4a 修改：
  * <ul>
- *   <li>GLOBAL-016：handleFiles > 4 张改 setError，移除静默截断</li>
+ *   <li>GLOBAL-016：handleFiles 超限改 setError，移除静默截断（2026-10-06 上限改为 10 张）</li>
  *   <li>DATA-002：占位符文案去 0716 残留</li>
  *   <li>DATA-005：上传按钮加 title tooltip</li>
  *   <li>DATA-010：解析模式下方加 form-hint</li>
@@ -122,6 +186,9 @@ export default function DataPage() {
   // 1b.4 PR9 Bug 2：内联单只确认 modal
   // format: { fundName, originalCategory, newCategory } | null
   const [categoryConfirmIntent, setCategoryConfirmIntent] = useState(null)
+  // 2026-10-06（决策 33 D1 配套）：接受剩余 AI 猜测
+  const [showAcceptAiModal, setShowAcceptAiModal] = useState(false)
+  const [acceptingAi, setAcceptingAi] = useState(false)
 
   // 1b4pr6b 批量确认 UX：top toggle + checkbox 列 + 6 大类选择 + 弹窗
   // batchMode：是否进入批量模式（true 时显示 checkbox 列 + 顶部 bar）
@@ -218,6 +285,16 @@ export default function DataPage() {
     fetchMaxSnapshotAgeDays(1).catch((e) => {
       console.warn('PR3plus fetchMaxSnapshotAgeDays failed, use default 7', e)
     })
+    // 2026-10-06：恢复未入库的解析草稿（刷新不丢已解析结果，仍可继续确认流程）
+    const draft = loadParseDraft()
+    if (draft) {
+      setParsedAsset(draft.parsedAsset)
+      setDedupReport(draft.dedupReport || null)
+      if (draft.parseInfo) setParseInfo(draft.parseInfo)
+      if (draft.snapshotDate) setSnapshotDate(draft.snapshotDate)
+      if (draft.mode) setMode(draft.mode)
+      setStep('parsed')
+    }
     // PR1 修复 GLOBAL-015：组件卸载时释放所有 blob URL，避免内存泄漏
     return () => revokeAll(filePreviews)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -238,12 +315,13 @@ export default function DataPage() {
   }
 
   // 1b.3.6 文件选择（PR1 修复 GLOBAL-015：先释放旧的 blob URL，再创建新的）
-  // 1b.4 PR4a GLOBAL-016：> 4 张改 setError，不再静默截断
+  // 1b.4 PR4a GLOBAL-016：超限改 setError，不再静默截断
+  // 2026-10-06：解除"必须 4 张"历史限制 → 支持 1~10 张（与后端 @Size(max=10) 契约一致）
   function handleFiles(e) {
     const list = Array.from(e.target.files || [])
     if (list.length === 0) return
-    if (list.length > 4) {
-      setError(`最多 4 张图，当前选了 ${list.length} 张，请重新选择`)
+    if (list.length > 10) {
+      setError(`最多 10 张图，当前选了 ${list.length} 张，请重新选择`)
       return
     }
 
@@ -269,8 +347,8 @@ export default function DataPage() {
 
   // 1b.3.6 + 1b.3.7 一步：上传 + parse（PR3plus 决策 30/31：加预校验）
   async function uploadAndParse() {
-    if (files.length !== 4) {
-      setError('需要 4 张截图')
+    if (files.length === 0 || files.length > 10) {
+      setError('请选择 1~10 张截图')
       return
     }
     if (!snapshotDate) {
@@ -310,8 +388,8 @@ export default function DataPage() {
         }
         fileIds.push(r.fileId);
       }
-      if (fileIds.length !== 4) {
-        throw new Error('upload 部分失败: ' + fileIds.length + '/4');
+      if (fileIds.length !== files.length) {
+        throw new Error('upload 部分失败: ' + fileIds.length + '/' + files.length);
       }
       setStep('parsing')
       // 2026-10-05 修复：single 模式串行解析 N 图（每图最长 2×300s），全局 120s 必超时 →
@@ -323,13 +401,22 @@ export default function DataPage() {
       )
       setParsedAsset(parseResp.parsedAsset)
       setDedupReport(parseResp.dedupReport || null)
-      setParseInfo({
+      const info = {
         imageCount: parseResp.imageCount,
         fundCount: parseResp.parsedAsset?.categories?.reduce((s, c) => s + (c.funds?.length || 0), 0) || 0,
         usedProvider: parseResp.usedProvider,
         fallbackTriggered: parseResp.fallbackTriggered,
-      })
+      }
+      setParseInfo(info)
       setStep('parsed')
+      // 2026-10-06：持久化解析草稿 —— 未入库时刷新不丢已解析结果，仍可继续确认流程
+      saveParseDraft({
+        snapshotDate,
+        mode,
+        parsedAsset: parseResp.parsedAsset,
+        dedupReport: parseResp.dedupReport || null,
+        parseInfo: info,
+      })
     } catch (e) {
       setError(e?.message || '上传或解析失败')
       setStep('error')
@@ -392,16 +479,10 @@ export default function DataPage() {
   }
 
   // 决策 33 v2 · 派生计算
-  const pendingCount = useMemo(() => {
-    if (!parsedSummary) return 0
-    let n = 0
-    for (const c of parsedSummary.categories) {
-      for (const f of c.funds || []) {
-        if (!categoryOverrides[f.fundName]) n++
-      }
-    }
-    return n
-  }, [parsedSummary, categoryOverrides])
+  const pendingCount = useMemo(
+    () => collectPendingAiGuesses(parsedSummary, categoryOverrides, categoryDirty).length,
+    [parsedSummary, categoryOverrides, categoryDirty]
+  )
   const dirtyCount = Object.keys(categoryDirty).length
 
   // 1b4pr6b Fix B：各类小计实时联动（derivedCategories）
@@ -606,6 +687,29 @@ export default function DataPage() {
     }
   }
 
+  // 2026-10-06（决策 33 D1 配套）：接受剩余 AI 猜测 —— 一键把"纯 AI 猜测未核对"的行
+  // 逐行 confirmOverride（与逐行点 ✓ 完全同语义，写入 user_correct），随后 pendingCount 归零、
+  // 「确认入库」解锁。已确认/已改动的行不受影响。
+  async function acceptRemainingAiGuesses() {
+    const rows = collectPendingAiGuesses(parsedSummary, categoryOverrides, categoryDirty)
+    if (rows.length === 0) {
+      setShowAcceptAiModal(false)
+      return
+    }
+    setAcceptingAi(true)
+    try {
+      for (const r of rows) {
+        await confirmOverride(r.fundName, r.category)
+      }
+      setShowAcceptAiModal(false)
+    } catch (e) {
+      // confirmOverride 内已 setError；中断剩余（保持未处理，可重试）
+      setError(friendlyError(e))
+    } finally {
+      setAcceptingAi(false)
+    }
+  }
+
   // 决策 33 D1+D2：doConfirm（被 handleConfirm 调用，可能在二次确认 modal 后调用）
   // 1b.3.8 confirm（PR1 GLOBAL-015 + PR3 DATA-006 + PR3+ BUG-001/005 + PR3+hotfix BUG-006 + 1b.4-pr7 DATA-016 Fix 1/2/3）
   async function doConfirm() {
@@ -647,6 +751,8 @@ export default function DataPage() {
       setBatchMode(false)                     // 退批量模式
       setSelectedFunds(new Set())             // 清勾选
       setStep('idle')
+      // 2026-10-06：入库成功 → 清除解析草稿（避免刷新恢复已入库的旧结果）
+      clearParseDraft()
       // 5）PR3+ BUG-001：独立 confirmSuccess state 显示入库成功 banner
       setConfirmSuccess(true)
       setLastSuccessFundCount(fundCount)  // Fix 7：用局部变量（parseInfo 已被 setParseInfo(null) 清掉）
@@ -750,14 +856,14 @@ export default function DataPage() {
       )}
       <header className="data-header">
         <h1>数据管理</h1>
-        <p className="sub">上传 4 张支付宝基金截图 → parse → confirm → 决策 27 snapshot_meta 同步</p>
+        <p className="sub">上传支付宝基金截图（1~10 张）→ parse → confirm → 决策 27 snapshot_meta 同步</p>
       </header>
 
       {error && <div className="error-banner">⚠ {error}</div>}
 
       <section className="section-card">
-        <h2>上传 4 张图</h2>
-        <p className="hint">选 4 张支付宝基金截图 → 自动截取前 4 张。已选 {files.length}/4。</p>
+        <h2>上传截图（1~10 张）</h2>
+        <p className="hint">选择 1~10 张支付宝基金截图（多屏滚动截图允许有重叠）。已选 {files.length}/10。</p>
         <div className="upload-bar">
           <input
             type="file"
@@ -785,7 +891,7 @@ export default function DataPage() {
         </div>
         {/* 1b.4 PR4a · DATA-002：去掉'建议 0716 数据'残留 */}
         {filePreviews.length === 0 && (
-          <div className="preview-empty">请选择 4 张支付宝基金截图</div>
+          <div className="preview-empty">请选择支付宝基金截图（1~10 张）</div>
         )}
       </section>
 
@@ -800,13 +906,13 @@ export default function DataPage() {
               <span>解析模式</span>
               <select value={mode} onChange={(e) => setMode(e.target.value)} data-testid="mode-select">
                 <option value="single">single（推荐，单图逐张）</option>
-                <option value="multi">multi（4 图 batch）</option>
+                <option value="multi">multi（多图 batch）</option>
               </select>
             </label>
             {/* 1b.4 PR4a · DATA-010：解析模式说明 */}
             <small className="form-hint">
-              <strong>single</strong>：逐张上传，失败可单独重试；<br />
-              <strong>multi</strong>：4 张一次性发给 AI，速度快但失败需全部重试。
+              <strong>single</strong>：逐张上传，失败可单独重试（图多时更稳）；<br />
+              <strong>multi</strong>：多张一次性发给 AI，速度快但失败需全部重试。
             </small>
           </div>
           <div className="form-group">
@@ -826,8 +932,8 @@ export default function DataPage() {
               aria-hidden="true"
               style={{ visibility: 'hidden' }}
             >
-              <strong>single</strong>：逐张上传，失败可单独重试；<br />
-              <strong>multi</strong>：4 张一次性发给 AI，速度快但失败需全部重试。
+              <strong>single</strong>：逐张上传，失败可单独重试（图多时更稳）；<br />
+              <strong>multi</strong>：多张一次性发给 AI，速度快但失败需全部重试。
             </small>
           </div>
         </div>
@@ -835,7 +941,7 @@ export default function DataPage() {
           {/* 1b.4 PR4a · DATA-005：上传并解析按钮加 tooltip */}
           <button
             onClick={uploadAndParse}
-            disabled={step === 'uploading' || step === 'parsing' || files.length !== 4}
+            disabled={step === 'uploading' || step === 'parsing' || files.length === 0 || files.length > 10}
             className="primary-btn"
             data-testid="parse-btn"
             title="先上传图片，再调用 AI 解析 19 只基金数据"
@@ -953,6 +1059,33 @@ export default function DataPage() {
               <button className="secondary-btn" onClick={() => setShowSubmitDirtyModal(false)} data-testid="cancel-dirty">返回修改</button>
               <button className="secondary-btn" onClick={submitOnlyVerified} data-testid="submit-only-verified">仅提交已 ✓ 的</button>
               <button className="primary-btn" onClick={submitAllDirty} data-testid="submit-all-dirty">全部提交</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2026-10-06（决策 33 D1 配套）：接受剩余 AI 猜测二次确认 */}
+      {showAcceptAiModal && (
+        <div className="modal-backdrop show-accept-ai-modal" onClick={() => !acceptingAi && setShowAcceptAiModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h2>🤖 接受剩余 AI 猜测</h2>
+              <button className="modal-close" onClick={() => setShowAcceptAiModal(false)}
+                aria-label="关闭" disabled={acceptingAi}>×</button>
+            </div>
+            <div className="modal-body">
+              <p>将把 <strong>{pendingCount}</strong> 条尚未核对的基金，按当前 AI 猜测的类别写入你的确认记录。</p>
+              <p style={{ color: '#6b7280', fontSize: 13 }}>
+                与你逐行点 ✓ 完全一致；已确认 / 已改动的行不会变动。若某条 AI 猜错，可在下次解析时继续修正。
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="secondary-btn" onClick={() => setShowAcceptAiModal(false)}
+                disabled={acceptingAi}>取消</button>
+              <button className="primary-btn" onClick={acceptRemainingAiGuesses}
+                disabled={acceptingAi} data-testid="accept-ai-confirm-btn">
+                {acceptingAi ? '提交中…' : `确认接受（${pendingCount}）`}
+              </button>
             </div>
           </div>
         </div>
@@ -1364,12 +1497,25 @@ export default function DataPage() {
             </div>
             <div className="modal-footer">
               <button className="secondary-btn" onClick={closeConfirmModal}>取消</button>
+              {/* 2026-10-06（决策 33 D1 配套）：接受剩余 AI 猜测 —— 一键把未核对行
+                  按 AI 类别写入确认（与逐行点 ✓ 同语义），解锁「确认入库」 */}
+              {pendingCount > 0 && (
+                <button
+                  className="secondary-btn"
+                  onClick={() => setShowAcceptAiModal(true)}
+                  disabled={step === 'confirming' || acceptingAi}
+                  title={`把尚未核对的 ${pendingCount} 条按 AI 猜测类别写入确认（等同逐行点 ✓）`}
+                  data-testid="accept-ai-btn"
+                >
+                  接受剩余 AI 猜测（{pendingCount}）
+                </button>
+              )}
               {/* 决策 33 D1：严格阻塞（pendingCount > 0 时按钮 disabled）
                   + D2：dirtyCount > 0 弹二次确认 modal（handleConfirm 拦截） */}
               <button
                 className="primary-btn"
                 disabled={pendingCount > 0 || step === 'confirming'}
-                title={pendingCount > 0 ? `还有 ${pendingCount} 条 AI 猜测未确认，请逐行核对` : ''}
+                title={pendingCount > 0 ? `还有 ${pendingCount} 条 AI 猜测未确认：请逐行核对，或点左侧「接受剩余 AI 猜测」` : ''}
                 onClick={handleConfirm}
                 data-testid="modal-confirm-btn"
               >

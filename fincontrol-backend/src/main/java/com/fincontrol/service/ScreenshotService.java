@@ -58,7 +58,7 @@ public class ScreenshotService {
     private final DedupEngine dedupEngine;                    // 1a.10：batch 内部去重 + top/sum 校验
     private final Path ocrLogRoot;
 
-    /** 1a.8 路由 imageCount 上下文：1 张图 parse → imageCount=1；批量 4 张 → imageCount=4。 */
+    /** 1a.8 路由 imageCount 上下文：1 张图 parse → imageCount=1；批量 N 张（1~10）→ imageCount=N。 */
     private static final int DEFAULT_IMAGE_COUNT = 1;
 
     public ScreenshotService(FileStorageService storage,
@@ -677,6 +677,8 @@ public class ScreenshotService {
         out.setBalanceFund(decimalOrNull(json, "balance_fund"));
 
         List<ParsedAsset.CategoryBlock> blocks = new ArrayList<>();
+        // 2026-10-06：user_correct 行级重分配队列（块与行全部构建完成后统一执行）
+        List<LineReassignment> reassignMoves = new ArrayList<>();
 
         // Strategy A
         JsonNode categories = json.path("categories");
@@ -698,7 +700,11 @@ public class ScreenshotService {
                         line.setHoldingProfit(firstDecimal(f, "holding_profit", "profit"));
                         line.setCumulativeProfit(firstDecimal(f, "cumulative_profit", "holding_profit", "profit"));
                         // 1a.8.8：调 resolver 拿 isUserConfirmed + 覆盖 block（如果 user_correct 不一致）
-                        applyResolver(line, block, rawCat, userId);
+                        // 1a.8.8 + 2026-10-06：resolver 拿 isUserConfirmed；user_correct 不一致的行登记待重分配
+                        String moveTarget = applyResolver(line, block, rawCat, userId);
+                        if (moveTarget != null) {
+                            reassignMoves.add(new LineReassignment(block, line, moveTarget));
+                        }
                         lines.add(line);
                     }
                 }
@@ -737,7 +743,11 @@ public class ScreenshotService {
                         line.setProfit(firstDecimal(h, "holding_pnl", "holding_profit", "profit"));
                         line.setHoldingProfit(firstDecimal(h, "holding_pnl", "holding_profit", "profit"));
                         line.setCumulativeProfit(firstDecimal(h, "cumulative_profit", "holding_pnl", "holding_profit", "profit"));
-                        applyResolver(line, block, rawCat, userId);
+                        // 1a.8.8 + 2026-10-06：resolver 拿 isUserConfirmed；user_correct 不一致的行登记待重分配
+                        String moveTarget = applyResolver(line, block, rawCat, userId);
+                        if (moveTarget != null) {
+                            reassignMoves.add(new LineReassignment(block, line, moveTarget));
+                        }
                         lines.add(line);
                     }
                     block.setFunds(lines);
@@ -752,6 +762,8 @@ public class ScreenshotService {
                 }
             }
         }
+        // 2026-10-06：user_correct 行级重分配（块与行构建完成后）
+        reassignUserCorrectLines(blocks, reassignMoves);
         out.setCategories(blocks);
 
         List<String> matched = new ArrayList<>();
@@ -769,32 +781,80 @@ public class ScreenshotService {
     }
 
     /**
-     * 1a.8.8：调 resolver 归一化单只基金；user_correct 命中且 canonical 与 block 不同则覆盖 block。
+     * 1a.8.8：调 resolver 归一化单只基金。
+     *
+     * <p>2026-10-06 修复（固收基金误归 A股权益类事故）：旧实现把"user_correct 与 block 不一致"
+     * 直接改写整块 categoryName —— 当 AI 把用户已确认的固收基金混进 A股权益类块时，
+     * 块内每只基金轮流改写块名（最后一只决定整块），导致用户已确认的类别被 AI 猜测覆盖。
+     * 现改为**行级重分配**：本方法只返回目标 canonical 类别并标记该行待迁移；
+     * 由 {@link #reassignUserCorrectLines} 在块构建完成后把行移入正确的类别块。
+     *
+     * @return 该行应迁往的目标 canonical 类别（仅 user_correct 命中且与所在块不同时非 null）
      */
-    private void applyResolver(ParsedAsset.FundLine line,
-                               ParsedAsset.CategoryBlock block,
-                               String rawCategory,
-                               Long userId) {
+    private String applyResolver(ParsedAsset.FundLine line,
+                                 ParsedAsset.CategoryBlock block,
+                                 String rawCategory,
+                                 Long userId) {
         if (line.getFundName() == null || userId == null) {
             line.setIsUserConfirmed(false);
             line.setConfirmedAt(null);
-            return;
+            return null;
         }
         try {
             FundCategoryResolver.ResolvedCategory resolved =
                     fundCategoryResolver.resolve(line.getFundName(), rawCategory, userId);
             line.setIsUserConfirmed(resolved.isUserConfirmed());
             line.setConfirmedAt(resolved.confirmedAt());
-            if (resolved.canonicalName() != null
+            if (resolved.isUserConfirmed()
+                    && resolved.canonicalName() != null
                     && !resolved.canonicalName().equals(block.getCategoryName())) {
-                log.debug("类别主数据/用户映射覆盖 block category: fund={} block={} → resolved={}",
-                        line.getFundName(), block.getCategoryName(), resolved.canonicalName());
-                block.setCategoryName(resolved.canonicalName());
+                return resolved.canonicalName();
             }
+            return null;
         } catch (Exception e) {
             log.warn("resolver 调用失败，fallback: fund={} err={}", line.getFundName(), e.getMessage());
             line.setIsUserConfirmed(false);
             line.setConfirmedAt(null);
+            return null;
+        }
+    }
+
+    /** 行级重分配任务：line 从 from 块迁往 target 类别块。 */
+    private record LineReassignment(ParsedAsset.CategoryBlock from,
+                                    ParsedAsset.FundLine line,
+                                    String targetCategory) {}
+
+    /**
+     * 2026-10-06：把 user_correct 命中的行迁入目标类别块（不再改写任何块名）。
+     * <p>目标块不存在时新建；迁移后重算所有块 fundCount。空块保留（与既有行为一致）。
+     */
+    private static void reassignUserCorrectLines(List<ParsedAsset.CategoryBlock> blocks,
+                                                 List<LineReassignment> moves) {
+        for (LineReassignment m : moves) {
+            if (m.from().getFunds() == null) continue;
+            if (!m.from().getFunds().remove(m.line())) continue; // 已被移走则跳过
+            ParsedAsset.CategoryBlock target = null;
+            for (ParsedAsset.CategoryBlock b : blocks) {
+                if (m.targetCategory().equals(b.getCategoryName())) {
+                    target = b;
+                    break;
+                }
+            }
+            if (target == null) {
+                target = new ParsedAsset.CategoryBlock();
+                target.setCategoryName(m.targetCategory());
+                target.setFunds(new ArrayList<>());
+                blocks.add(target);
+            }
+            if (target.getFunds() == null) {
+                target.setFunds(new ArrayList<>());
+            }
+            target.getFunds().add(m.line());
+            log.debug("user_correct 行级重分配: fund={} {} → {}",
+                    m.line().getFundName(), m.from().getCategoryName(), m.targetCategory());
+        }
+        for (ParsedAsset.CategoryBlock b : blocks) {
+            b.setFundCount(b.getFunds() == null ? 0 : b.getFunds().size());
         }
     }
 

@@ -15,7 +15,8 @@ import java.util.List;
  *
  * <p>2026-07-20 决策 13：新增 {@link #dataTime} 字段（可选 LocalDate），
  * 优先级 = 前端用户输入 > AI 提取 > LocalDate.now()。
- * 4 张图共享同一 dataTime（多图属于同一时点同一账户）。
+ * 最多 10 张图共享同一 dataTime（多图属于同一时点同一账户）。
+ * <p>2026-10-06：前端解除"必须 4 张"历史限制，支持 1~10 张任意张数。
  */
 @Data
 public class ScreenshotBatchParseRequest {
@@ -28,6 +29,6 @@ public class ScreenshotBatchParseRequest {
     @Valid
     private List<@NotBlank(message = "fileId 不能为空") String> fileIds;
 
-    /** 决策 13：4 张图对应的实际数据日期（同一时点同一账户）。null = 走 AI 提取 fallback。 */
+    /** 决策 13：多图（最多 10 张）对应的实际数据日期（同一时点同一账户）。null = 走 AI 提取 fallback。 */
     private LocalDate dataTime;
 }

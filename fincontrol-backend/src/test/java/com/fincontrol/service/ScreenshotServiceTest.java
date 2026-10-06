@@ -545,4 +545,50 @@ class ScreenshotServiceTest {
          ScreenshotService.applyDataTimeOverride(null, LocalDate.of(2026, 7, 15), "test:direct");
          // 不抛异常
      }
+
+     @Test
+     void parse_userCorrectLineMixedInWrongBlock_reassignedWithoutRenamingBlock() throws Exception {
+         // 2026-10-06 事故回归（三只固收基金误归 A股权益类）：
+         // AI 把用户已确认的固收基金混进 A股权益类块时：
+         // 旧实现改写整块名（块内轮流覆盖、最后一只决定）→ 用户已确认类别被 AI 猜测覆盖；
+         // 新实现行级重分配：该行迁入"固收类"块，原块名与其余基金保持不变。
+         com.fincontrol.entity.FundCategoryMap fixed = new com.fincontrol.entity.FundCategoryMap();
+         fixed.setUserId(1L);
+         fixed.setFundName("长城短债债券A");
+         fixed.setCategory("固收类");
+         fixed.setSource("user_correct");
+         when(fundCategoryMapMapper.selectByUserCorrect(1L, "长城短债债券A")).thenReturn(fixed);
+
+         String raw = "{" +
+                 "\"snapshot_date\":\"2026-10-06\"," +
+                 "\"categories\":[{\"category_name\":\"A股权益类\",\"funds\":[" +
+                 "  {\"fund_name\":\"诺安中证A100指数A\",\"amount\":1553.21,\"holding_profit\":-85.79}," +
+                 "  {\"fund_name\":\"长城短债债券A\",\"amount\":557.70,\"holding_profit\":7.70}]}]}";
+         stubVisionSuccess(raw, ChatHistory.PROVIDER_MINIMAX, false);
+         stubExtractJson(raw);
+         when(chatHistoryMapper.insert(any(ChatHistory.class))).thenReturn(1);
+
+         ScreenshotParseRequest req = new ScreenshotParseRequest();
+         req.setFileId(FILE_ID);
+         req.setUserId(1L);
+
+         ParsedAsset asset = service.parse(req);
+
+         // 原 A股权益类块：仅保留诺安（块名未被改写、未被带走）
+         ParsedAsset.CategoryBlock aShare = asset.getCategories().stream()
+                 .filter(b -> "A股权益类".equals(b.getCategoryName()))
+                 .findFirst().orElseThrow();
+         assertThat(aShare.getFunds()).extracting(f -> f.getFundName())
+                 .containsExactly("诺安中证A100指数A");
+         assertThat(aShare.getFundCount()).isEqualTo(1);
+
+         // 长城短债被迁入固收类块（新建），且仍标记为用户已确认
+         ParsedAsset.CategoryBlock fixedBlock = asset.getCategories().stream()
+                 .filter(b -> "固收类".equals(b.getCategoryName()))
+                 .findFirst().orElseThrow();
+         assertThat(fixedBlock.getFunds()).extracting(f -> f.getFundName())
+                 .containsExactly("长城短债债券A");
+         assertThat(fixedBlock.getFunds().get(0).getIsUserConfirmed()).isTrue();
+         assertThat(fixedBlock.getFundCount()).isEqualTo(1);
+     }
  }
