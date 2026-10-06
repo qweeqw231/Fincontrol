@@ -33,6 +33,8 @@ public class NavQueryService {
             "货币类", "固收类", "商品类", "A股权益类", "海外权益类", "港股大中华类"
     );
 
+    private static final BigDecimal HUNDRED = new BigDecimal("100");
+
     private final NavHistoryMapper navHistoryMapper;
     private final NavMilestoneMapper navMilestoneMapper;
     private final AssetSnapshotMapper assetSnapshotMapper;
@@ -96,6 +98,18 @@ public class NavQueryService {
     // GET /api/ratio/history — 六大类占比时间线
     // ========================================================================
 
+    /**
+     * 比例时间线。
+     *
+     * <p>2026-10-07 修复（比例塌 0 事故）：占比不再直接读 {@code asset_snapshot.actual_ratio}
+     * 冗余列（confirm 流程在 AI 百分比缺失时写 0，导致 9/29、10/6 两点全塌），
+     * 改为按权威金额实时重算（对齐 1b.3 R4 口径）：
+     * <ul>
+     *   <li>六大类 ratio = category / 六大类合计 × 100（合计恰为 100）</li>
+     *   <li>余额类 ratio = 余额 / 总资产（六大类 + 余额）× 100（占总资产口径）</li>
+     * </ul>
+     * 已用 9/24 等导入日期交叉验证：重算值与存量列一致，历史曲线不变。
+     */
     public Map<String, Object> getRatioHistory(Long userId) {
         log.info("Phase3 ratio/history: userId={}", userId);
 
@@ -106,21 +120,40 @@ public class NavQueryService {
           .orderByAsc(AssetSnapshot::getCategory);
         List<AssetSnapshot> rows = assetSnapshotMapper.selectList(qw);
 
-        // Group by date
-        Map<String, Map<String, Object>> byDate = new LinkedHashMap<>();
+        // Group by date（先归集金额，再按日期重算占比）
+        Map<String, Map<String, BigDecimal>> amountByDate = new LinkedHashMap<>();
         for (AssetSnapshot snap : rows) {
             String dateStr = snap.getSnapshotDate().toString();
-            Map<String, Object> point = byDate.computeIfAbsent(dateStr, k -> {
-                Map<String, Object> p = new LinkedHashMap<>();
-                p.put("date", k);
-                return p;
-            });
-            String cat = snap.getCategory();
-            point.put(cat, scale(snap.getActualRatio(), 2));
-            point.put(cat + "_amount", scale(snap.getTotalAmount(), 2));
+            amountByDate.computeIfAbsent(dateStr, k -> new LinkedHashMap<>())
+                    .merge(snap.getCategory(), nz(snap.getTotalAmount()), BigDecimal::add);
         }
 
-        List<Map<String, Object>> points = new ArrayList<>(byDate.values());
+        List<Map<String, Object>> points = new ArrayList<>(amountByDate.size());
+        for (Map.Entry<String, Map<String, BigDecimal>> entry : amountByDate.entrySet()) {
+            Map<String, BigDecimal> amounts = entry.getValue();
+            BigDecimal sixTotal = BigDecimal.ZERO;
+            BigDecimal totalAll = BigDecimal.ZERO;
+            for (BigDecimal amount : amounts.values()) {
+                totalAll = totalAll.add(amount);
+            }
+            for (Map.Entry<String, BigDecimal> a : amounts.entrySet()) {
+                if (!"余额类".equals(a.getKey())) {
+                    sixTotal = sixTotal.add(a.getValue());
+                }
+            }
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("date", entry.getKey());
+            for (Map.Entry<String, BigDecimal> a : amounts.entrySet()) {
+                String cat = a.getKey();
+                BigDecimal denominator = "余额类".equals(cat) ? totalAll : sixTotal;
+                BigDecimal ratio = denominator.signum() > 0
+                        ? a.getValue().multiply(HUNDRED).divide(denominator, 2, RoundingMode.HALF_UP)
+                        : null;
+                point.put(cat, ratio);
+                point.put(cat + "_amount", a.getValue().setScale(2, RoundingMode.HALF_UP));
+            }
+            points.add(point);
+        }
         // Sort by date
         points.sort(Comparator.comparing(p -> (String) p.get("date")));
 
@@ -179,6 +212,10 @@ public class NavQueryService {
             log.warn("operation_log.warnings 解析失败，降级为纯文本：{}", e.getMessage());
             return List.of(warnings);
         }
+    }
+
+    private static BigDecimal nz(BigDecimal v) {
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     // ========================================================================
