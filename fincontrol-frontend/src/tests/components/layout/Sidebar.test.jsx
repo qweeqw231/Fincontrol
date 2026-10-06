@@ -51,7 +51,7 @@ describe('Sidebar · 校正台入口（2a）', () => {
     for (const [label, href] of [
       ['首页', '/'],
       ['数据管理', '/data'],
-      ['净值曲线', '/nav'],
+      ['绩效统计', '/nav'],
       ['比例演化', '/ratio'],
       ['AI 顾问', '/ai'],
     ]) {

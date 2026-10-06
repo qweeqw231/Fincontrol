@@ -20,6 +20,17 @@ if (typeof Element.prototype.scrollIntoView !== 'function') {
   Element.prototype.scrollIntoView = () => {}
 }
 
+// jsdom 不实现 ResizeObserver（Recharts ResponsiveContainer 依赖）
+// 2026-10-07：补 no-op，修复 /nav 绩效统计页在 jsdom 中渲染图表时
+// "ResizeObserver is not defined" 导致整树卸载（测试找不到任何元素）
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}
+
 afterEach(() => {
   cleanup()
 })

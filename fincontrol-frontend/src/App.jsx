@@ -16,7 +16,7 @@ const TITLES = {
   '/data':       '数据管理 · FinControl',
   '/config':     '资产配置 · FinControl',
   '/correction': '月度校正 · FinControl',
-  '/nav':        '净值 · FinControl',
+  '/nav':        '绩效统计 · FinControl',
   '/ratio':      '比例 · FinControl',
   '/quarterly':  '季度校正 · FinControl',
   '/ai':         'AI 顾问 · FinControl',

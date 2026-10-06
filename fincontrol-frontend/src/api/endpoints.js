@@ -69,6 +69,11 @@ export const ENDPOINTS = {
   NAV_OPERATIONS: '/nav/operations',
   RATIO_HISTORY: '/ratio/history',
 
+  // 2b 绩效统计 + Excel 自动同步
+  NAV_STATISTICS: '/nav/statistics',
+  NAV_SYNC: '/nav/sync',
+  NAV_SYNC_STATUS: '/nav/sync-status',
+
   // 解析日志（11.x）
   PARSE_LOGS: '/parse-logs',
 
@@ -127,6 +132,9 @@ export const ASSET_CUMULATIVE_RETURN = ENDPOINTS.ASSET_CUMULATIVE_RETURN
 export const NAV_HISTORY = ENDPOINTS.NAV_HISTORY
 export const NAV_OPERATIONS = ENDPOINTS.NAV_OPERATIONS
 export const RATIO_HISTORY = ENDPOINTS.RATIO_HISTORY
+export const NAV_STATISTICS = ENDPOINTS.NAV_STATISTICS
+export const NAV_SYNC = ENDPOINTS.NAV_SYNC
+export const NAV_SYNC_STATUS = ENDPOINTS.NAV_SYNC_STATUS
 
 export const PARSE_LOGS = ENDPOINTS.PARSE_LOGS
 

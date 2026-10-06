@@ -104,6 +104,13 @@
             <artifactId>caffeine</artifactId>
         </dependency>
 
+        <!-- 2b：净值 Excel 自动同步 —— 解析 portfolio_daily_complete_v3 的"每日明细" sheet -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
         <!-- springdoc-openapi（Swagger UI 自动生成）-->
         <dependency>
             <groupId>org.springdoc</groupId>

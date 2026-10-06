@@ -2,7 +2,7 @@
 
 > 个人资产配置控制系统 —— 以支付宝基金截图作为数据源，借助多模态模型完成基金去重、分类与三表事务入库，并通过 React 资产看板呈现当前快照、累计/持有收益与配置偏差。
 
-FinControl 是一个以控制论为理论基础、以真实个人账户为实验平台、以多模态 AI 与稳健工程为底座的个人资产配置控制系统。Phase 1（数据流水线闭环）已于 2026-07-25 通过真实用户端到端验收正式收官；Phase 2–5 的范围与排序由 Phase 0 决策 34 统一规定。2026-09-30，Phase 3 的净值曲线 / 比例演化与 Phase 5 的 AI 顾问界面**提前交付**；2026-10-07，Phase 2 的月度校正台与 Phase 5a 的季度 LQR-ZOH 联合校正台**提前交付**（决策 37，见 [Phase 变更记录](docs/phase-1/phase-change-log.md)）。日常运行采用单进程形态（决策 36，8080 单端口）。
+FinControl 是一个以控制论为理论基础、以真实个人账户为实验平台、以多模态 AI 与稳健工程为底座的个人资产配置控制系统。Phase 1（数据流水线闭环）已于 2026-07-25 通过真实用户端到端验收正式收官；Phase 2–5 的范围与排序由 Phase 0 决策 34 统一规定。2026-09-30，Phase 3 的净值曲线 / 比例演化与 Phase 5 的 AI 顾问界面**提前交付**；2026-10-07，Phase 2 的月度校正台、Phase 5a 的季度 LQR-ZOH 联合校正台（决策 37）与净值 Excel 自动同步 + `/nav` 扩容为**绩效统计**（决策 38）**提前交付**。日常运行采用单进程形态（决策 36，8080 单端口）。
 
 ---
 
@@ -147,7 +147,7 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 │  │ Stores   assetSnapshot / userConfig / operation / chat / correction│    │
 │  │ Comps    Recharts Pie / CumulativeReturnCard / CategoryDetail     │    │
 │  │          / CorrectionDetailDrawer（校正回放抽屉）                   │    │
-│  │ Tests    Vitest 18 files · 89/89 pass · jsdom env                 │    │
+│  │ Tests    Vitest 19 files · 93/93 pass · jsdom env                 │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                     axios 拦截器 (X-User-Id: 1) + Vite proxy /api → 8080 │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -175,7 +175,7 @@ FinControl 是一个以控制论为理论基础、以真实个人账户为实验
 │  snapshot_meta（is_current） / settings / category_master                 │
 │  operation_log（校正流水 + correction_mode）                              │
 │  correction_iteration / correction_asset_detail / correction_param（2a）  │
-│  nav_history / nav_milestone（净值 348 交易日，Phase 3 提前交付）         │
+│  nav_history（Excel 定时轮询自动同步，决策 38） / nav_milestone              │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -255,7 +255,7 @@ Fincontrol/                                       ← 工作区根（单仓多�
 │       ├── stores/                                ← Zustand stores（asset / user / operation / chat / correction）
 │       ├── styles/                                ← 全局 CSS（variables / global / sidebar）；页面级 CSS 随页面存放（ratio-page / nav-page / correction-page）
 │       ├── utils/                                 ← formatters / blob / categoryColors / correctionPayload（2a 确认载荷装配）
-│       └── tests/                                 ← Vitest 18 文件 / 89 用例（jsdom env）
+│       └── tests/                                 ← Vitest 19 文件 / 93 用例（jsdom env）
 │
 ├── scripts/                                       ← 跨端运维 / 导入 / smoke / git 辅助
 │   ├── README.md
@@ -293,7 +293,7 @@ Fincontrol/                                       ← 工作区根（单仓多�
 | **1b.4-pr7 V1–V8 用户亲手跑通** | ✅ 8/8 | [PR7 最终验收报告](docs/test-records/manual-tests/1b/2026-07-25_1b4-pr7-acceptance-report.md) |
 | **后端 `SnapShotConfirmServiceP7Test`** | ✅ 9/9 | `mvn -o test -Dtest=SnapShotConfirmServiceP7Test` 全绿（PR7 收官） |
 | **后端 `SnapshotQueryServiceTest` 主页固收类修复** | ✅ | 1b.4-pr6b-recovery V6 |
-| **前端 Vitest 单元测试** | ✅ 18 文件 / 89 用例（2026-10-07 更新）| `npm --prefix fincontrol-frontend test -- --run` 全绿 |
+| **前端 Vitest 单元测试** | ✅ 19 文件 / 93 用例（2026-10-07 更新）| `npm --prefix fincontrol-frontend test -- --run` 全绿 |
 | **前端 Vite build** | ✅ 4.57s / 922 modules（2026-10-07 更新）| `npm --prefix fincontrol-frontend run build` |
 | **首页首屏 / 数据管理 / 快照列表 / 状态壳** | ✅ 用户验收 | 决策 33 PR4a + PR7 收官 |
 | **真实 4 图 confirm** | ✅ 19 funds / ¥7,850.38 / 固收¥1,189.92 + 余额¥140.94 | 1b.4-pr6b-recovery V6 验证报告 |
@@ -318,7 +318,7 @@ Fincontrol/                                       ← 工作区根（单仓多�
 
 ### 全量测试当前口径（2026-10-07）
 
-- **全绿**：`mvn test` = **296 / 0 failures / 0 errors**（含 2a 校正求解 oracle、H2 四表事务、比例重算回归）；前端 Vitest = **18 文件 / 89 用例**；`npm run build` 通过。
+- **全绿**：`mvn test` = **307 / 0 failures / 0 errors**（含 2a 校正求解 oracle、2b 净值解析/统计口径/H2 upsert、H2 四表事务、比例重算回归）；前端 Vitest = **19 文件 / 93 用例**；`npm run build` 通过。
 - 2026-10-05 已清理 Phase 1 遗留的测试基线债务（H2 schema 缺表 / `WebMvcTest` mapper 装配，原 3 failures + 55 errors）——历史说明保留：债务成因是 H2 集成测试缺 `settings` 等表、若干 `WebMvcTest` 在缺少 `SqlSessionFactory` 时加载 mapper；修复方式为 H2 schema 同步 + `@MockBean` 补齐全部 mapper。
 - 历史基线（不要把历史数字与当前状态混为一谈）：2026-07-19 Phase 1a `mvn test` 241/241；2026-07-25 Phase 1 收官时前端 57 用例。
 
@@ -388,7 +388,7 @@ Fincontrol/                                       ← 工作区根（单仓多�
 - Ant Design 移除 → **纯手写 CSS**（决策 17，< 50 行/组件）
 - Axios（拦截器 + X-User-Id 默认 1，决策 19 + 22 + 23）
 - Zustand 5（5 stores：assetSnapshot / userConfig / operation / correction / chat）
-- Vitest 2.1 + jsdom + Testing Library（89 用例，决策 13/14/24 + 修正）
+- Vitest 2.1 + jsdom + Testing Library（93 用例，决策 13/14/24 + 修正）
 - Puppeteer 25（仅 devDependency，决策 13 E2E 留作 Phase 4）
 
 ### 已实现路由
@@ -400,7 +400,7 @@ Fincontrol/                                       ← 工作区根（单仓多�
 | `/ai` | AIPage（AI 顾问）| 5 | ✅ 完成（2026-09-30 提前交付：对话 + RAG）|
 | `/config` | ConfigPage（资产配置）| 2 | ⏳ 占位 |
 | `/correction` | CorrectionPage（月度校正台）| 2 | ✅ 完成（2026-10-07 提前交付：低波 Δm/Δb 求解 + 取整确认 + 记录回放，决策 37）|
-| `/nav` | NAVPage（净值曲线）| 3 | ✅ 完成（2026-09-30 提前交付）|
+| `/nav` | NAVPage（绩效统计）| 3 | ✅ 完成（2026-09-30 交付净值曲线；2026-10-07 扩容为绩效统计 + Excel 自动同步，决策 38）|
 | `/ratio` | RatioPage（比例演化）| 3 | ✅ 完成（2026-09-30 提前交付；2026-10-07 修复占比按金额重算）|
 | `/quarterly` | QuarterlyPage（季度操作台）| 5 | ✅ 完成（2026-10-07 提前交付：LQR-ZOH 联合校正 + 历史回放，决策 37）|
 

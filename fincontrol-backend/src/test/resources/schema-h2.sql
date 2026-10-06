@@ -205,3 +205,20 @@ CREATE TABLE IF NOT EXISTS correction_param (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uk_cp_op_key ON correction_param(operation_log_id, param_key);
 CREATE INDEX IF NOT EXISTS idx_cp_user_key ON correction_param(user_id, param_key);
+
+-- 2b 净值自动同步（NavSyncH2Test）：nav_history（与 db-schema/import-data 同构）
+CREATE TABLE IF NOT EXISTS nav_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL DEFAULT 1,
+    nav_date DATE NOT NULL,
+    weekday VARCHAR(10) NULL,
+    daily_return_pct DECIMAL(12,8) NULL,
+    actual_profit DECIMAL(12,2) NULL,
+    cumulative_profit DECIMAL(12,2) NULL,
+    nav DECIMAL(12,8) NULL,
+    nav_pct DECIMAL(12,8) NULL,
+    total_asset DECIMAL(14,2) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_nav_user_date ON nav_history(user_id, nav_date);
+CREATE INDEX IF NOT EXISTS idx_nav_user_date ON nav_history(user_id, nav_date);

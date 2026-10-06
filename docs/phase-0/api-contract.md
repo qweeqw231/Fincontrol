@@ -1502,6 +1502,24 @@ GET /api/parse-logs
 - [ ] Phase 3：`GET /api/snapshot/ratios?date=`（比例演化）
 - [ ] Phase 5：`POST /api/auth/login`（多用户）
 
+### 已交付补充（2026-10-07，2b 决策 38）
+
+```
+GET  /api/nav/statistics    — 绩效统计（核心绩效/风险调整/分布与区间）
+GET  /api/nav/sync-status   — Excel 自动同步状态
+POST /api/nav/sync          — 手动触发 Excel 同步
+```
+
+- `GET /api/nav/statistics`：由 `nav_history` 实时计算。响应要点：`from/to/totalDays/nonZeroDays/zeroDays/weekendDays`；
+  `metrics{dailyReturnPct(剔除0)/actualProfit/cumulativeProfit/nav/totalAsset → {count,mean,median,std,min,max,p1..p99,skewness,kurtosis}}`；
+  `drawdown{maxDrawdownPct,peakDate,troughDate,durationDays,daysNavAbove100/105/110/115,daysNavBelow100}`；
+  `risk{cagrPct,annualVolPct,riskFreePct(1.16),sharpe,calmar,sortino,annualDownsidePct,winRatePct,avgWinPct,avgLossPct,profitLossRatio,note}`；
+  `returnHistogram[{bin,count,pct}]`（0.1% 步长）、`pnlHistogram[{bin,count,pct,total,avg}]`（10 元步长，含 `{0}` 专属区间）；
+  `cumulative{intervals[{index,start,end,days,valley,valleyDate,pctOfTotal}],startValue,currentValue,peak/valley + 日期,peakToValleyDrop,valleyToNowRebound,belowZeroDays,belowZeroPct}`
+- `GET /api/nav/sync-status`：`{enabled, sourceFile, fileExists, fileLastModified, fileSize, lastSyncAt, lastRows, lastError}`
+- `POST /api/nav/sync`：`{synced, rows, range, message}`；文件不存在/未配置返回 `synced=false` + 明确 message
+- 自动同步：后端 `@Scheduled` 轮询 `fincontrol.nav.sync.source-file`（默认 30s，变化 + 稳定 ≥3s 后解析 `每日明细` sheet，幂等 upsert `nav_history`）
+
 ---
 
 ## 14. 与四轮评审的衔接

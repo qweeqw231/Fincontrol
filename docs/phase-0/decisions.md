@@ -2045,6 +2045,33 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 
 ---
 
+## 决策 38：净值 Excel 自动同步 + /nav 扩容为「绩效统计」（2026-10-07）
+
+**状态**：✅ 已实施（2026-10-07）
+
+**背景**：
+- 用户以个人 Excel（`portfolio_daily_complete_v3 (1).xlsx`，`每日明细` sheet）定期记录净值/累加/总资产，希望无云服务条件下"文件有变化即自动更新净值页"
+- `/nav`（原「净值曲线」）仅含净值/累加两张图；个人统计报告 Excel 的 9 个分析维度（核心指标/回撤/风险调整/分布/累加区间/阶段对比/月度/0% 日子）无处承载
+- 文案两处缺陷：横坐标只有 MM-DD 缺年份；"共 N 个交易日"实为自然日（含周末）
+
+**决策**：
+
+> **`/nav` 改名「绩效统计」并扩容；Excel 经后端定时轮询自动同步（POI 解析 + 幂等 upsert）。**
+
+1. 同步机制：`@Scheduled` 轮询（默认 30s）比较 `lastModified+size` → 文件稳定 ≥3s → Apache POI 解析 `每日明细`（表头第 5 行）→ 按 `(user_id, nav_date)` 幂等 upsert `nav_history`；**不删除** Excel 缺失行；失败不更新指纹（下轮自动重试）
+2. 手动兜底：`POST /api/nav/sync` + 页面「立即同步」；`GET /api/nav/sync-status` 返回启用状态/上次同步时间/行数/错误
+3. 路径与开关：`fincontrol.nav.sync.*`（application.yml 默认指向个人记录表；可被 application-local.yml / 环境变量覆盖）
+4. 统计 API：`GET /api/nav/statistics` 实时计算三组维度 —— 核心绩效（指标总览/最大回撤/净值分档）、风险调整（CAGR/年化波动/夏普/卡玛/索提诺/胜率/盈亏比）、分布与区间（收益率与盈亏直方图、累加<0 区间）；口径：波动/胜率剔除 0% 收益日、CAGR 按自然日跨度、无风险利率 1.16%、峰度为超额峰度
+5. 文案与坐标：横坐标改 `YYYY-MM`（含年份）；"交易日"改"自然日"；页头显示同步状态
+6. 里程碑（Excel `关键日期` sheet）**暂不同步**（该 sheet 落后于库内 nav_milestone）
+7. 需求书 §3 导航顺序中「净值曲线」→「绩效统计」（v1.1 注记）
+
+**验证（2026-10-07）**：后端 307 测试全绿（含 POI 解析 fixture / 统计口径 / H2 upsert 幂等）；前端 19 文件 93 用例全绿 + build 通过；真实文件同步与页面端到端复验
+
+**关联**：phase-change-log 偏差 E；api-contract §13；需求书 §3/§9
+
+---
+
 ## 决策总结表（追加后）
 
 > 决策 22 规定：本汇总表始终位于文档最末尾。
@@ -2056,6 +2083,7 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 > 1b.4 三项决策 30 / 31 / 32 于 2026-07-24 首次总表登记（PR5 收官）。
 > 2026-09-30：追认补登决策 9 / 10 / 11 三行（正文此前已存在或本次补写）；决策 36 于本次登记。
 > 2026-10-07：决策 37 登记（校正台提前交付 + 过程明细数据模型）。
+> 2026-10-07：决策 38 登记（净值 Excel 自动同步 + /nav 扩容为绩效统计）。
 
 | # | 决策 | 状态 | 关联评审 | 触发 commit |
 |---|------|------|----------|-------------|
@@ -2096,3 +2124,4 @@ ALTER TABLE fund_category_map ADD COLUMN first_missing_snapshot_date DATE NULL;
 | 35 | 日常使用层与品牌资源（1b.4 PR8 扩展：启动页 + 关闭服务按钮 + 桌面快捷方式）| ✅ | Phase 1 收官后补充层 | docs(1b.4-pr8) |
 | 36 | 单进程运行形态（Spring Boot 托管前端 dist，8080 单端口；启动/关闭脚本 + 桌面快捷方式重写）| ✅ | 设备迁移后启动链断裂 + 双进程「关不净」 | dd89197 |
 | 37 | 校正台提前交付（月度 ZOH + 季度 LQR-ZOH 联合）+ 过程明细数据模型（operation_log.correction_mode + 3 张明细子表）| ✅ | 用户 2026-10-06 需求：基于已有校正记录搭建 FinControl 校正页 | docs(2a) |
+| 38 | 净值 Excel 自动同步（POI 定时轮询 + 幂等 upsert）+ /nav 扩容为「绩效统计」（统计口径按个人统计报告 Excel）| ✅ | 用户 2026-10-07 需求：监听 Excel 更新净值页 + 更多统计展示 | docs(2b) |

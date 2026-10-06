@@ -132,6 +132,18 @@ fincontrol:
       path: ${UPLOAD_SCREENSHOT_PATH:./uploads/screenshots/}
       max-size-mb: 20
 
+  # 2b：净值走势数据源（个人 Excel 记录表）—— 后端定时轮询自动同步
+  # 机制：比较 lastModified + size 变化 → 文件稳定 N 秒（避免 Excel 保存中途/锁文件）→
+  #       解析「每日明细」sheet → 按 (user_id, nav_date) 幂等 upsert nav_history。
+  # 兜底：`POST /api/nav/sync` 手动触发；`GET /api/nav/sync-status` 查看状态。
+  # 覆盖：application-local.yml 或环境变量 FINCONTROL_NAV_SYNC_SOURCE_FILE。
+  nav:
+    sync:
+      enabled: ${FINCONTROL_NAV_SYNC_ENABLED:true}
+      source-file: "${FINCONTROL_NAV_SYNC_SOURCE_FILE:C:\\Work\\投资组合研究\\支付宝实盘数据\\每日收益收益率表\\portfolio_daily_complete_v3 (1).xlsx}"
+      poll-interval-ms: ${FINCONTROL_NAV_SYNC_POLL_MS:30000}
+      stability-seconds: ${FINCONTROL_NAV_SYNC_STABILITY_SECONDS:3}
+
   # 1b.4 PR8 / 决策 35：系统级管理（关闭服务）配置
   system:
     shutdown:

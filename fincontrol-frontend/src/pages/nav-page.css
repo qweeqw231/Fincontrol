@@ -417,3 +417,140 @@
     grid-template-columns: 1fr;
   }
 }
+/* ============================================
+   2b 绩效统计：页头同步区 / 指标总览表 / KPI 网格 / 分布图 / 区间表
+   ============================================ */
+
+.nav-header-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.nav-sync-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-sync-chip {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.nav-sync-btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--color-primary-light);
+  background: #fff;
+  color: var(--color-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.nav-sync-btn:hover:not(:disabled) {
+  background: var(--color-bg-blue);
+}
+
+.nav-sync-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.nav-sync-msg {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.nav-stat-sub {
+  font-size: 11.5px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.nav-table-wrap {
+  overflow-x: auto;
+  margin-top: 12px;
+}
+
+.nav-stat-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.nav-stat-table th {
+  text-align: right;
+  padding: 7px 9px;
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.nav-stat-table th:first-child,
+.nav-stat-table td.cat-cell {
+  text-align: left;
+}
+
+.nav-stat-table td {
+  padding: 7px 9px;
+  text-align: right;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.nav-stat-table td.cat-cell {
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.nav-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.nav-kpi {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+
+.nav-kpi span {
+  color: var(--color-text-secondary);
+}
+
+.nav-kpi strong {
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.nav-hist-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.nav-hist-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
