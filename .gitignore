@@ -170,7 +170,9 @@ docs/test-records/automated-smoke/**/api-test-output/
 # 2026-07-23：临时联调 / 调试草稿记录（不入仓；正式记录走 docs/test-records/）
 #   例如 test/1b/2026-07-22-stepN-联调记录.md
 #   正式归档应放在 docs/test-records/manual-tests/<phase>/ 下
-test/
+# 2026-10-06：加前导斜杠限定为仓库根目录的 test/ —— 原写法 "test/" 会匹配任意层级
+#   （含 fincontrol-backend/src/test），导致新增测试文件（未跟踪）被忽略而无法 git add。
+/test/
 
 # 豁免：自动化 smoke log 本身要 commit（历史回溯价值）
 # 默认 `*.log` 忽略工作区根的随机 log，但 smoke log 走精确路径匹配
